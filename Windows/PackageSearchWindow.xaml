@@ -1,0 +1,630 @@
+﻿<Window x:Class="VPM.PackageSearchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="MainWindowElement"
+        Title="Package Downloads"
+        Height="700" Width="900"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="True"
+        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+        ResizeMode="CanResize"
+        MinHeight="500" MinWidth="800">
+    
+    <Window.Resources>
+        <!-- Button Style with Rounded Corners -->
+        <Style x:Key="RoundedButton" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlDarkDarkBrushKey}}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Highlighted Button Style -->
+        <Style x:Key="HighlightButton" TargetType="Button" BasedOn="{StaticResource RoundedButton}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        
+        <!-- DataGrid Row Style for Dark Theme -->
+        <Style TargetType="{x:Type DataGridRow}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- DataGrid Cell Style for Dark Theme -->
+        <Style TargetType="{x:Type DataGridCell}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- DataGrid Column Header Style for Dark Theme -->
+        <Style TargetType="{x:Type DataGridColumnHeader}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+        
+        <!-- Context Menu Style for Dark Theme -->
+        <Style TargetType="{x:Type ContextMenu}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="2"/>
+        </Style>
+        
+        <!-- MenuItem Style for Dark Theme -->
+        <Style TargetType="{x:Type MenuItem}">
+            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Border x:Name="Border"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                Padding="8,6">
+                            <ContentPresenter ContentSource="Header"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- TextBox Style for Dark Theme Context Menu -->
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="ContextMenu">
+                <Setter.Value>
+                    <ContextMenu>
+                        <MenuItem Command="ApplicationCommands.Cut" Header="Cut"/>
+                        <MenuItem Command="ApplicationCommands.Copy" Header="Copy"/>
+                        <MenuItem Command="ApplicationCommands.Paste" Header="Paste"/>
+                    </ContextMenu>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="10,10,10,10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Main Content Area with 2 Panels -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="300"/>
+                <ColumnDefinition Width="1"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Left Panel - Input Area -->
+            <Border Grid.Column="0" 
+                    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" 
+                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" 
+                    BorderThickness="1" 
+                    CornerRadius="3">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="38"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Input Label -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="📦" 
+                                   FontSize="16" 
+                                   Margin="0,0,8,0"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="Package Names" 
+                                   FontSize="14" 
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                    </StackPanel>
+                    
+                    <!-- Input TextBox with Drag-Drop Support -->
+                    <Border Grid.Row="2" 
+                            x:Name="InputBorder"
+                            BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" 
+                            BorderThickness="1" 
+                            CornerRadius="3"
+                            Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                            AllowDrop="True"
+                            Drop="InputBorder_Drop"
+                            DragEnter="InputBorder_DragEnter"
+                            DragLeave="InputBorder_DragLeave"
+                            DragOver="InputBorder_DragOver">
+                        <Grid>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          Background="Transparent">
+                                <TextBox x:Name="InputTextBox"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Disabled"
+                                         HorizontalScrollBarVisibility="Disabled"
+                                         Padding="8"
+                                         FontFamily="Consolas"
+                                         FontSize="13"
+                                         Background="Transparent"
+                                         Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
+                                         CaretBrush="White"
+                                         BorderThickness="0"/>
+                            </ScrollViewer>
+                            
+                            <!-- Placeholder Text -->
+                            <TextBlock x:Name="PlaceholderText"
+                                       Text="Paste package names here...
+
+Examples:
+  Creator.PackageName.1
+  Creator.PackageName.2
+  ..."
+                                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                       Padding="10"
+                                       FontSize="11"
+                                       IsHitTestVisible="False"
+                                       Visibility="Visible"/>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Action Buttons and Database Status -->
+                    <Grid Grid.Row="4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Database Status Label (Left) -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse x:Name="DatabaseStatusDot"
+                                     Width="10" 
+                                     Height="10"
+                                     Fill="#4CAF50"
+                                     Margin="0,0,8,0"
+                                     VerticalAlignment="Center"
+                                     Visibility="Collapsed"/>
+                            <TextBlock x:Name="DatabaseStatusLabel"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                       VerticalAlignment="Center"
+                                       Visibility="Collapsed">
+                                <TextBlock.ToolTip>
+                                    <ToolTip x:Name="DatabaseStatusTooltip"/>
+                                </TextBlock.ToolTip>
+                            </TextBlock>
+                        </StackPanel>
+                        
+                        <!-- Action Buttons (Right) -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="ClearButton"
+                                    Content="Clear"
+                                    MinWidth="80"
+                                    Height="38"
+                                    Margin="0,0,5,0"
+                                    Padding="12,7,12,9"
+                                    Click="ClearButton_Click"
+                                    Style="{StaticResource RoundedButton}"/>
+                            <Button x:Name="ParseButton"
+                                    Content="Search"
+                                    MinWidth="100"
+                                    Height="38"
+                                    Padding="12,7,12,9"
+                                    Click="ParseButton_Click"
+                                    Style="{StaticResource HighlightButton}"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+            
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" 
+                          Width="1" 
+                          HorizontalAlignment="Stretch" 
+                          Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                          Opacity="0.3"/>
+            
+            <!-- Right Panel - Results Table -->
+            <Border Grid.Column="2" 
+                    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" 
+                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" 
+                    BorderThickness="1" 
+                    CornerRadius="3">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="38"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Top Row: Checkbox and Cancel All Button -->
+                    <Grid Grid.Row="0">
+                        <CheckBox x:Name="HideLocalCheckBox"
+                                  Content="Hide local packages"
+                                  VerticalAlignment="Center"
+                                  HorizontalAlignment="Left"
+                                  FontSize="13"
+                                  Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
+                                  Checked="HideLocalCheckBox_Changed"
+                                  Unchecked="HideLocalCheckBox_Changed">
+                            <CheckBox.Style>
+                                <Style TargetType="CheckBox">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="CheckBox">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border x:Name="CheckBoxBorder"
+                                                            Width="18"
+                                                            Height="18"
+                                                            Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                                            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                                            BorderThickness="2"
+                                                            CornerRadius="3"
+                                                            VerticalAlignment="Center"
+                                                            Margin="0,0,8,0">
+                                                        <Path x:Name="CheckMark"
+                                                              Data="M 0,4 L 3,7 L 8,0"
+                                                              Stroke="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"
+                                                              StrokeThickness="2.5"
+                                                              Visibility="Collapsed"
+                                                              Margin="3,2,0,0"/>
+                                                    </Border>
+                                                    <ContentPresenter VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </CheckBox.Style>
+                        </CheckBox>
+                        
+                        <Button x:Name="CancelAllButton"
+                                Content="Cancel All"
+                                MinWidth="120"
+                                Height="38"
+                                Padding="12,7,12,9"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Click="CancelAllButton_Click"
+                                Style="{StaticResource RoundedButton}"
+                                Visibility="Collapsed"/>
+                    </Grid>
+                    
+                    <!-- Results DataGrid -->
+                    <DataGrid Grid.Row="2"
+                              x:Name="ResultsDataGrid"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              SelectionMode="Extended"
+                              GridLinesVisibility="None"
+                              HeadersVisibility="None"
+                              Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                              BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                              BorderThickness="1"
+                              IsReadOnly="True"
+                              RowBackground="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                              AlternatingRowBackground="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                              Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"
+                              RowHeight="50"
+                              FontSize="14"
+                              FontFamily="Segoe UI"
+                              SelectionChanged="ResultsDataGrid_SelectionChanged"
+                              MouseDoubleClick="ResultsDataGrid_MouseDoubleClick">
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Height" Value="50"/>
+                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                <Setter Property="BorderBrush" Value="#333333"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    </Trigger>
+                                    <MultiTrigger>
+                                        <MultiTrigger.Conditions>
+                                            <Condition Property="IsSelected" Value="True"/>
+                                            <Condition Property="IsMouseOver" Value="True"/>
+                                        </MultiTrigger.Conditions>
+                                        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HotTrackBrushKey}}"/>
+                                    </MultiTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <!-- Column 1: Status Dot -->
+                            <DataGridTemplateColumn Width="40">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Ellipse Width="12" Height="12" 
+                                                 Fill="{Binding StatusDotColor}"
+                                                 HorizontalAlignment="Center"
+                                                 VerticalAlignment="Center">
+                                            <Ellipse.ToolTip>
+                                                <TextBlock Text="{Binding StatusTooltip}"/>
+                                            </Ellipse.ToolTip>
+                                        </Ellipse>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            
+                            <!-- Column 2: Package Info -->
+                            <DataGridTemplateColumn Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,6" VerticalAlignment="Center">
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+                                            
+                                            <!-- Row 1: Package Name -->
+                            <TextBlock Grid.Row="0"
+                                       Text="{Binding DisplayName}" 
+                                       FontWeight="Normal"
+                                       FontSize="14"
+                                       VerticalAlignment="Center"
+                                       TextAlignment="Left"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="0,0,60,0"
+                                       Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
+                                            
+                                            <!-- Row 2: Metadata or Progress -->
+                                            <Grid Grid.Row="1" Margin="0,2,0,0">
+                                                <!-- Progress Status (when downloading) -->
+                                                <StackPanel Orientation="Horizontal" Visibility="{Binding ProgressVisibility}">
+                                                    <!-- Status Text (colored) -->
+                                                    <TextBlock Text="{Binding StatusText}" 
+                                                               FontSize="11"
+                                                               FontWeight="Medium"
+                                                               Foreground="{Binding StatusColor}"
+                                                               Margin="0,0,8,0"
+                                                               VerticalAlignment="Center"/>
+                                                    
+                                                    <!-- Progress Text -->
+                                                    <TextBlock Text="{Binding ProgressText, Mode=OneWay}" 
+                                                               FontSize="11"
+                                                               Foreground="#B0B0B0"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                
+                                                <!-- Info Text (when not downloading) -->
+                                                <TextBlock FontSize="11" 
+                                                           Foreground="#999999">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ProgressVisibility}" Value="Collapsed">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                                <!-- Show "Size • Update available" for local packages with newer version online -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsLocal}" Value="True"/>
+                                                                        <Condition Binding="{Binding HasNewerVersionOnline}" Value="True"/>
+                                                                        <Condition Binding="{Binding ProgressVisibility}" Value="Collapsed"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Text">
+                                                                        <Setter.Value>
+                                                                            <MultiBinding StringFormat="Size: {0} • Update available v{1} †’ v{2}">
+                                                                                <Binding Path="SizeFormatted"/>
+                                                                                <Binding Path="LocalVersionNumber"/>
+                                                                                <Binding Path="OnlineVersionNumber"/>
+                                                                            </MultiBinding>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                    <Setter Property="Foreground" Value="#FFA500"/>
+                                                                </MultiDataTrigger>
+                                                                <!-- Show "Size • Local" for local packages without updates -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsLocal}" Value="True"/>
+                                                                        <Condition Binding="{Binding HasNewerVersionOnline}" Value="False"/>
+                                                                        <Condition Binding="{Binding ProgressVisibility}" Value="Collapsed"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Text">
+                                                                        <Setter.Value>
+                                                                            <MultiBinding StringFormat="Size: {0} • Local">
+                                                                                <Binding Path="SizeFormatted"/>
+                                                                            </MultiBinding>
+                                                                        </Setter.Value>
+                                                                    </Setter>
+                                                                </MultiDataTrigger>
+                                                                <!-- Show "Available for download" for online packages -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsLocal}" Value="False"/>
+                                                                        <Condition Binding="{Binding IsAvailableOnline}" Value="True"/>
+                                                                        <Condition Binding="{Binding ProgressVisibility}" Value="Collapsed"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Text" Value="Available for download"/>
+                                                                </MultiDataTrigger>
+                                                                <!-- Show "Not found" for missing packages -->
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsLocal}" Value="False"/>
+                                                                        <Condition Binding="{Binding IsAvailableOnline}" Value="False"/>
+                                                                        <Condition Binding="{Binding ProgressVisibility}" Value="Collapsed"/>
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Text" Value="Not found"/>
+                                                                </MultiDataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            
+                            <!-- Column 3: Cancel Button -->
+                            <DataGridTemplateColumn Width="50">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Width="32"
+                                                Height="32"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Cancel download"
+                                                Tag="{Binding}"
+                                                Click="CancelDownload_Click"
+                                                Cursor="Hand"
+                                                Visibility="{Binding ProgressVisibility}">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Background" Value="#C42B1C"/>
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                    <Setter Property="BorderThickness" Value="0"/>
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}" 
+                                                                        CornerRadius="{StaticResource CornerRadiusValue}">
+                                                                    <TextBlock Text="✓"
+                                                                               FontSize="18"
+                                                                               FontWeight="Bold"
+                                                                               Foreground="White"
+                                                                               HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center"
+                                                                               TextAlignment="Center"
+                                                                               Margin="0,-1,0,0"/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#E81123"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    
+                    <!-- Results Action Buttons -->
+                    <Grid Grid.Row="4">
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="DownloadMissingButton"
+                                    Content="Download Missing"
+                                    MinWidth="180"
+                                    Height="38"
+                                    Margin="0,0,5,0"
+                                    Padding="12,7,12,9"
+                                    Click="DownloadMissingButton_Click"
+                                    Style="{StaticResource RoundedButton}"
+                                    IsEnabled="False"/>
+                            <Button x:Name="DownloadSelectedButton"
+                                    Content="Download Selected"
+                                    MinWidth="180"
+                                    Height="38"
+                                    Padding="12,7,12,9"
+                                    Click="DownloadSelectedButton_Click"
+                                    Style="{StaticResource HighlightButton}"
+                                    IsEnabled="False"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+        
+    </Grid>
+</Window>
+

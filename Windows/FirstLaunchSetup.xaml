@@ -1,0 +1,227 @@
+﻿<Window x:Class="VPM.FirstLaunchSetup"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Welcome to VPM" 
+        Height="500" Width="700"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#FF202020"
+        WindowStyle="None"
+        AllowsTransparency="True">
+    
+    <Window.Resources>
+        <!-- Modern Button Style -->
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Background" Value="#0078D4"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#005A9E"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#CCCCCC"/>
+                    <Setter Property="Foreground" Value="#666666"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Secondary Button Style -->
+        <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource ModernButton}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#64B5F6"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="BorderBrush" Value="#0078D4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"
+                                            TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#1E3A5F"/>
+                    <Setter Property="Foreground" Value="#90CAF9"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="#0078D4" BorderThickness="2" CornerRadius="10">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Border Grid.Row="0" Background="#0078D4" CornerRadius="8,8,0,0" Padding="30,25">
+                <StackPanel>
+                    <TextBlock Text="🎮 Welcome to VPM" 
+                             FontSize="28" 
+                             FontWeight="Bold" 
+                             Foreground="White"
+                             HorizontalAlignment="Center"/>
+                    <TextBlock Text="Let's get you set up in seconds" 
+                             FontSize="14" 
+                             Foreground="#E0E0E0"
+                             HorizontalAlignment="Center"
+                             Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Content -->
+            <Grid Grid.Row="1" Margin="40,30">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Auto-detected path section -->
+                <StackPanel x:Name="AutoDetectedPanel" Grid.Row="0" Visibility="Collapsed">
+                    <Border Background="#1B3A1F" 
+                            BorderBrush="#4CAF50" 
+                            BorderThickness="2" 
+                            CornerRadius="8" 
+                            Padding="20">
+                        <StackPanel>
+                            <TextBlock Text="✅ Game Folder Detected!" 
+                                     FontSize="18" 
+                                     FontWeight="Bold" 
+                                     Foreground="#66BB6A"
+                                     Margin="0,0,0,10"/>
+                            <TextBlock Text="We found that this application is already inside your VaM game folder." 
+                                     FontSize="13" 
+                                     Foreground="#CCCCCC"
+                                     TextWrapping="Wrap"
+                                     Margin="0,0,0,8"/>
+                            <TextBlock x:Name="DetectedPathText" 
+                                     FontSize="12" 
+                                     FontWeight="SemiBold"
+                                     Foreground="#A5D6A7"
+                                     TextWrapping="Wrap"
+                                     Margin="0,0,0,12"/>
+                            <Button Content="✅ Use This Path" 
+                                  Style="{StaticResource ModernButton}"
+                                  Background="#4CAF50"
+                                  HorizontalAlignment="Center"
+                                  MinWidth="180"
+                                  Click="UseDetectedPath_Click"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="OR" 
+                             FontSize="14" 
+                             FontWeight="Bold" 
+                             Foreground="#666666"
+                             HorizontalAlignment="Center"
+                             Margin="0,20,0,20"/>
+                </StackPanel>
+
+                <!-- Manual selection section -->
+                <StackPanel Grid.Row="1" VerticalAlignment="Center">
+                    <Border Background="#2B2B2B" 
+                            BorderBrush="#4A4A4A" 
+                            BorderThickness="2" 
+                            CornerRadius="8" 
+                            Padding="25">
+                        <StackPanel>
+                            <TextBlock x:Name="ManualSelectionTitle"
+                                     Text="📁 Choose Your Game Folder" 
+                                     FontSize="18" 
+                                     FontWeight="Bold" 
+                                     Foreground="#FFFFFF"
+                                     HorizontalAlignment="Center"
+                                     Margin="0,0,0,15"/>
+                            <TextBlock Text="Select the folder that contains VaM.exe and AddonPackages" 
+                                     FontSize="13" 
+                                     Foreground="#AAAAAA"
+                                     TextWrapping="Wrap"
+                                     HorizontalAlignment="Center"
+                                     TextAlignment="Center"
+                                     Margin="0,0,0,20"/>
+                            <Button Content="📁 Browse for Game Folder" 
+                                  Style="{StaticResource SecondaryButton}"
+                                  HorizontalAlignment="Center"
+                                  MinWidth="220"
+                                  Click="BrowseFolder_Click"/>
+                            
+                            <!-- Selected path display -->
+                            <Border x:Name="SelectedPathBorder" 
+                                  Background="#1E1E1E" 
+                                  BorderBrush="#0078D4" 
+                                  BorderThickness="2" 
+                                  CornerRadius="6" 
+                                  Padding="15,10"
+                                  Margin="0,20,0,0"
+                                  Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock Text="Selected Path:" 
+                                             FontSize="11" 
+                                             Foreground="#AAAAAA"
+                                             Margin="0,0,0,5"/>
+                                    <TextBlock x:Name="SelectedPathText" 
+                                             FontSize="12" 
+                                             FontWeight="SemiBold"
+                                             Foreground="#64B5F6"
+                                             TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+
+            <!-- Footer -->
+            <Border Grid.Row="2" 
+                    Background="#2B2B2B" 
+                    BorderBrush="#4A4A4A" 
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,8,8"
+                    Padding="30,20">
+                <Grid>
+                    <Button x:Name="ContinueButton"
+                          Content="Continue →" 
+                          Style="{StaticResource ModernButton}"
+                          HorizontalAlignment="Right"
+                          MinWidth="140"
+                          IsEnabled="False"
+                          Click="Continue_Click"/>
+                    <TextBlock x:Name="StatusText"
+                             Text="Please select your VaM game folder to continue"
+                             FontSize="12"
+                             Foreground="#AAAAAA"
+                             VerticalAlignment="Center"
+                             HorizontalAlignment="Left"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
+

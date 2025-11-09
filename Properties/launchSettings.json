@@ -1,0 +1,8 @@
+﻿{
+  "profiles": {
+    "VPM": {
+      "commandName": "Project",
+      "workingDirectory": "D:\\Games\\_VPM\\_VS"
+    }
+  }
+}

@@ -1,0 +1,230 @@
+﻿<Window x:Class="VPM.NetworkPermissionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Network Access Permission"
+        Height="320"
+        Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+    
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="MinWidth" Value="100"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        
+        <!-- Modern CheckBox Style for Dark Theme -->
+        <Style x:Key="ModernCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="Padding" Value="6,0,0,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <!-- Custom CheckBox -->
+                            <Border x:Name="CheckBoxBorder"
+                                    Grid.Column="0"
+                                    Width="18"
+                                    Height="18"
+                                    Background="#2D2D30"
+                                    BorderBrush="#555555"
+                                    BorderThickness="1.5"
+                                    CornerRadius="3"
+                                    VerticalAlignment="Center">
+                                <Path x:Name="CheckMark"
+                                      Data="M 0,4 L 3,7 L 8,0"
+                                      Stroke="White"
+                                      StrokeThickness="2"
+                                      Visibility="Collapsed"
+                                      Stretch="Uniform"
+                                      Margin="3"/>
+                            </Border>
+                            
+                            <!-- Content -->
+                            <ContentPresenter Grid.Column="1"
+                                            Margin="{TemplateBinding Padding}"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Left"/>
+                        </Grid>
+                        
+                        <ControlTemplate.Triggers>
+                            <!-- Checked State -->
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckBoxBorder" Property="Background" Value="#007ACC"/>
+                                <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="#007ACC"/>
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            
+                            <!-- Hover State -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="#007ACC"/>
+                            </Trigger>
+                            
+                            <!-- Hover + Checked State -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="CheckBoxBorder" Property="Background" Value="#1C97EA"/>
+                                <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="#1C97EA"/>
+                            </MultiTrigger>
+                            
+                            <!-- Disabled State -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="CheckBoxBorder" Property="Background" Value="#3F3F46"/>
+                                <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="#3F3F46"/>
+                                <Setter Property="Foreground" Value="#656565"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Title -->
+        <TextBlock Grid.Row="0" 
+                   Text="📝 Network Access Required"
+                   FontSize="18"
+                   FontWeight="Bold"
+                   Margin="0,0,0,15"
+                   HorizontalAlignment="Center"
+                   Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+        
+        <!-- Message -->
+        <Border Grid.Row="1" 
+                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                BorderThickness="1"
+                Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                Padding="15"
+                Margin="0,0,0,15">
+            <TextBlock TextWrapping="Wrap"
+                       LineHeight="22"
+                       Foreground="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}">
+                <Run Text="This application needs internet access to download package lists and links from GitHub."/>
+                <LineBreak/><LineBreak/>
+                <Run Text="Features requiring network access:"/>
+                <LineBreak/>
+                <Run Text="• Download missing package database"/>
+                <LineBreak/>
+                <Run Text="• Update package download links"/>
+                <LineBreak/><LineBreak/>
+                <Run Text="Do you want to allow network access?" FontWeight="SemiBold"/>
+            </TextBlock>
+        </Border>
+        
+        <!-- Update Database Checkbox -->
+        <CheckBox Grid.Row="2"
+                  x:Name="UpdateDatabaseCheckBox"
+                  Content="Update package database now"
+                  Margin="0,0,0,10"
+                  VerticalAlignment="Center"
+                  IsChecked="True"
+                  Style="{StaticResource ModernCheckBox}"/>
+        
+        <!-- Never Show Again Checkbox -->
+        <CheckBox Grid.Row="3"
+                  x:Name="NeverShowAgainCheckBox"
+                  Content="Never show this message again"
+                  Margin="0,0,0,15"
+                  VerticalAlignment="Center"
+                  Style="{StaticResource ModernCheckBox}"
+                  Checked="NeverShowAgainCheckBox_Changed"
+                  Unchecked="NeverShowAgainCheckBox_Changed"/>
+        
+        <!-- Buttons -->
+        <StackPanel Grid.Row="4" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Center">
+            <Button Content="Allow" 
+                    IsDefault="True"
+                    Click="Allow_Click"
+                    Background="#4CAF50"
+                    Foreground="White"
+                    BorderThickness="0">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="3"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#45a049"/>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter Property="Background" Value="#3d8b40"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Button.Style>
+            </Button>
+            
+            <Button x:Name="DenyButton"
+                    Content="Deny" 
+                    IsCancel="True"
+                    Click="Deny_Click"
+                    Background="#f44336"
+                    Foreground="White"
+                    BorderThickness="0">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="3"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#da190b"/>
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter Property="Background" Value="#c1170a"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
+
