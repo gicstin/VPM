@@ -1,0 +1,28 @@
+# Build artifacts
+bin/
+obj/
+.build/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sln.docstates
+
+# Reference/backup folders
+.links/
+
+# Runtime generated
+*.log
+code_metrics.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

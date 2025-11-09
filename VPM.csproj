@@ -1,0 +1,72 @@
+﻿    <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>VPM</RootNamespace>
+    <AssemblyName>VPM</AssemblyName>
+    <ApplicationIcon>icon.ico</ApplicationIcon>
+    
+    <!-- Version Configuration -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <GenerateAssemblyVersionAttribute>true</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>true</GenerateAssemblyFileVersionAttribute>
+    <GenerateAssemblyInformationalVersionAttribute>true</GenerateAssemblyInformationalVersionAttribute>
+  </PropertyGroup>
+  
+  <!-- Rely on in-box System.Text.Json from .NET 8 to avoid copying extra DLLs -->
+  
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+    <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <Resource Include="icon.ico" />
+  </ItemGroup>
+
+  <!-- Exclude backup/reference folders from compilation -->
+  <ItemGroup>
+    <Compile Remove="_links\**" />
+    <EmbeddedResource Remove="_links\**" />
+    <None Remove="_links\**" />
+    <Page Remove="_links\**" />
+  </ItemGroup>
+
+  <!-- Auto-increment build number on every build -->
+  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <VersionFile>$(MSBuildProjectDirectory)\version.txt</VersionFile>
+    </PropertyGroup>
+    
+    <!-- Read current version from file -->
+    <ReadLinesFromFile File="$(VersionFile)">
+      <Output TaskParameter="Lines" PropertyName="CurrentVersion" />
+    </ReadLinesFromFile>
+    
+    <!-- Parse version components -->
+    <PropertyGroup>
+      <VersionMajor>$(CurrentVersion.Split('.')[0])</VersionMajor>
+      <VersionMinor>$(CurrentVersion.Split('.')[1])</VersionMinor>
+      <VersionPatch>$(CurrentVersion.Split('.')[2])</VersionPatch>
+      
+      <!-- Increment patch number -->
+      <NewPatchNumber>$([MSBuild]::Add($(VersionPatch), 1))</NewPatchNumber>
+      <NewVersion>$(VersionMajor).$(VersionMinor).$(NewPatchNumber)</NewVersion>
+    </PropertyGroup>
+    
+    <!-- Write new version back to file -->
+    <WriteLinesToFile File="$(VersionFile)" Lines="$(NewVersion)" Overwrite="true" />
+    
+    <!-- Set assembly version properties -->
+    <PropertyGroup>
+      <AssemblyVersion>$(NewVersion)</AssemblyVersion>
+      <FileVersion>$(NewVersion)</FileVersion>
+      <InformationalVersion>$(NewVersion)</InformationalVersion>
+      <Version>$(NewVersion)</Version>
+    </PropertyGroup>
+    
+    <Message Text="Build version incremented to: $(NewVersion)" Importance="high" />
+  </Target>
+</Project>
