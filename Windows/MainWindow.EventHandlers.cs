@@ -1353,19 +1353,16 @@ namespace VPM
 
         private void About_Click(object sender, RoutedEventArgs e)
         {
-            var aboutMessage = $@"VAM Package Manager
-{VersionInfo.DisplayVersion}
+            var aboutWindow = new AboutWindow
+            {
+                Owner = this
+            };
 
-A modern package manager for VirtAMate.
+            // Set package count and cache location
+            aboutWindow.SetPackageCount(Packages?.Count ?? 0);
+            aboutWindow.SetCacheLocation(_settingsManager?.Settings?.CacheFolder ?? "Not set");
 
-Build Date: {File.GetLastWriteTime(System.AppContext.BaseDirectory):yyyy-MM-dd HH:mm}
-Framework: .NET 9.0
-Platform: {Environment.OSVersion.Platform} ({(Environment.Is64BitProcess ? "64-bit" : "32-bit")})
-
-Loaded Packages: {Packages?.Count ?? 0:N0}
-Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
-
-            CustomMessageBox.Show(aboutMessage, "About", MessageBoxButton.OK, MessageBoxImage.Information);
+            aboutWindow.ShowDialog();
         }
 
         private void FilterList_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -3312,6 +3309,62 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
                             targetList = SceneSourceFilterList;
                             expandedGrid = SceneSourceFilterExpandedGrid;
                             collapsedGrid = SceneSourceFilterCollapsedGrid;
+                            break;
+                        case "PresetCategoryFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.PresetCategoryFilterVisible = !_settingsManager.Settings.PresetCategoryFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "PresetSubfolderFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.PresetSubfolderFilterVisible = !_settingsManager.Settings.PresetSubfolderFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "SceneDateFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.SceneDateFilterVisible = !_settingsManager.Settings.SceneDateFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "SceneFileSizeFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.SceneFileSizeFilterVisible = !_settingsManager.Settings.SceneFileSizeFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "PresetDateFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.PresetDateFilterVisible = !_settingsManager.Settings.PresetDateFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "PresetFileSizeFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.PresetFileSizeFilterVisible = !_settingsManager.Settings.PresetFileSizeFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "SceneStatusFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.SceneStatusFilterVisible = !_settingsManager.Settings.SceneStatusFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
+                            break;
+                        case "PresetStatusFilter":
+                            if (_settingsManager?.Settings != null)
+                            {
+                                _settingsManager.Settings.PresetStatusFilterVisible = !_settingsManager.Settings.PresetStatusFilterVisible;
+                                ApplyFilterVisibilityStates(_settingsManager.Settings);
+                            }
                             break;
                     }
                     

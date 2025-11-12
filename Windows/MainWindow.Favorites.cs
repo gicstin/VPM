@@ -87,6 +87,9 @@ namespace VPM
                     }
                 }
 
+                // Refresh preset filter counters to reflect favorite changes
+                RefreshPresetFilterCounters();
+                
                 SetStatus($"Added {selectedItems.Count} custom atom item(s) to favorites");
                 return;
             }
@@ -114,6 +117,9 @@ namespace VPM
                     scene.IsFavorite = true;
                 }
 
+                // Refresh scene filter counters to reflect favorite changes
+                RefreshSceneFilterCounters();
+                
                 SetStatus($"Added {selectedScenes.Count} scene(s) to favorites");
                 return;
             }
@@ -181,6 +187,9 @@ namespace VPM
                     }
                 }
 
+                // Refresh preset filter counters to reflect favorite changes
+                RefreshPresetFilterCounters();
+                
                 SetStatus($"Removed {selectedItems.Count} custom atom item(s) from favorites");
                 e.Handled = true;
                 return;
@@ -203,6 +212,9 @@ namespace VPM
                     scene.IsFavorite = false;
                 }
 
+                // Refresh scene filter counters to reflect favorite changes
+                RefreshSceneFilterCounters();
+                
                 SetStatus($"Removed {selectedScenes.Count} scene(s) from favorites");
                 e.Handled = true;
                 return;
@@ -267,6 +279,9 @@ namespace VPM
                     }
                 }
 
+                // Refresh preset filter counters to reflect hidden changes
+                RefreshPresetFilterCounters();
+                
                 SetStatus($"Hidden {selectedItems.Count} custom atom item(s)");
                 return;
             }
@@ -288,6 +303,9 @@ namespace VPM
                     scene.IsHidden = true;
                 }
 
+                // Refresh scene filter counters to reflect hidden changes
+                RefreshSceneFilterCounters();
+                
                 SetStatus($"Hidden {selectedScenes.Count} scene(s)");
                 return;
             }
@@ -312,6 +330,9 @@ namespace VPM
                     }
                 }
 
+                // Refresh preset filter counters to reflect hidden changes
+                RefreshPresetFilterCounters();
+                
                 SetStatus($"Unhidden {selectedItems.Count} custom atom item(s)");
                 e.Handled = true;
                 return;
@@ -334,6 +355,9 @@ namespace VPM
                     scene.IsHidden = false;
                 }
 
+                // Refresh scene filter counters to reflect hidden changes
+                RefreshSceneFilterCounters();
+                
                 SetStatus($"Unhidden {selectedScenes.Count} scene(s)");
                 e.Handled = true;
                 return;

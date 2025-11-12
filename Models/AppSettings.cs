@@ -74,6 +74,14 @@ namespace VPM.Models
         private bool _sceneTypeFilterVisible = true;
         private bool _sceneCreatorFilterVisible = true;
         private bool _sceneSourceFilterVisible = true;
+        private bool _presetCategoryFilterVisible = true;
+        private bool _presetSubfolderFilterVisible = true;
+        private bool _sceneDateFilterVisible = true;
+        private bool _sceneFileSizeFilterVisible = true;
+        private bool _presetDateFilterVisible = true;
+        private bool _presetFileSizeFilterVisible = true;
+        private bool _sceneStatusFilterVisible = true;
+        private bool _presetStatusFilterVisible = true;
         
         // File Size Filter Settings (in MB)
         private double _fileSizeTinyMax = 1;
@@ -431,6 +439,54 @@ namespace VPM.Models
             set => SetProperty(ref _sceneSourceFilterVisible, value);
         }
 
+        public bool PresetCategoryFilterVisible
+        {
+            get => _presetCategoryFilterVisible;
+            set => SetProperty(ref _presetCategoryFilterVisible, value);
+        }
+
+        public bool PresetSubfolderFilterVisible
+        {
+            get => _presetSubfolderFilterVisible;
+            set => SetProperty(ref _presetSubfolderFilterVisible, value);
+        }
+
+        public bool SceneDateFilterVisible
+        {
+            get => _sceneDateFilterVisible;
+            set => SetProperty(ref _sceneDateFilterVisible, value);
+        }
+
+        public bool SceneFileSizeFilterVisible
+        {
+            get => _sceneFileSizeFilterVisible;
+            set => SetProperty(ref _sceneFileSizeFilterVisible, value);
+        }
+
+        public bool PresetDateFilterVisible
+        {
+            get => _presetDateFilterVisible;
+            set => SetProperty(ref _presetDateFilterVisible, value);
+        }
+
+        public bool PresetFileSizeFilterVisible
+        {
+            get => _presetFileSizeFilterVisible;
+            set => SetProperty(ref _presetFileSizeFilterVisible, value);
+        }
+
+        public bool SceneStatusFilterVisible
+        {
+            get => _sceneStatusFilterVisible;
+            set => SetProperty(ref _sceneStatusFilterVisible, value);
+        }
+
+        public bool PresetStatusFilterVisible
+        {
+            get => _presetStatusFilterVisible;
+            set => SetProperty(ref _presetStatusFilterVisible, value);
+        }
+
         // File Size Filter Settings Properties
         public double FileSizeTinyMax
         {
@@ -616,6 +672,14 @@ namespace VPM.Models
                 SceneTypeFilterVisible = true,
                 SceneCreatorFilterVisible = true,
                 SceneSourceFilterVisible = true,
+                PresetCategoryFilterVisible = true,
+                PresetSubfolderFilterVisible = true,
+                SceneDateFilterVisible = true,
+                SceneFileSizeFilterVisible = true,
+                PresetDateFilterVisible = true,
+                PresetFileSizeFilterVisible = true,
+                SceneStatusFilterVisible = true,
+                PresetStatusFilterVisible = true,
                 FileSizeTinyMax = 1,
                 FileSizeSmallMax = 10,
                 FileSizeMediumMax = 100,

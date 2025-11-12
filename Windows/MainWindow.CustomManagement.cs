@@ -51,6 +51,16 @@ namespace VPM
                         
                         CustomAtomItems.ReplaceAll(items);
                         SetStatus($"Loaded {items.Count} custom atom item(s)");
+                        
+                        // Populate preset filters if we're in Presets mode
+                        if (_currentContentMode == "Presets")
+                        {
+                            PopulatePresetCategoryFilter();
+                            PopulatePresetSubfolderFilter();
+                            PopulatePresetDateFilter();
+                            PopulatePresetFileSizeFilter();
+                            PopulatePresetStatusFilter();
+                        }
                     });
                 });
             }

@@ -51,6 +51,9 @@ namespace VPM
                             PopulateSceneTypeFilter();
                             PopulateSceneCreatorFilter();
                             PopulateSceneSourceFilter();
+                            PopulateSceneDateFilter();
+                            PopulateSceneFileSizeFilter();
+                            PopulateSceneStatusFilter();
                         }
                     });
                 });

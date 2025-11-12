@@ -1017,7 +1017,7 @@ Off: Single selection, hide incompatible options"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
                             <Label Grid.Column="1" Content="📊 Filter by Status"/>
                             <Button x:Name="StatusSortButton" Grid.Column="2" 
-                            Content="↕" 
+                            Content="⇅" 
                             Padding="0" FontSize="12" FontWeight="Bold"
                             Click="StatusSortButton_Click"
                             ToolTip="Sort status filters alphabetically"
@@ -1139,7 +1139,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=ContentTypesFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="ContentTypesSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="ContentTypesSortButton_Click"
                             ToolTip="Sort content types alphabetically"
@@ -1261,7 +1261,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=CreatorsFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="CreatorsSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="CreatorsSortButton_Click"
                             ToolTip="Sort creators"
@@ -1384,7 +1384,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=SubfoldersFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="SubfoldersSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="SubfoldersSortButton_Click"
                             ToolTip="Sort subfolders alphabetically"
@@ -1498,7 +1498,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=LicenseTypeFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="LicenseTypeSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="LicenseTypeSortButton_Click"
                             ToolTip="Sort license types"
@@ -1725,6 +1725,11 @@ Off: Single selection, hide incompatible options"
                                       Tag="DamagedFilter"/>
                     </Border>
                     
+                    </StackPanel>
+                    
+                    <!-- Scene Filters Container (Scene Mode Only) -->
+                    <StackPanel x:Name="SceneFiltersContainer" Visibility="Collapsed">
+                    
                     <!-- Scene Type Filter Section (Scene Mode Only) -->
                     <StackPanel x:Name="SceneTypeFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
                         <!-- Collapsed state label (shown when hidden) -->
@@ -1782,7 +1787,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=SceneTypeFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="SceneTypeSortButton" Grid.Column="3" 
-                            Content="↔" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="SceneTypeSortButton_Click"
                             ToolTip="Sort scene types alphabetically"
@@ -1894,7 +1899,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=SceneCreatorFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="SceneCreatorSortButton" Grid.Column="3" 
-                            Content="↔" 
+                            Content="⇅" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="SceneCreatorSortButton_Click"
                             ToolTip="Sort scene creators"
@@ -1947,6 +1952,89 @@ Off: Single selection, hide incompatible options"
                                       DragDelta="FilterSplitter_DragDelta"
                                       DragCompleted="FilterSplitter_DragCompleted" 
                                       Tag="SceneCreatorFilter"/>
+                    </Border>
+                    
+                    <!-- Scene Status Filter Section -->
+                    <StackPanel x:Name="SceneStatusFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="SceneStatusFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneStatusFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneStatusFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                        </Grid>
+                        
+                        <Grid x:Name="SceneStatusFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneStatusFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneStatusFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="SceneStatusFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="SceneStatusFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Scene Status Filter Splitter -->
+                    <Border x:Name="SceneStatusFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="SceneStatusFilter"/>
                     </Border>
                     
                     <!-- Scene Source Filter Section (Scene Mode Only) -->
@@ -2035,7 +2123,652 @@ Off: Single selection, hide incompatible options"
                                       Tag="SceneSourceFilter"/>
                     </Border>
                     
+                    <!-- Scene Date Filter Section -->
+                    <StackPanel x:Name="SceneDateFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="SceneDateFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneDateFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneDateFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                        </Grid>
+                        
+                        <Grid x:Name="SceneDateFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneDateFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneDateFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="SceneDateFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="SceneDateFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
                     </StackPanel>
+                    
+                    <!-- Scene Date Filter Splitter -->
+                    <Border x:Name="SceneDateFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="SceneDateFilter"/>
+                    </Border>
+                    
+                    <!-- Scene File Size Filter Section -->
+                    <StackPanel x:Name="SceneFileSizeFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="SceneFileSizeFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneFileSizeFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneFileSizeFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                        </Grid>
+                        
+                        <Grid x:Name="SceneFileSizeFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="SceneFileSizeFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="SceneFileSizeFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="SceneFileSizeFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="SceneFileSizeFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Scene File Size Filter Splitter -->
+                    <Border x:Name="SceneFileSizeFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="SceneFileSizeFilter"/>
+                    </Border>
+                    
+                    </StackPanel>
+                    
+                    <!-- Preset Filters Container (Presets Mode Only) -->
+                    <StackPanel x:Name="PresetFiltersContainer" Visibility="Collapsed">
+                    
+                    <!-- Preset Category Filter Section -->
+                    <StackPanel x:Name="PresetCategoryFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <!-- Collapsed state label (shown when hidden) -->
+                        <Grid x:Name="PresetCategoryFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetCategoryFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetCategoryFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📂 Filter by category"/>
+                        </Grid>
+                        
+                        <!-- TextBox Grid with eye button (shown when expanded) -->
+                        <Grid x:Name="PresetCategoryFilterTextBoxGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetCategoryFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="27"
+                                    Height="{Binding ElementName=PresetCategoryFilterBox, Path=ActualHeight}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetCategoryFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <TextBox x:Name="PresetCategoryFilterBox" Grid.Column="1"
+                             Text="🎬 Filter by category..." 
+                             Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                             Padding="5"
+                             GotFocus="FilterTextBox_GotFocus" 
+                             LostFocus="FilterTextBox_LostFocus"
+                             TextChanged="PresetCategoryFilterBox_TextChanged"
+                             MinWidth="110"/>
+                            <Button x:Name="PresetCategoryClearButton" Grid.Column="2" 
+                            Content="✕" 
+                            Margin="3,0,0,0" Padding="3,0" FontSize="12" FontWeight="Bold"
+                            Click="ClearFilterButton_Click"
+                            ToolTip="Clear filter"
+                            Visibility="Collapsed"
+                            Style="{StaticResource BlueHoverButtonStyle}"
+                            Width="27"
+                            Height="{Binding ElementName=PresetCategoryFilterBox, Path=ActualHeight}"/>
+                            <Button x:Name="PresetCategorySortButton" Grid.Column="3" 
+                            Content="⇅" 
+                            Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
+                            Click="PresetCategorySortButton_Click"
+                            ToolTip="Sort categories alphabetically"
+                            Style="{StaticResource BlueHoverButtonStyle}"
+                            Width="27"
+                            Height="{Binding ElementName=PresetCategoryFilterBox, Path=ActualHeight}"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="PresetCategoryFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="80" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="PresetCategoryFilterList_SelectionChanged"
+                                 MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Preset Category Filter Splitter -->
+                    <Border x:Name="PresetCategoryFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="PresetCategoryFilter"/>
+                    </Border>
+                    
+                    <!-- Preset Subfolder Filter Section -->
+                    <StackPanel x:Name="PresetSubfolderFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <!-- Collapsed state label (shown when hidden) -->
+                        <Grid x:Name="PresetSubfolderFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetSubfolderFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetSubfolderFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📁 Filter by subfolder"/>
+                        </Grid>
+                        
+                        <!-- TextBox Grid with eye button (shown when expanded) -->
+                        <Grid x:Name="PresetSubfolderFilterTextBoxGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*" MinWidth="110"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetSubfolderFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="27"
+                                    Height="{Binding ElementName=PresetSubfolderFilterBox, Path=ActualHeight}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetSubfolderFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <TextBox x:Name="PresetSubfolderFilterBox" Grid.Column="1"
+                             Text="📁 Filter by subfolder..." 
+                             Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                             Padding="5"
+                             GotFocus="FilterTextBox_GotFocus" 
+                             LostFocus="FilterTextBox_LostFocus"
+                             TextChanged="PresetSubfolderFilterBox_TextChanged"
+                             MinWidth="110"/>
+                            <Button x:Name="PresetSubfolderClearButton" Grid.Column="2" 
+                            Content="✕" 
+                            Margin="3,0,0,0" Padding="3,0" FontSize="12" FontWeight="Bold"
+                            Click="ClearFilterButton_Click"
+                            ToolTip="Clear filter"
+                            Visibility="Collapsed"
+                            Style="{StaticResource BlueHoverButtonStyle}"
+                            Width="27"
+                            Height="{Binding ElementName=PresetSubfolderFilterBox, Path=ActualHeight}"/>
+                            <Button x:Name="PresetSubfolderSortButton" Grid.Column="3" 
+                            Content="⇅" 
+                            Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
+                            Click="PresetSubfolderSortButton_Click"
+                            ToolTip="Sort subfolders alphabetically"
+                            Style="{StaticResource BlueHoverButtonStyle}"
+                            Width="27"
+                            Height="{Binding ElementName=PresetSubfolderFilterBox, Path=ActualHeight}"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="PresetSubfolderFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="80" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="PresetSubfolderFilterList_SelectionChanged"
+                                 MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Preset Subfolder Filter Splitter -->
+                    <Border x:Name="PresetSubfolderFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="PresetSubfolderFilter"/>
+                    </Border>
+                    
+                    <!-- Preset Status Filter Section -->
+                    <StackPanel x:Name="PresetStatusFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="PresetStatusFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetStatusFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetStatusFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                        </Grid>
+                        
+                        <Grid x:Name="PresetStatusFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetStatusFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetStatusFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="PresetStatusFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="PresetStatusFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Preset Status Filter Splitter -->
+                    <Border x:Name="PresetStatusFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="PresetStatusFilter"/>
+                    </Border>
+                    
+                    <!-- Preset Date Filter Section -->
+                    <StackPanel x:Name="PresetDateFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="PresetDateFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetDateFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetDateFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                        </Grid>
+                        
+                        <Grid x:Name="PresetDateFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetDateFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetDateFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="PresetDateFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="PresetDateFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Preset Date Filter Splitter -->
+                    <Border x:Name="PresetDateFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="PresetDateFilter"/>
+                    </Border>
+                    
+                    <!-- Preset File Size Filter Section -->
+                    <StackPanel x:Name="PresetFileSizeFilterSection" Margin="0,6,0,0" Visibility="Collapsed">
+                        <Grid x:Name="PresetFileSizeFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetFileSizeFilterToggleButton" Grid.Column="0"
+                                    Content="👁️‍🗨️" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetFileSizeFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                        </Grid>
+                        
+                        <Grid x:Name="PresetFileSizeFilterExpandedGrid" Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PresetFileSizeFilterToggleButtonExpanded" Grid.Column="0"
+                                    Content="👁" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="0,0,6,0"
+                                    Padding="0" FontSize="15"
+                                    Click="ToggleFilterVisibility_Click"
+                                    Tag="PresetFileSizeFilter"
+                                    ToolTip="Toggle filter section visibility"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                        </Grid>
+                        
+                        <ListBox x:Name="PresetFileSizeFilterList"
+                                 VirtualizingStackPanel.IsVirtualizing="True"
+                                 VirtualizingStackPanel.VirtualizationMode="Recycling"
+                                 ScrollViewer.IsDeferredScrollingEnabled="True" 
+                                 Height="120" 
+                                 MinHeight="60" MaxHeight="200"
+                                 SelectionMode="Multiple" BorderThickness="1"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.CanContentScroll="True"
+                                 Style="{StaticResource FilterListBoxStyle}"
+                                 SelectionChanged="PresetFileSizeFilterList_SelectionChanged">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="5"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                                    <Setter Property="FontWeight" Value="Bold"/>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter Property="BorderBrush" Value="#FF6200EA"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </StackPanel>
+                    
+                    <!-- Preset File Size Filter Splitter -->
+                    <Border x:Name="PresetFileSizeFilterSplitter" Height="7" Margin="0,3,0,3" Background="Transparent" Visibility="Collapsed">
+                        <GridSplitter Height="1" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                      Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                      Cursor="SizeNS"
+                                      DragDelta="FilterSplitter_DragDelta"
+                                      DragCompleted="FilterSplitter_DragCompleted" 
+                                      Tag="PresetFileSizeFilter"/>
+                    </Border>
+                    
+                    </StackPanel>
+                    
                     </StackPanel>
                 </ScrollViewer>
                 
@@ -2207,7 +2940,7 @@ Off: Single selection, hide incompatible options"
                         </Button.Style>
                     </Button>
                     <Button Name="PackageSortButton" Grid.Row="1" Grid.Column="2" 
-                            Content="↕" 
+                            Content="⇅" 
                             Margin="2,6,0,0" Padding="0" FontSize="14" FontWeight="Bold"
                             Click="PackageSortButton_Click"
                             MouseWheel="PackageSortButton_MouseWheel"
@@ -2914,7 +3647,7 @@ Off: Single selection, hide incompatible options"
                             </Button.Style>
                         </Button>
                         <Button x:Name="DependenciesSortButton" Grid.Column="2" 
-                                Content="↕" 
+                                Content="⇅" 
                                 Margin="3,0,0,0" Padding="0" FontSize="15" FontWeight="Bold"
                                 Click="DependenciesSortButton_Click"
                                 MouseWheel="DependenciesSortButton_MouseWheel"
