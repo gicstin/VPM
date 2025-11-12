@@ -3237,6 +3237,8 @@ namespace VPM
                             newVisibility = !_settingsManager.Settings.DateFilterVisible;
                             _settingsManager.Settings.DateFilterVisible = newVisibility;
                             targetList = DateFilterList;
+                            expandedGrid = DateFilterExpandedGrid;
+                            collapsedGrid = DateFilterCollapsedGrid;
                             break;
                         case "StatusFilter":
                             newVisibility = !_settingsManager.Settings.StatusFilterVisible;
@@ -3393,6 +3395,172 @@ namespace VPM
                 {
                     // Ignore errors toggling filter visibility
                 }
+            }
+        }
+
+        #endregion
+
+        #region Filter Move Handlers
+
+        /// <summary>
+        /// Handles moving a filter up in the order
+        /// </summary>
+        private void FilterMoveUp_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string filterType)
+            {
+                MoveFilter(filterType, -1);
+            }
+        }
+
+        /// <summary>
+        /// Handles moving a filter down in the order
+        /// </summary>
+        private void FilterMoveDown_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is string filterType)
+            {
+                MoveFilter(filterType, 1);
+            }
+        }
+
+        /// <summary>
+        /// Moves a filter up or down in the order
+        /// </summary>
+        private void MoveFilter(string filterType, int direction)
+        {
+            try
+            {
+                // Get the appropriate filter order list based on current content mode
+                List<string> filterOrder = GetCurrentFilterOrder();
+                if (filterOrder == null)
+                    return;
+
+                // Find current index
+                int currentIndex = filterOrder.IndexOf(filterType);
+                if (currentIndex == -1)
+                    return;
+
+                // Calculate new index
+                int newIndex = currentIndex + direction;
+                if (newIndex < 0 || newIndex >= filterOrder.Count)
+                    return; // Can't move beyond bounds
+
+                // Swap positions
+                filterOrder.RemoveAt(currentIndex);
+                filterOrder.Insert(newIndex, filterType);
+
+                // Save the new order and refresh the UI
+                SaveCurrentFilterOrder(filterOrder);
+                RefreshFilterOrder();
+            }
+            catch (Exception)
+            {
+                // Ignore move errors
+            }
+        }
+
+        /// <summary>
+        /// Gets the current filter order list based on content mode
+        /// </summary>
+        private List<string> GetCurrentFilterOrder()
+        {
+            switch (_currentContentMode)
+            {
+                case "Packages":
+                    return _settingsManager.Settings.PackageFilterOrder;
+                case "Scenes":
+                    return _settingsManager.Settings.SceneFilterOrder;
+                case "Presets":
+                    return _settingsManager.Settings.PresetFilterOrder;
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Saves the current filter order to settings
+        /// </summary>
+        private void SaveCurrentFilterOrder(List<string> filterOrder)
+        {
+            switch (_currentContentMode)
+            {
+                case "Packages":
+                    _settingsManager.Settings.PackageFilterOrder = new List<string>(filterOrder);
+                    break;
+                case "Scenes":
+                    _settingsManager.Settings.SceneFilterOrder = new List<string>(filterOrder);
+                    break;
+                case "Presets":
+                    _settingsManager.Settings.PresetFilterOrder = new List<string>(filterOrder);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Refreshes the filter order in the UI
+        /// </summary>
+        private void RefreshFilterOrder()
+        {
+            try
+            {
+                // Get the filter container
+                var filterContainer = GetCurrentFilterContainer();
+                if (filterContainer == null)
+                    return;
+
+                // Get the current filter order
+                var filterOrder = GetCurrentFilterOrder();
+                if (filterOrder == null)
+                    return;
+
+                // Create a dictionary to store filter elements
+                var filterElements = new Dictionary<string, StackPanel>();
+
+                // Collect all filter StackPanels
+                for (int i = filterContainer.Children.Count - 1; i >= 0; i--)
+                {
+                    if (filterContainer.Children[i] is StackPanel stackPanel)
+                    {
+                        string filterType = GetFilterTypeFromStackPanel(stackPanel);
+                        if (!string.IsNullOrEmpty(filterType) && filterOrder.Contains(filterType))
+                        {
+                            filterElements[filterType] = stackPanel;
+                            filterContainer.Children.RemoveAt(i);
+                        }
+                    }
+                }
+
+                // Re-add filters in the correct order
+                foreach (string filterType in filterOrder)
+                {
+                    if (filterElements.ContainsKey(filterType))
+                    {
+                        filterContainer.Children.Add(filterElements[filterType]);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore refresh errors
+            }
+        }
+
+        /// <summary>
+        /// Gets the current filter container based on content mode
+        /// </summary>
+        private StackPanel GetCurrentFilterContainer()
+        {
+            switch (_currentContentMode)
+            {
+                case "Packages":
+                    return PackageFiltersContainer;
+                case "Scenes":
+                    return SceneFiltersContainer;
+                case "Presets":
+                    return PresetFiltersContainer;
+                default:
+                    return null;
             }
         }
 

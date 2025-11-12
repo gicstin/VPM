@@ -155,17 +155,12 @@ namespace VPM
                     SceneCreatorFilterSection.Visibility = Visibility.Collapsed;
                 if (SceneSourceFilterSection != null)
                     SceneSourceFilterSection.Visibility = Visibility.Collapsed;
-                if (SceneTypeFilterSplitter != null)
-                    SceneTypeFilterSplitter.Visibility = Visibility.Collapsed;
-                if (SceneCreatorFilterSplitter != null)
-                    SceneCreatorFilterSplitter.Visibility = Visibility.Collapsed;
-                if (SceneSourceFilterSplitter != null)
-                    SceneSourceFilterSplitter.Visibility = Visibility.Collapsed;
 
                 // Apply filter visibility states to ensure package filters are properly shown/hidden based on settings
                 if (_settingsManager?.Settings != null)
                 {
                     ApplyFilterVisibilityStates(_settingsManager.Settings);
+                    ApplyFilterPositions();
                 }
                 
                 // Enable optimize button in packages mode
@@ -230,18 +225,6 @@ namespace VPM
                     SceneFileSizeFilterSection.Visibility = Visibility.Visible;
                 if (SceneStatusFilterSection != null)
                     SceneStatusFilterSection.Visibility = Visibility.Visible;
-                if (SceneTypeFilterSplitter != null)
-                    SceneTypeFilterSplitter.Visibility = Visibility.Visible;
-                if (SceneCreatorFilterSplitter != null)
-                    SceneCreatorFilterSplitter.Visibility = Visibility.Visible;
-                if (SceneSourceFilterSplitter != null)
-                    SceneSourceFilterSplitter.Visibility = Visibility.Visible;
-                if (SceneDateFilterSplitter != null)
-                    SceneDateFilterSplitter.Visibility = Visibility.Visible;
-                if (SceneFileSizeFilterSplitter != null)
-                    SceneFileSizeFilterSplitter.Visibility = Visibility.Visible;
-                if (SceneStatusFilterSplitter != null)
-                    SceneStatusFilterSplitter.Visibility = Visibility.Visible;
 
                 // Load scenes if not already loaded
                 if (Scenes.Count == 0)
@@ -263,6 +246,7 @@ namespace VPM
                 if (_settingsManager?.Settings != null)
                 {
                     ApplyFilterVisibilityStates(_settingsManager.Settings);
+                    ApplyFilterPositions();
                     
                     // Ensure at least one scene filter is visible to avoid blank filter area
                     if (!_settingsManager.Settings.SceneTypeFilterVisible && 
@@ -331,12 +315,6 @@ namespace VPM
                     SceneCreatorFilterSection.Visibility = Visibility.Collapsed;
                 if (SceneSourceFilterSection != null)
                     SceneSourceFilterSection.Visibility = Visibility.Collapsed;
-                if (SceneTypeFilterSplitter != null)
-                    SceneTypeFilterSplitter.Visibility = Visibility.Collapsed;
-                if (SceneCreatorFilterSplitter != null)
-                    SceneCreatorFilterSplitter.Visibility = Visibility.Collapsed;
-                if (SceneSourceFilterSplitter != null)
-                    SceneSourceFilterSplitter.Visibility = Visibility.Collapsed;
 
                 // Show preset filters
                 if (PresetFiltersContainer != null)
@@ -352,16 +330,6 @@ namespace VPM
                 if (PresetStatusFilterSection != null)
                     PresetStatusFilterSection.Visibility = Visibility.Visible;
                 
-                if (PresetCategoryFilterSplitter != null)
-                    PresetCategoryFilterSplitter.Visibility = Visibility.Visible;
-                if (PresetSubfolderFilterSplitter != null)
-                    PresetSubfolderFilterSplitter.Visibility = Visibility.Visible;
-                if (PresetDateFilterSplitter != null)
-                    PresetDateFilterSplitter.Visibility = Visibility.Visible;
-                if (PresetFileSizeFilterSplitter != null)
-                    PresetFileSizeFilterSplitter.Visibility = Visibility.Visible;
-                if (PresetStatusFilterSplitter != null)
-                    PresetStatusFilterSplitter.Visibility = Visibility.Visible;
 
                 // Populate preset filters
                 if (CustomAtomItems.Count > 0)
@@ -383,6 +351,7 @@ namespace VPM
                 if (_settingsManager?.Settings != null)
                 {
                     ApplyFilterVisibilityStates(_settingsManager.Settings);
+                    ApplyFilterPositions();
                 }
                 
                 // Grey out optimize button in presets mode (not applicable)

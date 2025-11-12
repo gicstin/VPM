@@ -111,6 +111,11 @@ namespace VPM.Models
         private bool _disableMorphPreload = true;
         private bool _minifyJsonFiles = true;
         
+        // Filter Position Settings
+        private List<string> _packageFilterOrder = new List<string> { "DateFilter", "StatusFilter", "ContentTypesFilter", "CreatorsFilter", "LicenseTypeFilter", "FileSizeFilter", "SubfoldersFilter", "DamagedFilter" };
+        private List<string> _sceneFilterOrder = new List<string> { "SceneTypeFilter", "SceneCreatorFilter", "SceneSourceFilter", "SceneDateFilter", "SceneFileSizeFilter", "SceneStatusFilter" };
+        private List<string> _presetFilterOrder = new List<string> { "PresetCategoryFilter", "PresetSubfolderFilter", "PresetDateFilter", "PresetFileSizeFilter", "PresetStatusFilter" };
+
         // Sorting Settings
         private Dictionary<string, SerializableSortingState> _sortingStates = new Dictionary<string, SerializableSortingState>();
 
@@ -589,6 +594,25 @@ namespace VPM.Models
             set => SetProperty(ref _minifyJsonFiles, value);
         }
         
+        // Filter Position Settings Properties
+        public List<string> PackageFilterOrder
+        {
+            get => _packageFilterOrder;
+            set => SetProperty(ref _packageFilterOrder, value ?? new List<string> { "DateFilter", "StatusFilter", "ContentTypesFilter", "CreatorsFilter", "LicenseTypeFilter", "FileSizeFilter", "SubfoldersFilter", "DamagedFilter" });
+        }
+
+        public List<string> SceneFilterOrder
+        {
+            get => _sceneFilterOrder;
+            set => SetProperty(ref _sceneFilterOrder, value ?? new List<string> { "SceneTypeFilter", "SceneCreatorFilter", "SceneSourceFilter", "SceneDateFilter", "SceneFileSizeFilter", "SceneStatusFilter" });
+        }
+
+        public List<string> PresetFilterOrder
+        {
+            get => _presetFilterOrder;
+            set => SetProperty(ref _presetFilterOrder, value ?? new List<string> { "PresetCategoryFilter", "PresetSubfolderFilter", "PresetDateFilter", "PresetFileSizeFilter", "PresetStatusFilter" });
+        }
+
         // Sorting Settings Properties
         public Dictionary<string, SerializableSortingState> SortingStates
         {
@@ -692,6 +716,9 @@ namespace VPM.Models
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,
                 MinifyJsonFiles = true,
+                PackageFilterOrder = new List<string> { "DateFilter", "StatusFilter", "ContentTypesFilter", "CreatorsFilter", "LicenseTypeFilter", "FileSizeFilter", "SubfoldersFilter", "DamagedFilter" },
+                SceneFilterOrder = new List<string> { "SceneTypeFilter", "SceneCreatorFilter", "SceneSourceFilter", "SceneDateFilter", "SceneFileSizeFilter", "SceneStatusFilter" },
+                PresetFilterOrder = new List<string> { "PresetCategoryFilter", "PresetSubfolderFilter", "PresetDateFilter", "PresetFileSizeFilter", "PresetStatusFilter" },
                 SortingStates = new Dictionary<string, SerializableSortingState>()
             };
         }

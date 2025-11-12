@@ -379,6 +379,9 @@ namespace VPM
                 // Apply filter visibility states
                 ApplyFilterVisibilityStates(settings);
                 
+                // Apply saved filter positions
+                ApplyFilterPositions();
+                
                 
                 // Ensure the ScrollViewer can scroll to show content
                 var scrollViewer = FilterGrid.Parent as ScrollViewer;
@@ -589,6 +592,101 @@ namespace VPM
                 RefreshImageDisplay();
             }
             
+        }
+
+        /// <summary>
+        /// Applies saved filter positions from settings on startup
+        /// </summary>
+        public void ApplyFilterPositions()
+        {
+            try
+            {
+                // Apply filter positions based on current content mode
+                switch (_currentContentMode)
+                {
+                    case "Packages":
+                        ApplyFilterOrder(_settingsManager.Settings.PackageFilterOrder, PackageFiltersContainer);
+                        break;
+                    case "Scenes":
+                        ApplyFilterOrder(_settingsManager.Settings.SceneFilterOrder, SceneFiltersContainer);
+                        break;
+                    case "Presets":
+                        ApplyFilterOrder(_settingsManager.Settings.PresetFilterOrder, PresetFiltersContainer);
+                        break;
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore errors applying filter positions
+            }
+        }
+
+        /// <summary>
+        /// Applies a specific filter order to a container
+        /// </summary>
+        private void ApplyFilterOrder(List<string> filterOrder, StackPanel container)
+        {
+            if (filterOrder == null || container == null)
+                return;
+
+            try
+            {
+                // Create a dictionary to store filter elements
+                var filterElements = new Dictionary<string, StackPanel>();
+
+                // Collect all filter StackPanels
+                for (int i = container.Children.Count - 1; i >= 0; i--)
+                {
+                    if (container.Children[i] is StackPanel stackPanel)
+                    {
+                        string filterType = GetFilterTypeFromStackPanel(stackPanel);
+                        if (!string.IsNullOrEmpty(filterType) && filterOrder.Contains(filterType))
+                        {
+                            filterElements[filterType] = stackPanel;
+                            container.Children.RemoveAt(i);
+                        }
+                    }
+                }
+
+                // Re-add filters in the correct order
+                foreach (string filterType in filterOrder)
+                {
+                    if (filterElements.ContainsKey(filterType))
+                    {
+                        container.Children.Add(filterElements[filterType]);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore errors applying filter order
+            }
+        }
+
+        /// <summary>
+        /// Gets the filter type from a StackPanel by examining its child elements
+        /// </summary>
+        private string GetFilterTypeFromStackPanel(StackPanel stackPanel)
+        {
+            // Look for a Grid with a toggle Button (eye button) that has a Tag
+            foreach (var child in stackPanel.Children)
+            {
+                if (child is Grid grid)
+                {
+                    foreach (var gridChild in grid.Children)
+                    {
+                        if (gridChild is Button button && button.Tag is string tag)
+                        {
+                            // Look for the toggle button specifically (contains eye emoji)
+                            if (button.Content?.ToString()?.Contains("👁") == true)
+                            {
+                                return tag;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
         }
         
         /// <summary>
