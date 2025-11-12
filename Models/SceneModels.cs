@@ -352,5 +352,159 @@ namespace VPM.Models
         public List<string> ClothingItems { get; set; } = new List<string>();
         public List<string> MorphItems { get; set; } = new List<string>();
     }
+
+    /// <summary>
+    /// Represents a custom atom person file (.vap) with metadata and preview information
+    /// </summary>
+    public class CustomAtomItem : INotifyPropertyChanged
+    {
+        private string _name = "";
+        private string _displayName = "";
+        private string _filePath = "";
+        private string _thumbnailPath = "";
+        private string _category = "";
+        private string _subfolder = "";
+        private DateTime? _modifiedDate = null;
+        private long _fileSize = 0;
+        private bool _isFavorite = false;
+        private bool _isHidden = false;
+
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        /// <summary>
+        /// Full name of the .vap file (with extension)
+        /// </summary>
+        public string Name
+        {
+            get => _name;
+            set => SetProperty(ref _name, value);
+        }
+
+        /// <summary>
+        /// Display name (without extension, cleaned up)
+        /// </summary>
+        public string DisplayName
+        {
+            get => _displayName;
+            set => SetProperty(ref _displayName, value);
+        }
+
+        /// <summary>
+        /// Full path to the .vap file
+        /// </summary>
+        public string FilePath
+        {
+            get => _filePath;
+            set => SetProperty(ref _filePath, value);
+        }
+
+        /// <summary>
+        /// Path to the thumbnail image (if exists)
+        /// </summary>
+        public string ThumbnailPath
+        {
+            get => _thumbnailPath;
+            set
+            {
+                if (SetProperty(ref _thumbnailPath, value))
+                {
+                    OnPropertyChanged(nameof(HasThumbnail));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Category (Hair, Clothing, Morphs, etc.)
+        /// </summary>
+        public string Category
+        {
+            get => _category;
+            set => SetProperty(ref _category, value);
+        }
+
+        /// <summary>
+        /// Subfolder path relative to Custom\Atom\Person
+        /// </summary>
+        public string Subfolder
+        {
+            get => _subfolder;
+            set => SetProperty(ref _subfolder, value);
+        }
+
+        /// <summary>
+        /// Last modified date of the file
+        /// </summary>
+        public DateTime? ModifiedDate
+        {
+            get => _modifiedDate;
+            set
+            {
+                if (SetProperty(ref _modifiedDate, value))
+                {
+                    OnPropertyChanged(nameof(DateFormatted));
+                }
+            }
+        }
+
+        /// <summary>
+        /// File size in bytes
+        /// </summary>
+        public long FileSize
+        {
+            get => _fileSize;
+            set
+            {
+                if (SetProperty(ref _fileSize, value))
+                {
+                    OnPropertyChanged(nameof(FileSizeFormatted));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether the item has a thumbnail image
+        /// </summary>
+        public bool HasThumbnail
+        {
+            get => !string.IsNullOrEmpty(_thumbnailPath);
+        }
+
+        /// <summary>
+        /// Whether the item is marked as favorite
+        /// </summary>
+        public bool IsFavorite
+        {
+            get => _isFavorite;
+            set => SetProperty(ref _isFavorite, value);
+        }
+
+        /// <summary>
+        /// Whether the item is marked as hidden
+        /// </summary>
+        public bool IsHidden
+        {
+            get => _isHidden;
+            set => SetProperty(ref _isHidden, value);
+        }
+
+        // Display properties
+        public string FileSizeFormatted => SceneItem.FormatFileSize(FileSize);
+        public string DateFormatted => ModifiedDate?.ToString("MMM dd, yyyy") ?? "Unknown";
+
+        protected virtual bool SetProperty<T>(ref T backingStore, T value, [CallerMemberName] string propertyName = "")
+        {
+            if (EqualityComparer<T>.Default.Equals(backingStore, value))
+                return false;
+
+            backingStore = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = "")
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
 }
 

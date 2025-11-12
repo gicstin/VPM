@@ -748,11 +748,11 @@
                     <!-- Content Mode Switch Button -->
                     <Button x:Name="ContentModeSwitchButton"
                             Grid.Column="0"
-                            Content="⇄ Scenes"
+                            Content="🎬 Scenes"
                             Height="{StaticResource LinkedButtonHeight}"
                             Padding="6,6"
                             Click="ContentModeSwitchButton_Click"
-                            ToolTip="Switch between Packages and Scenes mode"
+                            ToolTip="Switch between Packages, Scenes, and Presets mode"
                             Style="{StaticResource BlueHoverButtonStyle}"
                             Margin="0,0,6,0"
                             HorizontalAlignment="Stretch"/>
@@ -768,7 +768,7 @@ Off: Single selection, hide incompatible options"
                             Style="{StaticResource BlueHoverButtonStyle}"
                             Margin="0,0,6,0">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="🔗 " FontSize="15" VerticalAlignment="Center"/>
+                            <TextBlock Text="📦 " FontSize="15" VerticalAlignment="Center"/>
                             <TextBlock x:Name="LinkedStatusText" Text="Off" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
@@ -1694,7 +1694,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=SceneTypeFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="SceneTypeSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="↔" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="SceneTypeSortButton_Click"
                             ToolTip="Sort scene types alphabetically"
@@ -1806,7 +1806,7 @@ Off: Single selection, hide incompatible options"
                             Width="27"
                             Height="{Binding ElementName=SceneCreatorFilterBox, Path=ActualHeight}"/>
                             <Button x:Name="SceneCreatorSortButton" Grid.Column="3" 
-                            Content="↕" 
+                            Content="↔" 
                             Margin="3,0,0,0" Padding="0" FontSize="12" FontWeight="Bold"
                             Click="SceneCreatorSortButton_Click"
                             ToolTip="Sort scene creators"
@@ -2063,7 +2063,7 @@ Off: Single selection, hide incompatible options"
                                 Visibility="Collapsed">
                             <Button.Content>
                                 <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="👁️ " FontSize="14" FontWeight="Bold" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" VerticalAlignment="Center"/>
+                                    <TextBlock Text="🙈 " FontSize="14" FontWeight="Bold" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" VerticalAlignment="Center"/>
                                     <TextBlock Text="Hide" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Button.Content>
@@ -2155,6 +2155,31 @@ Off: Single selection, hide incompatible options"
                             <Style TargetType="Button" BasedOn="{StaticResource BlueHoverButtonStyle}">
                                 <Setter Property="Width" Value="{Binding ElementName=SceneSearchBox, Path=ActualHeight}"/>
                                 <Setter Property="Height" Value="{Binding ElementName=SceneSearchBox, Path=ActualHeight}"/>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    
+                    <!-- Presets Search Box (hidden by default) -->
+                    <TextBox Name="CustomAtomSearchBox" Grid.Row="1" Grid.Column="0" Margin="0,6,0,0"
+                             Text="🔍 Filter presets by name..." 
+                             Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                             Padding="5"
+                             GotFocus="FilterTextBox_GotFocus" 
+                             LostFocus="FilterTextBox_LostFocus"
+                             TextChanged="CustomAtomSearchBox_TextChanged"
+                             Visibility="Collapsed"/>
+                    <Button Name="CustomAtomSearchClearButton" Grid.Row="1" Grid.Column="1" 
+                            Content="✕" 
+                            Margin="3,6,0,0" Padding="3,0" FontSize="12" FontWeight="Bold"
+                            Click="ClearCustomAtomFilterButton_Click"
+                            ToolTip="Clear filter"
+                            Visibility="Collapsed"
+                            VerticalAlignment="Center"
+                            MinWidth="30">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource BlueHoverButtonStyle}">
+                                <Setter Property="Width" Value="{Binding ElementName=CustomAtomSearchBox, Path=ActualHeight}"/>
+                                <Setter Property="Height" Value="{Binding ElementName=CustomAtomSearchBox, Path=ActualHeight}"/>
                             </Style>
                         </Button.Style>
                     </Button>
@@ -2358,7 +2383,7 @@ Off: Single selection, hide incompatible options"
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="❤️" Foreground="#FF6B6B" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Marked as favorite" Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}"/>
-                                            <TextBlock FontSize="14" FontWeight="Bold" Text="👁️" Foreground="#6B9EFF" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Hidden" Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="🙈" Foreground="#6B9EFF" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Hidden" Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding OptimizationIcon}" Foreground="#FFD700" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Scene has been optimized"/>
                                             <TextBlock FontSize="11" Foreground="#888888" Text=" • " Margin="6,0" VerticalAlignment="Center"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding SceneType}" VerticalAlignment="Center"/>
@@ -2371,6 +2396,75 @@ Off: Single selection, hide incompatible options"
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding AtomCountDisplay}" FontWeight="Bold"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Deps: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding DependencyCount}" FontWeight="Bold"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Size: "/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding FileSizeFormatted}" FontWeight="Bold"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Date: "/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding DateFormatted}" FontWeight="Bold"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                
+                <!-- Custom Atom Items List -->
+                <DataGrid x:Name="CustomAtomDataGrid" Grid.Row="1" BorderThickness="1" SelectionMode="Extended"
+                          SelectionChanged="CustomAtomDataGrid_SelectionChanged"
+                          MouseDoubleClick="CustomAtomDataGrid_MouseDoubleClick"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.CanContentScroll="True"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="False"
+                          ScrollViewer.IsDeferredScrollingEnabled="False"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="True"
+                          CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          IsReadOnly="True"
+                          GridLinesVisibility="Horizontal"
+                          HeadersVisibility="None"
+                          RowHeaderWidth="0"
+                          RowHeight="65"
+                          Background="Transparent"
+                          Margin="0,0,0,8"
+                          FontSize="12"
+                          RowStyle="{StaticResource RoundedDataGridRowStyle}"
+                          Visibility="Collapsed">
+                    <DataGrid.Resources>
+                        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource DataGridScrollBarStyle}"/>
+                    </DataGrid.Resources>
+                    <DataGrid.Columns>
+                        <!-- Thumbnail Column -->
+                        <DataGridTemplateColumn Width="70" IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="#1e1e1e" BorderBrush="#444444" BorderThickness="1" CornerRadius="{StaticResource CornerRadiusValue}" Margin="3" Width="60" Height="60" ClipToBounds="True">
+                                        <Image Source="{Binding ThumbnailPath}" Stretch="UniformToFill" StretchDirection="Both"/>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        
+                        <!-- Custom Atom Item Info Column -->
+                        <DataGridTemplateColumn Width="*" IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="8" Orientation="Vertical">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="❤️" Foreground="#FF6B6B" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Marked as favorite" Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock FontSize="14" FontWeight="Bold" Text="🙈" Foreground="#6B9EFF" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Hidden" Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}"/>
+                                            <TextBlock FontSize="11" Foreground="#888888" Text=" • " Margin="6,0" VerticalAlignment="Center"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding Category}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="Path: "/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding Subfolder}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Size: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding FileSizeFormatted}" FontWeight="Bold"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Date: "/>

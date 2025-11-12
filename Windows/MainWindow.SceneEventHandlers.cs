@@ -23,8 +23,14 @@ namespace VPM
         /// </summary>
         private void ContentModeSwitchButton_Click(object sender, RoutedEventArgs e)
         {
-            // Toggle between Packages and Scenes
-            string newMode = _currentContentMode == "Packages" ? "Scenes" : "Packages";
+            // Cycle through Packages -> Scenes -> Presets -> Packages
+            string newMode = _currentContentMode switch
+            {
+                "Packages" => "Scenes",
+                "Scenes" => "Presets",
+                "Presets" => "Packages",
+                _ => "Packages"
+            };
             SwitchContentMode(newMode);
         }
 
@@ -40,7 +46,7 @@ namespace VPM
         }
 
         /// <summary>
-        /// Switches between Packages and Scenes content mode
+        /// Switches between Packages, Scenes, and Presets content mode
         /// </summary>
         private void SwitchContentMode(string mode)
         {
@@ -49,10 +55,26 @@ namespace VPM
 
             _currentContentMode = mode;
 
-            // Update the mode switch button text to show the opposite mode
+            // Update the mode switch button text to show the next mode
             if (ContentModeSwitchButton != null)
             {
-                ContentModeSwitchButton.Content = mode == "Packages" ? "‡„ Scenes" : "‡„ Packages";
+                string nextMode = mode switch
+                {
+                    "Packages" => "Scenes",
+                    "Scenes" => "Presets",
+                    "Presets" => "Packages",
+                    _ => "Packages"
+                };
+                
+                string icon = nextMode switch
+                {
+                    "Packages" => "📦",
+                    "Scenes" => "🎬",
+                    "Presets" => "🎨",
+                    _ => "📦"
+                };
+                
+                ContentModeSwitchButton.Content = $"{icon} {nextMode}";
             }
 
             // Update button styles
@@ -159,6 +181,65 @@ namespace VPM
                     PopulateSceneTypeFilter();
                     PopulateSceneCreatorFilter();
                     PopulateSceneSourceFilter();
+                }
+            }
+            else if (mode == "Presets")
+            {
+                // Show custom atom data grid, hide others
+                PackageDataGrid.Visibility = Visibility.Collapsed;
+                ScenesDataGrid.Visibility = Visibility.Collapsed;
+                if (CustomAtomDataGrid != null)
+                    CustomAtomDataGrid.Visibility = Visibility.Visible;
+                
+                // Show custom atom search box, hide others
+                PackageSearchBox.Visibility = Visibility.Collapsed;
+                PackageSearchClearButton.Visibility = Visibility.Collapsed;
+                SceneSearchBox.Visibility = Visibility.Collapsed;
+                SceneSearchClearButton.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchBox != null)
+                    CustomAtomSearchBox.Visibility = Visibility.Visible;
+                if (CustomAtomSearchClearButton != null)
+                    CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
+                
+                // Enable sorting button
+                PackageSortButton.IsEnabled = true;
+                PackageSortButton.ToolTip = "Sort presets";
+                
+                // Enable Favorite and Hide buttons in presets mode
+                if (FavoriteToggleButton != null)
+                    FavoriteToggleButton.IsEnabled = true;
+                if (AutoInstallToggleButton != null)
+                    AutoInstallToggleButton.Visibility = Visibility.Collapsed;
+                if (HideToggleButton != null)
+                {
+                    HideToggleButton.Visibility = Visibility.Visible;
+                    HideToggleButton.IsEnabled = true;
+                }
+                
+                // Hide dependencies tabs
+                DependenciesTabsContainer.Visibility = Visibility.Collapsed;
+                DependentsTab.Visibility = Visibility.Collapsed;
+                
+                // Hide all filters
+                if (PackageFiltersContainer != null)
+                    PackageFiltersContainer.Visibility = Visibility.Collapsed;
+                if (SceneTypeFilterSection != null)
+                    SceneTypeFilterSection.Visibility = Visibility.Collapsed;
+                if (SceneCreatorFilterSection != null)
+                    SceneCreatorFilterSection.Visibility = Visibility.Collapsed;
+                if (SceneSourceFilterSection != null)
+                    SceneSourceFilterSection.Visibility = Visibility.Collapsed;
+                if (SceneTypeFilterSplitter != null)
+                    SceneTypeFilterSplitter.Visibility = Visibility.Collapsed;
+                if (SceneCreatorFilterSplitter != null)
+                    SceneCreatorFilterSplitter.Visibility = Visibility.Collapsed;
+                if (SceneSourceFilterSplitter != null)
+                    SceneSourceFilterSplitter.Visibility = Visibility.Collapsed;
+
+                // Load presets if not already loaded
+                if (CustomAtomItems.Count == 0)
+                {
+                    _ = LoadCustomAtomItemsAsync();
                 }
             }
         }
@@ -772,10 +853,14 @@ namespace VPM
         }
 
         /// <summary>
-        /// Handles double-click on scene in the grid - opens folder and selects the scene file
+        /// Handles double-click on scene in the grid - opens folder and selects the scene file (Shift+Double-click)
         /// </summary>
         private void ScenesDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            // Only handle if Shift is held
+            if (!Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
+                return;
+
             try
             {
                 // Get the selected scene
@@ -787,6 +872,7 @@ namespace VPM
                         // Open folder and select the file
                         OpenFolderAndSelectFile(scene.FilePath);
                         SetStatus($"Opened folder for: {scene.DisplayName}");
+                        e.Handled = true;
                     }
                     else
                     {
@@ -797,6 +883,40 @@ namespace VPM
             catch (Exception ex)
             {
                 SetStatus($"Failed to open scene folder: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Handles double-click on custom atom item in the grid - opens folder and selects the file (Shift+Double-click)
+        /// </summary>
+        private void CustomAtomDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            // Only handle if Shift is held
+            if (!Keyboard.IsKeyDown(Key.LeftShift) && !Keyboard.IsKeyDown(Key.RightShift))
+                return;
+
+            try
+            {
+                // Get the selected custom atom item
+                if (CustomAtomDataGrid?.SelectedItem is CustomAtomItem item && !string.IsNullOrEmpty(item.FilePath))
+                {
+                    // Check if file exists
+                    if (System.IO.File.Exists(item.FilePath))
+                    {
+                        // Open folder and select the file
+                        OpenFolderAndSelectFile(item.FilePath);
+                        SetStatus($"Opened folder for: {item.DisplayName}");
+                        e.Handled = true;
+                    }
+                    else
+                    {
+                        SetStatus($"Custom atom file not found: {item.FilePath}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Failed to open custom atom folder: {ex.Message}");
             }
         }
     }

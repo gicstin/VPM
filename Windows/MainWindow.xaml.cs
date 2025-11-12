@@ -38,8 +38,10 @@ namespace VPM
         public OptimizedObservableCollection<PackageItem> Packages { get; set; }
         public AsyncObservableCollection<DependencyItem> Dependencies { get; set; }
         public OptimizedObservableCollection<SceneItem> Scenes { get; set; }
+        public OptimizedObservableCollection<CustomAtomItem> CustomAtomItems { get; set; }
         public ICollectionView PackagesView { get; set; }
         public ICollectionView ScenesView { get; set; }
+        public ICollectionView CustomAtomItemsView { get; set; }
         
         // Service managers
         private PackageManager _packageManager;
@@ -50,6 +52,7 @@ namespace VPM
         private KeyboardNavigationManager _keyboardNavigationManager;
         private PackageFileManager _packageFileManager;
         private SceneScanner _sceneScanner;
+        private CustomAtomPersonScanner _customAtomPersonScanner;
 
         private string _cacheFolder;
         
@@ -89,6 +92,7 @@ namespace VPM
             Packages = new OptimizedObservableCollection<PackageItem>();
             Dependencies = new AsyncObservableCollection<DependencyItem>();
             Scenes = new OptimizedObservableCollection<SceneItem>();
+            CustomAtomItems = new OptimizedObservableCollection<CustomAtomItem>();
 
             var packagesSource = (CollectionViewSource)FindResource("PackagesView");
             packagesSource.Source = Packages;
@@ -96,6 +100,9 @@ namespace VPM
 
             var scenesSource = new CollectionViewSource { Source = Scenes };
             ScenesView = scenesSource.View;
+
+            var customAtomItemsSource = new CollectionViewSource { Source = CustomAtomItems };
+            CustomAtomItemsView = customAtomItemsSource.View;
 
             // Initialize settings manager first
             _settingsManager = new SettingsManager();
@@ -124,10 +131,11 @@ namespace VPM
             // Initialize PackageFileManager if we have a selected folder
             InitializePackageFileManager();
 
-            // Initialize SceneScanner
+            // Initialize SceneScanner and CustomAtomPersonScanner
             if (!string.IsNullOrEmpty(_settingsManager.Settings.SelectedFolder))
             {
                 _sceneScanner = new SceneScanner(_settingsManager.Settings.SelectedFolder);
+                _customAtomPersonScanner = new CustomAtomPersonScanner(_settingsManager.Settings.SelectedFolder);
             }
 
             // Initialize keyboard navigation manager
@@ -182,10 +190,10 @@ namespace VPM
             InitializeDependenciesTabs();
 
             // Initialize content mode switch button text
-            // App starts in Packages mode, so button should show "Scenes" (the opposite)
+            // App starts in Packages mode, so button should show "Scenes" (the next mode)
             if (ContentModeSwitchButton != null)
             {
-                ContentModeSwitchButton.Content = "⇄ Scenes";
+                ContentModeSwitchButton.Content = "🎬 Scenes";
             }
 
         }

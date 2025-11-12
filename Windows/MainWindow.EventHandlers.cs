@@ -2022,6 +2022,10 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
             System.Diagnostics.Debug.WriteLine($"[SCENE DEBUG] OnWindowLoaded: Binding ScenesDataGrid ItemsSource");
             ScenesDataGrid.ItemsSource = ScenesView;
             
+            // Bind CustomAtomDataGrid ItemsSource to CustomAtomItemsView for filtering support
+            if (CustomAtomDataGrid != null)
+                CustomAtomDataGrid.ItemsSource = CustomAtomItemsView;
+            
             // Initialize button states
             UpdateLinkedFiltersButtonState();
             
