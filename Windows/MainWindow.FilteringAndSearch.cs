@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -603,10 +603,10 @@ namespace VPM
                 }
                 else
                 {
-                    // Filter dependencies by text - using StartsWith for consistent search behavior
+                    // Filter dependencies by text - using ContainsSearch for partial term matching
                     foreach (var dep in _originalDependencies)
                     {
-                        if (VPM.Services.SearchHelper.StartsWithSearch(dep.Name, filterText))
+                        if (VPM.Services.SearchHelper.ContainsSearch(dep.Name, filterText))
                         {
                             Dependencies.Add(dep);
                         }
@@ -1361,11 +1361,10 @@ namespace VPM
                 if (hasActiveDateFilter)
                 {
                     // Hide non-selected items when date filter is active
-                    var itemsToRemove = new List<ListBoxItem>();
-                    foreach (ListBoxItem item in DateFilterList.Items)
+                    var itemsToRemove = new List<string>();
+                    foreach (string item in DateFilterList.Items)
                     {
-                        var itemText = item.Content?.ToString() ?? "";
-                        if (!selectedItems.Contains(itemText))
+                        if (!selectedItems.Contains(item))
                         {
                             itemsToRemove.Add(item);
                         }
@@ -1420,17 +1419,12 @@ namespace VPM
                     foreach (var option in dateOptions)
                     {
                         var displayText = option.Tag == "CustomRange" ? option.Text : $"{option.Text} ({option.Count})";
-                        var listItem = new ListBoxItem
-                        {
-                            Content = displayText,
-                            Tag = option.Tag
-                        };
-                        DateFilterList.Items.Add(listItem);
+                        DateFilterList.Items.Add(displayText);
                         
                         // Restore selection
                         if (option.Tag == selectedTag)
                         {
-                            DateFilterList.SelectedItem = listItem;
+                            DateFilterList.SelectedItem = displayText;
                         }
                     }
                 }
@@ -1459,7 +1453,7 @@ namespace VPM
                 
                 foreach (var category in categoryCounts.OrderBy(c => c.Key))
                 {
-                    if (VPM.Services.SearchHelper.StartsWithSearch(category.Key, filterText))
+                    if (VPM.Services.SearchHelper.ContainsSearch(category.Key, filterText))
                     {
                         var displayText = $"{category.Key} ({category.Value})";
                         ContentTypesList.Items.Add(displayText);
@@ -1490,7 +1484,7 @@ namespace VPM
                 
                 foreach (var creator in creatorCounts.OrderBy(c => c.Key))
                 {
-                    if (VPM.Services.SearchHelper.StartsWithSearch(creator.Key, filterText))
+                    if (VPM.Services.SearchHelper.ContainsSearch(creator.Key, filterText))
                     {
                         var displayText = $"{creator.Key} ({creator.Value})";
                         CreatorsList.Items.Add(displayText);
@@ -1521,7 +1515,7 @@ namespace VPM
                 
                 foreach (var license in licenseCounts.OrderBy(l => l.Key))
                 {
-                    if (VPM.Services.SearchHelper.StartsWithSearch(license.Key, filterText))
+                    if (VPM.Services.SearchHelper.ContainsSearch(license.Key, filterText))
                     {
                         var displayText = $"{license.Key} ({license.Value})";
                         LicenseTypeList.Items.Add(displayText);
@@ -1552,7 +1546,7 @@ namespace VPM
                 
                 foreach (var subfolder in subfolderCounts.OrderBy(s => s.Key))
                 {
-                    if (VPM.Services.SearchHelper.StartsWithSearch(subfolder.Key, filterText))
+                    if (VPM.Services.SearchHelper.ContainsSearch(subfolder.Key, filterText))
                     {
                         var displayText = $"{subfolder.Key} ({subfolder.Value})";
                         SubfoldersFilterList.Items.Add(displayText);

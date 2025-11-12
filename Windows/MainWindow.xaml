@@ -745,17 +745,105 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     
-                    <!-- Content Mode Switch Button -->
-                    <Button x:Name="ContentModeSwitchButton"
-                            Grid.Column="0"
-                            Content="🎬 Scenes"
-                            Height="{StaticResource LinkedButtonHeight}"
-                            Padding="6,6"
-                            Click="ContentModeSwitchButton_Click"
-                            ToolTip="Switch between Packages, Scenes, and Presets mode"
-                            Style="{StaticResource BlueHoverButtonStyle}"
-                            Margin="0,0,6,0"
-                            HorizontalAlignment="Stretch"/>
+                    <!-- Content Mode Switch Dropdown -->
+                    <ComboBox x:Name="ContentModeDropdown"
+                              Grid.Column="0"
+                              Height="{StaticResource LinkedButtonHeight}"
+                              Padding="6,6"
+                              SelectionChanged="ContentModeDropdown_SelectionChanged"
+                              ToolTip="Select between Packages, Scenes, and Presets mode"
+                              Margin="0,0,6,0"
+                              HorizontalAlignment="Stretch"
+                              VerticalContentAlignment="Center"
+                              Background="#2d2d2d"
+                              Foreground="White"
+                              BorderBrush="#404040"
+                              BorderThickness="1">
+                        <ComboBox.Template>
+                            <ControlTemplate TargetType="ComboBox">
+                                <Grid>
+                                    <ToggleButton Grid.Column="0"
+                                                  Name="ToggleButton"
+                                                  Grid.ColumnSpan="2"
+                                                  Focusable="false"
+                                                  IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                  ClickMode="Press"
+                                                  Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                  Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                                  BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                                  BorderThickness="1">
+                                        <ToggleButton.Template>
+                                            <ControlTemplate TargetType="ToggleButton">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FF0078D7"/>
+                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsPressed" Value="True">
+                                                        <Setter Property="Background" Value="#007ACC"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter Property="BorderBrush" Value="#FF0078D7"/>
+                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </ToggleButton.Template>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="Mode" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}"/>
+                                            <TextBlock Text="▼" FontSize="10" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ContentPresenter Name="ContentPresenter"
+                                                      IsHitTestVisible="false"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                      Margin="3,3,23,3"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      Visibility="Collapsed"/>
+                                    <Popup Name="Popup"
+                                           Placement="Bottom"
+                                           IsOpen="{TemplateBinding IsDropDownOpen}"
+                                           AllowsTransparency="True"
+                                           Focusable="False"
+                                           PopupAnimation="Slide">
+                                        <Grid Name="DropDown"
+                                              SnapsToDevicePixels="True"
+                                              MinWidth="{TemplateBinding ActualWidth}"
+                                              MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                            <Border x:Name="DropDownBorder"
+                                                    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                                    CornerRadius="4">
+                                                <ScrollViewer SnapsToDevicePixels="True">
+                                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                        </Grid>
+                                    </Popup>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="HasItems" Value="false">
+                                        <Setter TargetName="DropDownBorder" Property="MinHeight" Value="95"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ComboBox.Template>
+                        <ComboBoxItem Content="📦 Packages"/>
+                        <ComboBoxItem Content="🎬 Scenes"/>
+                        <ComboBoxItem Content="🎨 Presets"/>
+                    </ComboBox>
                     
                     <!-- Linked Filters Button (Icon + Status) -->
                     <Button x:Name="LinkedFiltersButton"
@@ -1979,7 +2067,7 @@ Off: Single selection, hide incompatible options"
         <Border Grid.Column="2" Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" 
                 BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" 
                 BorderThickness="1" CornerRadius="6">
-            <Grid Margin="6">
+            <Grid Margin="6,6,0,6">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>

@@ -91,15 +91,15 @@ namespace VPM
             }
             else
             {
-                // Use StartsWith for consistent search behavior across all searchboxes
+                // Use ContainsSearch for partial term matching across all searchboxes
                 // No string allocations - StringComparison.OrdinalIgnoreCase is faster than ToLowerInvariant()
                 ScenesView.Filter = obj =>
                 {
                     if (obj is SceneItem scene)
                     {
-                        return VPM.Services.SearchHelper.StartsWithSearch(scene.DisplayName, searchText) ||
-                               VPM.Services.SearchHelper.StartsWithSearch(scene.Creator, searchText) ||
-                               VPM.Services.SearchHelper.StartsWithSearch(scene.SceneType, searchText);
+                        return VPM.Services.SearchHelper.ContainsSearch(scene.DisplayName, searchText) ||
+                               VPM.Services.SearchHelper.ContainsSearch(scene.Creator, searchText) ||
+                               VPM.Services.SearchHelper.ContainsSearch(scene.SceneType, searchText);
                     }
                     return true;
                 };

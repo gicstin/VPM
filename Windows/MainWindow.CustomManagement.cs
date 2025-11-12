@@ -21,11 +21,8 @@ namespace VPM
         /// </summary>
         public async Task LoadCustomAtomItemsAsync()
         {
-            System.Diagnostics.Debug.WriteLine("[CUSTOM ATOM] LoadCustomAtomItemsAsync called");
-            
             if (_customAtomPersonScanner == null)
             {
-                System.Diagnostics.Debug.WriteLine("[CUSTOM ATOM] Scanner is null!");
                 return;
             }
 
@@ -33,9 +30,7 @@ namespace VPM
             {
                 await Task.Run(() =>
                 {
-                    System.Diagnostics.Debug.WriteLine("[CUSTOM ATOM] Starting scan...");
                     var items = _customAtomPersonScanner.ScanCustomAtomPerson();
-                    System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Scan returned {items.Count} items");
                     
                     Application.Current.Dispatcher.Invoke(() =>
                     {
@@ -56,13 +51,11 @@ namespace VPM
                         
                         CustomAtomItems.ReplaceAll(items);
                         SetStatus($"Loaded {items.Count} custom atom item(s)");
-                        System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] UI updated with {items.Count} items");
                     });
                 });
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Exception: {ex.Message}");
                 SetStatus($"Error loading custom atom items: {ex.Message}");
             }
         }

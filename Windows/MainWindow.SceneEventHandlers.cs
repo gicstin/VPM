@@ -19,19 +19,25 @@ namespace VPM
         private string _currentContentMode = "Packages";
 
         /// <summary>
-        /// Handles the single content mode switch button click
+        /// Handles the content mode dropdown selection changed
         /// </summary>
-        private void ContentModeSwitchButton_Click(object sender, RoutedEventArgs e)
+        private void ContentModeDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Cycle through Packages -> Scenes -> Presets -> Packages
-            string newMode = _currentContentMode switch
+            if (sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem selectedItem)
             {
-                "Packages" => "Scenes",
-                "Scenes" => "Presets",
-                "Presets" => "Packages",
-                _ => "Packages"
-            };
-            SwitchContentMode(newMode);
+                string content = selectedItem.Content.ToString();
+                
+                // Extract mode from content (e.g., "📦 Packages" -> "Packages")
+                string newMode = content switch
+                {
+                    "📦 Packages" => "Packages",
+                    "🎬 Scenes" => "Scenes",
+                    "🎨 Presets" => "Presets",
+                    _ => "Packages"
+                };
+                
+                SwitchContentMode(newMode);
+            }
         }
 
         /// <summary>
@@ -55,26 +61,53 @@ namespace VPM
 
             _currentContentMode = mode;
 
-            // Update the mode switch button text to show the next mode
-            if (ContentModeSwitchButton != null)
+            // Clear selections for all DataGrids
+            if (PackageDataGrid != null)
             {
-                string nextMode = mode switch
+                PackageDataGrid.SelectedItems.Clear();
+            }
+            if (ScenesDataGrid != null)
+            {
+                ScenesDataGrid.SelectedItems.Clear();
+            }
+            if (CustomAtomDataGrid != null)
+            {
+                CustomAtomDataGrid.SelectedItems.Clear();
+            }
+
+            // Clear details area
+            Dependencies.Clear();
+            DependenciesCountText.Text = "(0)";
+            ClearCategoryTabs();
+            ClearImageGrid();
+
+            // Restore original custom atom items when leaving Presets mode
+            if (mode != "Presets" && CustomAtomItems.Count > 0)
+            {
+                // This ensures the collection is reset to show all items, not filtered ones
+                CustomAtomItems.ReplaceAll(CustomAtomItems.ToList());
+            }
+
+            // Update the dropdown to select the current mode
+            if (ContentModeDropdown != null)
+            {
+                string displayText = mode switch
                 {
-                    "Packages" => "Scenes",
-                    "Scenes" => "Presets",
-                    "Presets" => "Packages",
-                    _ => "Packages"
+                    "Packages" => "📦 Packages",
+                    "Scenes" => "🎬 Scenes",
+                    "Presets" => "🎨 Presets",
+                    _ => "📦 Packages"
                 };
                 
-                string icon = nextMode switch
+                // Find and select the matching ComboBoxItem
+                for (int i = 0; i < ContentModeDropdown.Items.Count; i++)
                 {
-                    "Packages" => "📦",
-                    "Scenes" => "🎬",
-                    "Presets" => "🎨",
-                    _ => "📦"
-                };
-                
-                ContentModeSwitchButton.Content = $"{icon} {nextMode}";
+                    if (ContentModeDropdown.Items[i] is ComboBoxItem item && item.Content.ToString() == displayText)
+                    {
+                        ContentModeDropdown.SelectedIndex = i;
+                        break;
+                    }
+                }
             }
 
             // Update button styles
@@ -82,6 +115,8 @@ namespace VPM
             {
                 PackageDataGrid.Visibility = Visibility.Visible;
                 ScenesDataGrid.Visibility = Visibility.Collapsed;
+                if (CustomAtomDataGrid != null)
+                    CustomAtomDataGrid.Visibility = Visibility.Collapsed;
                 
                 // Show package search, hide scene search
                 PackageSearchBox.Visibility = Visibility.Visible;
@@ -126,6 +161,8 @@ namespace VPM
             {
                 PackageDataGrid.Visibility = Visibility.Collapsed;
                 ScenesDataGrid.Visibility = Visibility.Visible;
+                if (CustomAtomDataGrid != null)
+                    CustomAtomDataGrid.Visibility = Visibility.Collapsed;
                 
                 // Show scene search, hide package search
                 PackageSearchBox.Visibility = Visibility.Collapsed;

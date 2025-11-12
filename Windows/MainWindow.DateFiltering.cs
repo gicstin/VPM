@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using VPM.Models;
@@ -15,10 +15,22 @@ namespace VPM
             // Prevent recursion during programmatic updates
             if (_suppressSelectionEvents) return;
             
-            if (DateFilterList.SelectedItem is ListBoxItem selectedItem)
+            if (DateFilterList.SelectedItem is string selectedText)
             {
-                var filterTypeString = selectedItem.Tag?.ToString();
-                if (Enum.TryParse<DateFilterType>(filterTypeString, out var filterType))
+                // Extract the filter type from the display text
+                var filterTypeString = selectedText.Split('(')[0].Trim() switch
+                {
+                    "All Time" => "AllTime",
+                    "Today" => "Today",
+                    "Past Week" => "PastWeek",
+                    "Past Month" => "PastMonth",
+                    "Past 3 Months" => "Past3Months",
+                    "Past Year" => "PastYear",
+                    "Custom Range..." => "CustomRange",
+                    _ => null
+                };
+                
+                if (filterTypeString != null && Enum.TryParse<DateFilterType>(filterTypeString, out var filterType))
                 {
                     // Update the filter manager
                     if (_filterManager != null)

@@ -1558,7 +1558,7 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
                         "DepsSearchBox" => _showingDependents ? "📝 Filter dependents..." : "📝 Filter dependencies...",
                         "ContentTypesFilterBox" => "📝 Filter content types...",
                         "CreatorsFilterBox" => "😣 Filter creators...",
-                        "LicenseTypeFilterBox" => "–ï¸ Filter license types...",
+                        "LicenseTypeFilterBox" => "–ï¸ Filter license types...",
                         "SubfoldersFilterBox" => "✗ Filter subfolders...",
                         "SceneSearchBox" => "📝 Filter scenes by name, creator, type...",
                         _ => "Search..."
@@ -1568,21 +1568,25 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
                     textBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
                     textBox.Text = placeholderText;
                     
-                    // Update clear button visibility
+                    // Restore full filter lists when filter is cleared
                     if (textBox.Name == "ContentTypesFilterBox")
                     {
+                        FilterContentTypesList("");
                         UpdateContentTypesClearButton();
                     }
                     else if (textBox.Name == "CreatorsFilterBox")
                     {
+                        FilterCreatorsList("");
                         UpdateCreatorsClearButton();
                     }
                     else if (textBox.Name == "LicenseTypeFilterBox")
                     {
+                        FilterLicenseTypesList("");
                         UpdateLicenseTypeClearButton();
                     }
                     else if (textBox.Name == "SubfoldersFilterBox")
                     {
+                        FilterSubfoldersList("");
                         UpdateSubfoldersClearButton();
                     }
                     else if (textBox.Name == "SceneSearchBox")
@@ -1626,6 +1630,11 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
                 {
                     // Apply creators filter
                     FilterCreators(textBox.Text);
+                }
+                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                {
+                    // Show all creators when no filter
+                    FilterCreatorsList("");
                 }
                 // Update clear button visibility
                 UpdateCreatorsClearButton();
@@ -2019,7 +2028,6 @@ Cache Location: {(_settingsManager?.Settings?.CacheFolder ?? "Not set")}";
             var settings = _settingsManager.Settings;
             
             // Bind ScenesDataGrid ItemsSource to ScenesView for filtering support
-            System.Diagnostics.Debug.WriteLine($"[SCENE DEBUG] OnWindowLoaded: Binding ScenesDataGrid ItemsSource");
             ScenesDataGrid.ItemsSource = ScenesView;
             
             // Bind CustomAtomDataGrid ItemsSource to CustomAtomItemsView for filtering support
