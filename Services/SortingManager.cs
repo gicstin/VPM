@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -176,6 +176,56 @@ namespace VPM.Services
                 SceneSortOption.Size => "FileSize",
                 SceneSortOption.Dependencies => "DependencyCount",
                 SceneSortOption.Atoms => "AtomCount",
+                _ => "DisplayName"
+            };
+        }
+
+        /// <summary>
+        /// Apply sorting to a presets collection with toggle functionality
+        /// </summary>
+        public void ApplyPresetSorting(ObservableCollection<CustomAtomItem> presets, PresetSortOption sortOption)
+        {
+            if (presets == null) return;
+
+            var view = CollectionViewSource.GetDefaultView(presets);
+            if (view == null) return;
+
+            // Determine sort direction - toggle if same option, default based on field type for new option
+            var currentState = GetSortingState("Presets");
+            bool isAscending;
+            
+            if (currentState?.CurrentSortOption?.Equals(sortOption) == true)
+            {
+                // Same option clicked - toggle direction
+                isAscending = !currentState.IsAscending;
+            }
+            else
+            {
+                // New option - default ascending for text fields, descending for numeric
+                isAscending = sortOption == PresetSortOption.Name || sortOption == PresetSortOption.Category || 
+                             sortOption == PresetSortOption.Subfolder || sortOption == PresetSortOption.Status;
+            }
+
+            view.SortDescriptions.Clear();
+
+            string propertyName = GetPropertyNameForPresetSort(sortOption);
+            var direction = isAscending ? ListSortDirection.Ascending : ListSortDirection.Descending;
+            view.SortDescriptions.Add(new SortDescription(propertyName, direction));
+
+            view.Refresh();
+            UpdateSortingState("Presets", sortOption, isAscending);
+        }
+
+        private string GetPropertyNameForPresetSort(PresetSortOption sortOption)
+        {
+            return sortOption switch
+            {
+                PresetSortOption.Name => "DisplayName",
+                PresetSortOption.Date => "ModifiedDate",
+                PresetSortOption.Size => "FileSize",
+                PresetSortOption.Category => "Category",
+                PresetSortOption.Subfolder => "Subfolder",
+                PresetSortOption.Status => "IsFavorite", // Could be enhanced to consider hidden status too
                 _ => "DisplayName"
             };
         }
@@ -425,6 +475,7 @@ namespace VPM.Services
                 {
                     nameof(PackageSortOption) => Enum.Parse<PackageSortOption>(value),
                     nameof(SceneSortOption) => Enum.Parse<SceneSortOption>(value),
+                    nameof(PresetSortOption) => Enum.Parse<PresetSortOption>(value),
                     nameof(DependencySortOption) => Enum.Parse<DependencySortOption>(value),
                     nameof(FilterSortOption) => Enum.Parse<FilterSortOption>(value),
                     _ => null
@@ -454,6 +505,14 @@ namespace VPM.Services
         public static List<SceneSortOption> GetSceneSortOptions()
         {
             return Enum.GetValues<SceneSortOption>().ToList();
+        }
+
+        /// <summary>
+        /// Get all available preset sort options
+        /// </summary>
+        public static List<PresetSortOption> GetPresetSortOptions()
+        {
+            return Enum.GetValues<PresetSortOption>().ToList();
         }
 
         /// <summary>

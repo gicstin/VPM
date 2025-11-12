@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -109,16 +109,16 @@ namespace VPM
             switch (icon)
             {
                 case MessageBoxImage.Information:
-                    IconTextBlock.Text = "„¹ï¸";
+                    IconTextBlock.Text = "ℹ️";
                     break;
                 case MessageBoxImage.Warning:
-                    IconTextBlock.Text = "–ï¸";
+                    IconTextBlock.Text = "⚠️";
                     break;
                 case MessageBoxImage.Error:
-                    IconTextBlock.Text = "┌";
+                    IconTextBlock.Text = "❌";
                     break;
                 case MessageBoxImage.Question:
-                    IconTextBlock.Text = "â“";
+                    IconTextBlock.Text = "❓";
                     break;
                 default:
                     IconTextBlock.Visibility = Visibility.Collapsed;

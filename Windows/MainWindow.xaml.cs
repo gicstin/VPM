@@ -189,11 +189,11 @@ namespace VPM
             // Initialize dependencies tab state
             InitializeDependenciesTabs();
 
-            // Initialize content mode switch button text
-            // App starts in Packages mode, so button should show "Scenes" (the next mode)
-            if (ContentModeSwitchButton != null)
+            // Initialize content mode dropdown selection
+            // App starts in Packages mode, so dropdown should show "Packages"
+            if (ContentModeDropdown != null && ContentModeDropdown.Items.Count > 0)
             {
-                ContentModeSwitchButton.Content = "🎬 Scenes";
+                ContentModeDropdown.SelectedIndex = 0; // Select "📦 Packages"
             }
 
         }

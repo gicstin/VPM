@@ -26,11 +26,8 @@ namespace VPM.Services
             var items = new List<CustomAtomItem>();
             var customPersonDir = Path.Combine(_vamPath, "Custom", "Atom", "Person");
 
-            System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Scanning: {customPersonDir}");
-
             if (!Directory.Exists(customPersonDir))
             {
-                System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Directory does not exist: {customPersonDir}");
                 return items;
             }
 
@@ -38,30 +35,26 @@ namespace VPM.Services
             {
                 // Get all .vap files recursively from subfolders
                 var vapFiles = Directory.GetFiles(customPersonDir, "*.vap", SearchOption.AllDirectories);
-                System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Found {vapFiles.Length} .vap files");
 
                 foreach (var vapPath in vapFiles)
                 {
                     try
                     {
-                        System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Processing: {vapPath}");
                         var item = CreateCustomAtomItemFromFile(vapPath);
                         if (item != null)
                         {
                             items.Add(item);
-                            System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Added item: {item.DisplayName}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Error processing {vapPath}: {ex.Message}");
+                        // Error processing file - continue with next file
                     }
                 }
-                System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Total items loaded: {items.Count}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CUSTOM ATOM] Error scanning folder: {ex.Message}");
+                // Error scanning folder - return what we have
             }
 
             return items;

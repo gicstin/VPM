@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 
 namespace VPM.Models
@@ -59,6 +59,25 @@ namespace VPM.Models
         Dependencies,
         [Description("Atoms")]
         Atoms
+    }
+
+    /// <summary>
+    /// Sorting options for the presets table
+    /// </summary>
+    public enum PresetSortOption
+    {
+        [Description("Name")]
+        Name,
+        [Description("Date")]
+        Date,
+        [Description("Size")]
+        Size,
+        [Description("Category")]
+        Category,
+        [Description("Subfolder")]
+        Subfolder,
+        [Description("Status")]
+        Status
     }
 
     /// <summary>

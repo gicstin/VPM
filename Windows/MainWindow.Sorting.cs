@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -350,6 +350,11 @@ namespace VPM
                 ShowSortMenu("Scenes", SortingManager.GetSceneSortOptions(), 
                             PackageSortButton, SceneSortMenuItem_Click);
             }
+            else if (_currentContentMode == "Presets")
+            {
+                ShowSortMenu("Presets", SortingManager.GetPresetSortOptions(), 
+                            PackageSortButton, PresetSortMenuItem_Click);
+            }
             else
             {
                 ShowSortMenu("Packages", SortingManager.GetPackageSortOptions(), 
@@ -367,6 +372,12 @@ namespace VPM
         {
             HandleSortMenuClick(sender, ClearSceneSorting, 
                                tag => { if (tag is SceneSortOption sortOption) ApplySceneSorting(sortOption); });
+        }
+
+        private void PresetSortMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            HandleSortMenuClick(sender, ClearPresetSorting, 
+                               tag => { if (tag is PresetSortOption sortOption) ApplyPresetSorting(sortOption); });
         }
 
         private void ApplyPackageSorting(PackageSortOption sortOption)
@@ -506,6 +517,73 @@ namespace VPM
             catch (Exception)
             {
                 // Error clearing scene sorting - silently handled
+            }
+        }
+
+        #endregion
+
+        #region Preset Sorting
+
+        private void ApplyPresetSorting(PresetSortOption sortOption)
+        {
+            if (_sortingManager == null || CustomAtomItemsView == null) return;
+
+            try
+            {
+                // Get property name for sorting
+                string propertyName = sortOption switch
+                {
+                    PresetSortOption.Name => "DisplayName",
+                    PresetSortOption.Date => "ModifiedDate",
+                    PresetSortOption.Size => "FileSize",
+                    PresetSortOption.Category => "Category",
+                    PresetSortOption.Subfolder => "Subfolder",
+                    PresetSortOption.Status => "IsFavorite",
+                    _ => "DisplayName"
+                };
+
+                // Update sorting manager state first to track direction
+                _sortingManager.ApplyPresetSorting(CustomAtomItems, sortOption);
+                var direction = _sortingManager.GetSortingState("Presets")?.IsAscending == true;
+
+                // Apply sorting to the CollectionView
+                using (CustomAtomItemsView.DeferRefresh())
+                {
+                    CustomAtomItemsView.SortDescriptions.Clear();
+                    CustomAtomItemsView.SortDescriptions.Add(new System.ComponentModel.SortDescription(
+                        propertyName,
+                        direction ? System.ComponentModel.ListSortDirection.Ascending : System.ComponentModel.ListSortDirection.Descending));
+                }
+
+                // Update button tooltip to show current sort
+                var directionText = direction ? "↑" : "↓";
+                PackageSortButton.ToolTip = $"Sort presets (Current: {sortOption.GetDescription()} {directionText})";
+            }
+            catch (Exception)
+            {
+                // Error applying preset sorting - silently handled
+            }
+        }
+
+        private void ClearPresetSorting()
+        {
+            try
+            {
+                _sortingManager?.ClearSorting("Presets");
+                PackageSortButton.ToolTip = "Sort presets";
+
+                // Clear sorting from CollectionView
+                if (CustomAtomItemsView != null)
+                {
+                    using (CustomAtomItemsView.DeferRefresh())
+                    {
+                        CustomAtomItemsView.SortDescriptions.Clear();
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Error clearing preset sorting - silently handled
             }
         }
 

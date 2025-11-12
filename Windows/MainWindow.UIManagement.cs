@@ -398,90 +398,167 @@ namespace VPM
         /// </summary>
         private void ApplyFilterVisibilityStates(AppSettings settings)
         {
-            // Date Filter
-            if (DateFilterList != null && DateFilterToggleButton != null)
+            
+            // Only apply package filters in Packages mode
+            if (_currentContentMode == "Packages")
             {
-                DateFilterList.Visibility = settings.DateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                DateFilterToggleButton.Content = "👁";
+                // Date Filter
+                if (DateFilterList != null && DateFilterToggleButton != null)
+                {
+                    DateFilterList.Visibility = settings.DateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    DateFilterToggleButton.Content = "👁";
+                }
+                
+                // Status Filter
+                if (StatusFilterList != null && StatusFilterToggleButton != null)
+                {
+                    StatusFilterList.Visibility = settings.StatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    StatusFilterToggleButton.Content = "👁";
+                }
+                
+                // Content Types Filter
+                if (ContentTypesList != null && ContentTypesFilterTextBoxGrid != null && ContentTypesFilterCollapsedGrid != null)
+                {
+                    ContentTypesList.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    ContentTypesFilterTextBoxGrid.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    ContentTypesFilterCollapsedGrid.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Creators Filter
+                if (CreatorsList != null && CreatorsFilterTextBoxGrid != null && CreatorsFilterCollapsedGrid != null)
+                {
+                    CreatorsList.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    CreatorsFilterTextBoxGrid.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    CreatorsFilterCollapsedGrid.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // License Type Filter
+                if (LicenseTypeList != null && LicenseTypeFilterTextBoxGrid != null && LicenseTypeFilterCollapsedGrid != null)
+                {
+                    LicenseTypeList.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    LicenseTypeFilterTextBoxGrid.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    LicenseTypeFilterCollapsedGrid.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // File Size Filter
+                if (FileSizeFilterList != null && FileSizeFilterExpandedGrid != null && FileSizeFilterCollapsedGrid != null)
+                {
+                    FileSizeFilterList.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    FileSizeFilterExpandedGrid.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    FileSizeFilterCollapsedGrid.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Subfolders Filter
+                if (SubfoldersFilterList != null && SubfoldersFilterTextBoxGrid != null && SubfoldersFilterCollapsedGrid != null)
+                {
+                    SubfoldersFilterList.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SubfoldersFilterTextBoxGrid.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SubfoldersFilterCollapsedGrid.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Damaged Filter
+                if (DamagedFilterList != null && DamagedFilterExpandedGrid != null && DamagedFilterCollapsedGrid != null)
+                {
+                    DamagedFilterList.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    DamagedFilterExpandedGrid.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    DamagedFilterCollapsedGrid.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
             }
             
-            // Status Filter
-            if (StatusFilterList != null && StatusFilterToggleButton != null)
+            // Only apply scene filters in Scenes mode
+            if (_currentContentMode == "Scenes")
             {
-                StatusFilterList.Visibility = settings.StatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                StatusFilterToggleButton.Content = "👁";
+                // Scene Type Filter
+                if (SceneTypeFilterList != null && SceneTypeFilterTextBoxGrid != null && SceneTypeFilterCollapsedGrid != null)
+                {
+                    SceneTypeFilterList.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneTypeFilterTextBoxGrid.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneTypeFilterCollapsedGrid.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Scene Creator Filter
+                if (SceneCreatorFilterList != null && SceneCreatorFilterTextBoxGrid != null && SceneCreatorFilterCollapsedGrid != null)
+                {
+                    SceneCreatorFilterList.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneCreatorFilterTextBoxGrid.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneCreatorFilterCollapsedGrid.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Scene Source Filter
+                if (SceneSourceFilterList != null && SceneSourceFilterExpandedGrid != null && SceneSourceFilterCollapsedGrid != null)
+                {
+                    SceneSourceFilterList.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneSourceFilterExpandedGrid.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneSourceFilterCollapsedGrid.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Scene Date Filter
+                if (SceneDateFilterList != null && SceneDateFilterExpandedGrid != null && SceneDateFilterCollapsedGrid != null)
+                {
+                    SceneDateFilterList.Visibility = settings.SceneDateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneDateFilterExpandedGrid.Visibility = settings.SceneDateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneDateFilterCollapsedGrid.Visibility = settings.SceneDateFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Scene File Size Filter
+                if (SceneFileSizeFilterList != null && SceneFileSizeFilterExpandedGrid != null && SceneFileSizeFilterCollapsedGrid != null)
+                {
+                    SceneFileSizeFilterList.Visibility = settings.SceneFileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneFileSizeFilterExpandedGrid.Visibility = settings.SceneFileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneFileSizeFilterCollapsedGrid.Visibility = settings.SceneFileSizeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Scene Status Filter
+                if (SceneStatusFilterList != null && SceneStatusFilterExpandedGrid != null && SceneStatusFilterCollapsedGrid != null)
+                {
+                    SceneStatusFilterList.Visibility = settings.SceneStatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneStatusFilterExpandedGrid.Visibility = settings.SceneStatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    SceneStatusFilterCollapsedGrid.Visibility = settings.SceneStatusFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
             }
             
-            // Content Types Filter
-            if (ContentTypesList != null && ContentTypesFilterTextBoxGrid != null && ContentTypesFilterCollapsedGrid != null)
+            // Only apply preset filters in Presets mode
+            if (_currentContentMode == "Presets")
             {
-                ContentTypesList.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                ContentTypesFilterTextBoxGrid.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                ContentTypesFilterCollapsedGrid.Visibility = settings.ContentTypesFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Creators Filter
-            if (CreatorsList != null && CreatorsFilterTextBoxGrid != null && CreatorsFilterCollapsedGrid != null)
-            {
-                CreatorsList.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                CreatorsFilterTextBoxGrid.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                CreatorsFilterCollapsedGrid.Visibility = settings.CreatorsFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // License Type Filter
-            if (LicenseTypeList != null && LicenseTypeFilterTextBoxGrid != null && LicenseTypeFilterCollapsedGrid != null)
-            {
-                LicenseTypeList.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                LicenseTypeFilterTextBoxGrid.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                LicenseTypeFilterCollapsedGrid.Visibility = settings.LicenseTypeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // File Size Filter
-            if (FileSizeFilterList != null && FileSizeFilterExpandedGrid != null && FileSizeFilterCollapsedGrid != null)
-            {
-                FileSizeFilterList.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                FileSizeFilterExpandedGrid.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                FileSizeFilterCollapsedGrid.Visibility = settings.FileSizeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Subfolders Filter
-            if (SubfoldersFilterList != null && SubfoldersFilterTextBoxGrid != null && SubfoldersFilterCollapsedGrid != null)
-            {
-                SubfoldersFilterList.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SubfoldersFilterTextBoxGrid.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SubfoldersFilterCollapsedGrid.Visibility = settings.SubfoldersFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Damaged Filter
-            if (DamagedFilterList != null && DamagedFilterExpandedGrid != null && DamagedFilterCollapsedGrid != null)
-            {
-                DamagedFilterList.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                DamagedFilterExpandedGrid.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                DamagedFilterCollapsedGrid.Visibility = settings.DamagedFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Scene Type Filter
-            if (SceneTypeFilterList != null && SceneTypeFilterTextBoxGrid != null && SceneTypeFilterCollapsedGrid != null)
-            {
-                SceneTypeFilterList.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneTypeFilterTextBoxGrid.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneTypeFilterCollapsedGrid.Visibility = settings.SceneTypeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Scene Creator Filter
-            if (SceneCreatorFilterList != null && SceneCreatorFilterTextBoxGrid != null && SceneCreatorFilterCollapsedGrid != null)
-            {
-                SceneCreatorFilterList.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneCreatorFilterTextBoxGrid.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneCreatorFilterCollapsedGrid.Visibility = settings.SceneCreatorFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
-            }
-            
-            // Scene Source Filter
-            if (SceneSourceFilterList != null && SceneSourceFilterExpandedGrid != null && SceneSourceFilterCollapsedGrid != null)
-            {
-                SceneSourceFilterList.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneSourceFilterExpandedGrid.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                SceneSourceFilterCollapsedGrid.Visibility = settings.SceneSourceFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                // Preset Category Filter
+                if (PresetCategoryFilterList != null && PresetCategoryFilterTextBoxGrid != null && PresetCategoryFilterCollapsedGrid != null)
+                {
+                    PresetCategoryFilterList.Visibility = settings.PresetCategoryFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetCategoryFilterTextBoxGrid.Visibility = settings.PresetCategoryFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetCategoryFilterCollapsedGrid.Visibility = settings.PresetCategoryFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Preset Subfolder Filter
+                if (PresetSubfolderFilterList != null && PresetSubfolderFilterTextBoxGrid != null && PresetSubfolderFilterCollapsedGrid != null)
+                {
+                    PresetSubfolderFilterList.Visibility = settings.PresetSubfolderFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetSubfolderFilterTextBoxGrid.Visibility = settings.PresetSubfolderFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetSubfolderFilterCollapsedGrid.Visibility = settings.PresetSubfolderFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Preset Date Filter
+                if (PresetDateFilterList != null && PresetDateFilterExpandedGrid != null && PresetDateFilterCollapsedGrid != null)
+                {
+                    PresetDateFilterList.Visibility = settings.PresetDateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetDateFilterExpandedGrid.Visibility = settings.PresetDateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetDateFilterCollapsedGrid.Visibility = settings.PresetDateFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Preset File Size Filter
+                if (PresetFileSizeFilterList != null && PresetFileSizeFilterExpandedGrid != null && PresetFileSizeFilterCollapsedGrid != null)
+                {
+                    PresetFileSizeFilterList.Visibility = settings.PresetFileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetFileSizeFilterExpandedGrid.Visibility = settings.PresetFileSizeFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetFileSizeFilterCollapsedGrid.Visibility = settings.PresetFileSizeFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+                
+                // Preset Status Filter
+                if (PresetStatusFilterList != null && PresetStatusFilterExpandedGrid != null && PresetStatusFilterCollapsedGrid != null)
+                {
+                    PresetStatusFilterList.Visibility = settings.PresetStatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetStatusFilterExpandedGrid.Visibility = settings.PresetStatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    PresetStatusFilterCollapsedGrid.Visibility = settings.PresetStatusFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
             }
         }
 
