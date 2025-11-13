@@ -4781,15 +4781,23 @@ namespace VPM
         }
 
         /// <summary>
-        /// Creates a backup of the preset file in the archive folder
+        /// Creates a backup of the preset file and its preview image in the ArchivedPackages/Presets folder
         /// </summary>
         private async Task CreatePresetBackup(string filePath)
         {
             try
             {
+                if (string.IsNullOrEmpty(_selectedFolder))
+                {
+                    SetStatus($"Warning: Cannot create backup - no VAM root folder selected");
+                    return;
+                }
+
                 var fileName = Path.GetFileName(filePath);
                 var fileDirectory = Path.GetDirectoryName(filePath);
-                var archiveFolder = Path.Combine(fileDirectory, "archive");
+                
+                // Create backup in ArchivedPackages/Presets folder in game root
+                var archiveFolder = Path.Combine(_selectedFolder, "ArchivedPackages", "Presets");
                 
                 // Create archive folder if it doesn't exist
                 if (!Directory.Exists(archiveFolder))
@@ -4797,13 +4805,28 @@ namespace VPM
                     Directory.CreateDirectory(archiveFolder);
                 }
                 
-                // Create backup filename with timestamp
-                var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                var backupFileName = Path.GetFileNameWithoutExtension(fileName) + $"_backup_{timestamp}" + Path.GetExtension(fileName);
-                var backupPath = Path.Combine(archiveFolder, backupFileName);
+                // Use original filename for backup
+                var backupPath = Path.Combine(archiveFolder, fileName);
                 
-                // Copy original file to backup location
+                // Copy original preset file to backup location
                 await Task.Run(() => File.Copy(filePath, backupPath, true));
+                
+                // Find and copy associated preview image
+                var basePath = Path.ChangeExtension(filePath, null);
+                var extensions = new[] { ".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG" };
+                
+                foreach (var ext in extensions)
+                {
+                    var previewPath = basePath + ext;
+                    if (File.Exists(previewPath))
+                    {
+                        var previewFileName = Path.GetFileName(previewPath);
+                        var backupPreviewPath = Path.Combine(archiveFolder, previewFileName);
+                        
+                        await Task.Run(() => File.Copy(previewPath, backupPreviewPath, true));
+                        break; // Only copy the first preview image found
+                    }
+                }
             }
             catch (Exception ex)
             {
