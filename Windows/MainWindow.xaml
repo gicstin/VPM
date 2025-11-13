@@ -3593,6 +3593,8 @@ Off: Single selection, hide incompatible options"
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding FileSizeFormatted}" FontWeight="Bold"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Date: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding DateFormatted}" FontWeight="Bold"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Deps: "/>
+                                            <TextBlock FontSize="11" Foreground="#4CAF50" Text="{Binding DependencyCount}" FontWeight="Bold" ToolTip="Number of package dependencies"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </DataTemplate>
@@ -3635,7 +3637,7 @@ Off: Single selection, hide incompatible options"
                         
                         <!-- Load/Unload buttons -->
                         <UniformGrid x:Name="PackageButtonGrid" Grid.Column="0" Rows="2" Columns="2" Visibility="Visible" VerticalAlignment="Top" HorizontalAlignment="Stretch" Margin="0,6,0,0">
-                            <Button x:Name="LoadPackagesButton" Content="📂 Load" 
+                            <Button x:Name="LoadPackagesButton" Content="📥 Load" 
                                 Margin="0,0,3,0" Padding="0,0" Height="36"
                                 Click="LoadPackages_Click"
                                 ToolTip="Load selected packages"
@@ -3676,7 +3678,7 @@ Off: Single selection, hide incompatible options"
                                 </Style>
                             </Button.Style>
                         </Button>
-                        <Button x:Name="UnloadPackagesButton" Content="🔓 Unload" 
+                        <Button x:Name="UnloadPackagesButton" Content="📤 Unload" 
                                 Margin="3,0,0,0" Padding="0" Height="36"
                                 Click="UnloadPackages_Click"
                                 ToolTip="Unload selected packages"
@@ -3928,7 +3930,7 @@ Off: Single selection, hide incompatible options"
                         </Grid.ColumnDefinitions>
                         
                         <TextBox x:Name="DepsSearchBox" Grid.Column="0"
-                                 Text="📝 Filter dependencies..." 
+                                 Text="🔍 Filter dependencies..." 
                                  Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                  Padding="6"
                                  GotFocus="FilterTextBox_GotFocus" 
@@ -3966,7 +3968,7 @@ Off: Single selection, hide incompatible options"
                         </Button>
                         <Grid Grid.Column="3" Margin="3,0,0,0">
                             <Button x:Name="DownloadMissingButton" 
-                                    Content="…" 
+                                    Content="⬇️" 
                                     Padding="0" FontSize="15" FontWeight="Bold"
                                     Click="DownloadMissingButton_Click"
                                     ToolTip="Download selected missing dependencies"

@@ -487,7 +487,33 @@ namespace VPM.Models
             set => SetProperty(ref _isHidden, value);
         }
 
+        /// <summary>
+        /// List of package dependencies found in the preset
+        /// </summary>
+        public List<string> Dependencies { get; set; } = new List<string>();
+
+        /// <summary>
+        /// List of hair items referenced in the preset
+        /// </summary>
+        public List<string> HairItems { get; set; } = new List<string>();
+
+        /// <summary>
+        /// List of clothing items referenced in the preset
+        /// </summary>
+        public List<string> ClothingItems { get; set; } = new List<string>();
+
+        /// <summary>
+        /// List of morphs referenced in the preset
+        /// </summary>
+        public List<string> MorphItems { get; set; } = new List<string>();
+
+        /// <summary>
+        /// List of texture references in the preset
+        /// </summary>
+        public List<string> TextureItems { get; set; } = new List<string>();
+
         // Display properties
+        public int DependencyCount => Dependencies?.Count ?? 0;
         public string FileSizeFormatted => SceneItem.FormatFileSize(FileSize);
         public string DateFormatted => ModifiedDate?.ToString("MMM dd, yyyy") ?? "Unknown";
 

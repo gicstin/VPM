@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -976,17 +976,17 @@ namespace VPM
                     // Show keyboard shortcut if all selected items have same status
                     if (allSameStatus && allStatuses[0] == "Available")
                     {
-                        LoadPackagesButton.Content = availableCount == 1 ? "📁 Load (Space)" : $"📁 Load ({availableCount}) (Ctrl+Space)";
+                        LoadPackagesButton.Content = availableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({availableCount}) (Ctrl+Space)";
                         LoadPackagesButton.ToolTip = availableCount == 1 ? "Load selected package" : $"Load {availableCount} selected packages";
-                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📁 Load +Deps (Shift+Space)" : $"📁 Load +Deps ({availableCount}) (Shift+Space)";
+                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📥 Load +Deps (Shift+Space)" : $"📥 Load +Deps ({availableCount}) (Shift+Space)";
                         LoadPackagesWithDepsButton.ToolTip = availableCount == 1 ? "Load selected package and dependencies" : $"Load {availableCount} selected packages and their dependencies";
                     }
                     else
                     {
                         // Mixed statuses - no keyboard shortcut
-                        LoadPackagesButton.Content = availableCount == 1 ? "📁 Load" : $"📁 Load ({availableCount})";
+                        LoadPackagesButton.Content = availableCount == 1 ? "📥 Load" : $"📥 Load ({availableCount})";
                         LoadPackagesButton.ToolTip = $"Load {availableCount} available packages";
-                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📁 Load +Deps" : $"📁 Load +Deps ({availableCount})";
+                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({availableCount})";
                         LoadPackagesWithDepsButton.ToolTip = $"Load {availableCount} available packages and their dependencies";
                     }
                 }
@@ -998,13 +998,13 @@ namespace VPM
                     // Show keyboard shortcut if all selected items have same status
                     if (allSameStatus && allStatuses[0] == "Loaded")
                     {
-                        UnloadPackagesButton.Content = loadedCount == 1 ? "🔓 Unload (Space)" : $"🔓 Unload ({loadedCount}) (Ctrl+Space)";
+                        UnloadPackagesButton.Content = loadedCount == 1 ? "📤 Unload (Space)" : $"📤 Unload ({loadedCount}) (Ctrl+Space)";
                         UnloadPackagesButton.ToolTip = loadedCount == 1 ? "Unload selected package" : $"Unload {loadedCount} selected packages";
                     }
                     else
                     {
                         // Mixed statuses - no keyboard shortcut
-                        UnloadPackagesButton.Content = loadedCount == 1 ? "🔓 Unload" : $"🔓 Unload ({loadedCount})";
+                        UnloadPackagesButton.Content = loadedCount == 1 ? "📤 Unload" : $"📤 Unload ({loadedCount})";
                         UnloadPackagesButton.ToolTip = $"Unload {loadedCount} loaded packages";
                     }
                 }
@@ -1122,11 +1122,11 @@ namespace VPM
                     // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
                     if (allSameStatus && allStatuses[0] == "Available" && _dependenciesDataGridHasFocus)
                     {
-                        LoadDependenciesButton.Content = availableCount == 1 ? "📁 Load (Space)" : $"📁 Load ({availableCount}) (Ctrl+Space)";
+                        LoadDependenciesButton.Content = availableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({availableCount}) (Ctrl+Space)";
                     }
                     else
                     {
-                        LoadDependenciesButton.Content = availableCount == 1 ? "📁 Load" : $"📁 Load ({availableCount})";
+                        LoadDependenciesButton.Content = availableCount == 1 ? "📥 Load" : $"📥 Load ({availableCount})";
                     }
                 }
 
@@ -1137,18 +1137,18 @@ namespace VPM
                     // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
                     if (allSameStatus && allStatuses[0] == "Loaded" && _dependenciesDataGridHasFocus)
                     {
-                        UnloadDependenciesButton.Content = loadedCount == 1 ? "🔓 Unload (Space)" : $"🔓 Unload ({loadedCount}) (Ctrl+Space)";
+                        UnloadDependenciesButton.Content = loadedCount == 1 ? "📤 Unload (Space)" : $"📤 Unload ({loadedCount}) (Ctrl+Space)";
                     }
                     else
                     {
-                        UnloadDependenciesButton.Content = loadedCount == 1 ? "🔓 Unload" : $"🔓 Unload ({loadedCount})";
+                        UnloadDependenciesButton.Content = loadedCount == 1 ? "📤 Unload" : $"📤 Unload ({loadedCount})";
                     }
                 }
 
                 if (hasOptimizable)
                 {
                     var optimizableCount = selectedDependencies.Count(d => d.Status != "Missing" && d.Status != "Unknown");
-                    OptimizeDependenciesButton.Content = optimizableCount == 1 ? "– Optimize" : $"– Optimize ({optimizableCount})";
+                    OptimizeDependenciesButton.Content = optimizableCount == 1 ? "⚡ Optimize" : $"⚡ Optimize ({optimizableCount})";
                 }
 
                 // Update layout (StackPanel handles this automatically now)

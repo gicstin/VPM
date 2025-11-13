@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using VPM.Models;
 using VPM.Services;
 
@@ -151,6 +152,9 @@ namespace VPM
             var selectedItems = CustomAtomDataGrid?.SelectedItems?.Cast<CustomAtomItem>()?.ToList() ?? new List<CustomAtomItem>();
             DisplayCustomAtomThumbnails(selectedItems);
 
+            // Populate dependencies from selected presets
+            PopulatePresetDependencies(selectedItems);
+
             // Update the details area
             UpdatePackageButtonBar();
 
@@ -219,6 +223,186 @@ namespace VPM
             catch
             {
                 // Error displaying thumbnails - silently handled
+            }
+        }
+
+        /// <summary>
+        /// Populates dependencies from selected preset items
+        /// </summary>
+        private void PopulatePresetDependencies(List<CustomAtomItem> selectedItems)
+        {
+            try
+            {
+                // Clear existing dependencies
+                Dependencies.Clear();
+                _originalDependencies.Clear();
+
+                if (selectedItems == null || selectedItems.Count == 0)
+                {
+                    DependenciesCountText.Text = "(0)";
+                    return;
+                }
+
+                // Accumulate dependencies from all selected presets
+                var allDependencies = new HashSet<string>(); // Use HashSet to avoid duplicates
+                int totalDependencies = 0;
+
+                foreach (var preset in selectedItems)
+                {
+                    if (preset.Dependencies != null)
+                    {
+                        totalDependencies += preset.Dependencies.Count;
+                        foreach (var dep in preset.Dependencies)
+                        {
+                            allDependencies.Add(dep);
+                        }
+                    }
+                }
+
+                // Process accumulated dependencies (same logic as scene mode)
+                foreach (var dep in allDependencies.OrderBy(d => d))
+                {
+                    // Extract base package name (remove version suffix)
+                    // Dependencies come in format: "creator.package.version" or "creator.package" or "creator.package.latest"
+                    string baseName = dep;
+                    string version = "";
+                    
+                    // Check if it ends with .latest
+                    if (dep.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        baseName = dep.Substring(0, dep.Length - 7); // Remove .latest
+                        version = "latest";
+                    }
+                    else
+                    {
+                        // Check for numeric version at the end (e.g., ".4" or ".13")
+                        var lastDotIndex = dep.LastIndexOf('.');
+                        if (lastDotIndex > 0)
+                        {
+                            var potentialVersion = dep.Substring(lastDotIndex + 1);
+                            if (int.TryParse(potentialVersion, out _))
+                            {
+                                version = potentialVersion;
+                                baseName = dep.Substring(0, lastDotIndex);
+                            }
+                        }
+                    }
+                    
+                    // Get the actual status from package manager using base name
+                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Missing";
+                    // Store base name and version separately in DependencyItem
+                    var depItem = new DependencyItem { Name = baseName, Version = version, Status = status };
+                    Dependencies.Add(depItem);
+                    _originalDependencies.Add(depItem);
+                }
+
+                // Update count display
+                DependenciesCountText.Text = $"({Dependencies.Count})";
+
+                // Create category tabs for presets
+                CreatePresetCategoryTabs(selectedItems);
+
+                SetStatus($"Found {Dependencies.Count} unique dependencies from {selectedItems.Count} preset(s)");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error populating preset dependencies: {ex.Message}");
+                SetStatus("Error loading preset dependencies");
+            }
+        }
+
+        /// <summary>
+        /// Creates category tabs for selected presets showing hair, clothing, morphs, etc.
+        /// </summary>
+        private void CreatePresetCategoryTabs(List<CustomAtomItem> selectedItems)
+        {
+            try
+            {
+                ClearCategoryTabs();
+
+                var allHairItems = new List<string>();
+                var allClothingItems = new List<string>();
+                var allMorphItems = new List<string>();
+                var allTextureItems = new List<string>();
+
+                // Collect all items from selected presets
+                foreach (var preset in selectedItems)
+                {
+                    if (preset.HairItems != null)
+                        allHairItems.AddRange(preset.HairItems);
+                    if (preset.ClothingItems != null)
+                        allClothingItems.AddRange(preset.ClothingItems);
+                    if (preset.MorphItems != null)
+                        allMorphItems.AddRange(preset.MorphItems);
+                    if (preset.TextureItems != null)
+                        allTextureItems.AddRange(preset.TextureItems);
+                }
+
+                // Remove duplicates
+                allHairItems = allHairItems.Distinct().ToList();
+                allClothingItems = allClothingItems.Distinct().ToList();
+                allMorphItems = allMorphItems.Distinct().ToList();
+                allTextureItems = allTextureItems.Distinct().ToList();
+
+                // Create tabs for each category that has items
+                if (allHairItems.Count > 0)
+                {
+                    CreatePresetCategoryTab("Hair", allHairItems, "💇");
+                }
+                if (allClothingItems.Count > 0)
+                {
+                    CreatePresetCategoryTab("Clothing", allClothingItems, "👗");
+                }
+                if (allMorphItems.Count > 0)
+                {
+                    CreatePresetCategoryTab("Morphs", allMorphItems, "🎭");
+                }
+                if (allTextureItems.Count > 0)
+                {
+                    CreatePresetCategoryTab("Textures", allTextureItems, "🎨");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error creating preset category tabs: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Creates a category tab for preset items
+        /// </summary>
+        private void CreatePresetCategoryTab(string categoryName, List<string> items, string icon)
+        {
+            try
+            {
+                var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                headerPanel.Children.Add(new TextBlock { Text = $"{icon} {categoryName} ({items.Count})", VerticalAlignment = VerticalAlignment.Center });
+
+                var tab = new TabItem { Header = headerPanel, Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)) };
+                var listBox = new ListBox
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(45, 45, 45)),
+                    Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
+                    BorderThickness = new Thickness(0),
+                    Margin = new Thickness(5)
+                };
+
+                foreach (var item in items)
+                {
+                    listBox.Items.Add(new ListBoxItem
+                    {
+                        Content = item,
+                        Background = Brushes.Transparent,
+                        Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220))
+                    });
+                }
+
+                tab.Content = listBox;
+                PackageInfoTabControl.Items.Add(tab);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error creating preset category tab: {ex.Message}");
             }
         }
     }

@@ -1841,8 +1841,8 @@ namespace VPM
 
         private void DependenciesTabs_MouseWheel(object sender, MouseWheelEventArgs e)
         {
-            // Don't switch tabs in scene mode - only in packages mode
-            if (_currentContentMode == "Scenes")
+            // Only allow tab switching in packages mode - not in scenes or presets mode
+            if (_currentContentMode != "Packages")
             {
                 e.Handled = false;
                 return;
@@ -1861,24 +1861,69 @@ namespace VPM
 
         private void PackageInfoTabs_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (PackageInfoTabControl?.Items.Count > 1)
+            // Only handle scroll wheel if directly over the WrapPanel (tab headers area)
+            if (sender is WrapPanel && PackageInfoTabControl?.Items.Count > 1)
             {
-                int currentIndex = PackageInfoTabControl.SelectedIndex;
-                int newIndex = currentIndex;
-
-                if (e.Delta > 0)
+                // Check if the original source is actually a tab header element, not content
+                var originalSource = e.OriginalSource as DependencyObject;
+                bool isOverTabHeader = false;
+                
+                // Walk up the visual tree to see if we hit a TabItem before hitting content
+                while (originalSource != null)
                 {
-                    newIndex = (currentIndex - 1 + PackageInfoTabControl.Items.Count) % PackageInfoTabControl.Items.Count;
+                    // If we find content controls first, we're not over a tab header
+                    if (originalSource is DataGrid || originalSource is ListBox || originalSource is ScrollViewer || 
+                        originalSource is TextBox || originalSource is Button || originalSource is Border)
+                    {
+                        // Check if this is the content presenter (tab content area)
+                        if (originalSource is ContentPresenter cp && cp.Name == "PART_SelectedContentHost")
+                        {
+                            return; // Definitely over content area
+                        }
+                        // Check if this is a border that's part of content
+                        if (originalSource is Border border && border.Parent is ContentPresenter)
+                        {
+                            return; // Over content area
+                        }
+                    }
+                    
+                    // If we find a TabItem, we're over a tab header
+                    if (originalSource is TabItem)
+                    {
+                        isOverTabHeader = true;
+                        break;
+                    }
+                    
+                    // If we reach the WrapPanel, we're in the header area
+                    if (originalSource == sender)
+                    {
+                        isOverTabHeader = true;
+                        break;
+                    }
+                    
+                    originalSource = VisualTreeHelper.GetParent(originalSource);
                 }
-                else if (e.Delta < 0)
-                {
-                    newIndex = (currentIndex + 1) % PackageInfoTabControl.Items.Count;
-                }
 
-                if (newIndex != currentIndex)
+                // Only proceed if we're actually over a tab header
+                if (isOverTabHeader)
                 {
-                    PackageInfoTabControl.SelectedIndex = newIndex;
-                    e.Handled = true;
+                    int currentIndex = PackageInfoTabControl.SelectedIndex;
+                    int newIndex = currentIndex;
+
+                    if (e.Delta > 0)
+                    {
+                        newIndex = (currentIndex - 1 + PackageInfoTabControl.Items.Count) % PackageInfoTabControl.Items.Count;
+                    }
+                    else if (e.Delta < 0)
+                    {
+                        newIndex = (currentIndex + 1) % PackageInfoTabControl.Items.Count;
+                    }
+
+                    if (newIndex != currentIndex)
+                    {
+                        PackageInfoTabControl.SelectedIndex = newIndex;
+                        e.Handled = true;
+                    }
                 }
             }
         }

@@ -300,9 +300,11 @@ namespace VPM
                     HideToggleButton.IsEnabled = true;
                 }
                 
-                // Hide dependencies tabs
-                DependenciesTabsContainer.Visibility = Visibility.Collapsed;
+                // Show dependencies tab for presets, hide dependents tab
+                DependenciesTabsContainer.Visibility = Visibility.Visible;
                 DependentsTab.Visibility = Visibility.Collapsed;
+                DependentsTabColumn.Width = new GridLength(0);
+                DependenciesTab.Margin = new Thickness(0);
                 
                 // Hide package and scene filters, show preset-specific filters
                 if (PackageFiltersContainer != null)

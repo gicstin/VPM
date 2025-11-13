@@ -87,6 +87,9 @@ namespace VPM.Services
                 FileSize = fileInfo.Length
             };
 
+            // Parse dependencies from the .vap file
+            PresetScanner.ParsePresetDependencies(item);
+
             return item;
         }
 
