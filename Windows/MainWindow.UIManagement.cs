@@ -1503,17 +1503,12 @@ namespace VPM
                 foreach (var option in dateOptions)
                 {
                     var displayText = option.Tag == "CustomRange" ? option.Text : $"{option.Text} ({option.Count})";
-                    var listItem = new ListBoxItem
-                    {
-                        Content = displayText,
-                        Tag = option.Tag
-                    };
-                    DateFilterList.Items.Add(listItem);
+                    DateFilterList.Items.Add(displayText);
 
                     // Restore selection
                     if (option.Tag == selectedTag || (string.IsNullOrEmpty(selectedTag) && option.Tag == "AllTime"))
                     {
-                        DateFilterList.SelectedItem = listItem;
+                        DateFilterList.SelectedItem = displayText;
                     }
                 }
 

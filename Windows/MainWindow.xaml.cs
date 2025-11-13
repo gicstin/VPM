@@ -148,6 +148,9 @@ namespace VPM
             // Initialize autoinstall manager
             InitializeAutoInstallManager();
 
+            // Initialize renaming service
+            InitializeRenamingService();
+
             // Only load sample data if no folder is selected (not first launch with auto-detected path)
             if (string.IsNullOrEmpty(_settingsManager.Settings.SelectedFolder))
             {

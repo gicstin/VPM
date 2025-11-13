@@ -960,11 +960,6 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="DateFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="3"/>
@@ -973,7 +968,7 @@ Off: Single selection, hide incompatible options"
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
                                         </Border>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -1092,11 +1087,6 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="StatusFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="3"/>
@@ -1105,7 +1095,7 @@ Off: Single selection, hide incompatible options"
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
                                         </Border>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -1226,11 +1216,6 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="ContentTypesList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="3"/>
@@ -1239,7 +1224,7 @@ Off: Single selection, hide incompatible options"
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
                                         </Border>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -1360,11 +1345,6 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="CreatorsList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="3"/>
@@ -1373,7 +1353,7 @@ Off: Single selection, hide incompatible options"
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ListBoxItem">
                                         <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter/>
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
                                         </Border>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -1495,14 +1475,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SubfoldersFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -1621,14 +1605,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="LicenseTypeList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -1720,14 +1708,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="FileSizeFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -1817,14 +1809,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="DamagedFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -1947,14 +1943,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneTypeFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2071,14 +2071,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneCreatorFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2166,14 +2170,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneStatusFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2264,14 +2272,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneSourceFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2359,14 +2371,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneDateFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2454,14 +2470,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="SceneFileSizeFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2583,14 +2603,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="PresetCategoryFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2707,14 +2731,18 @@ Off: Single selection, hide incompatible options"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="PresetSubfolderFilterList_SelectionChanged"
                                  MouseLeftButtonDown="FilterList_MouseLeftButtonDown">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2802,14 +2830,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="PresetStatusFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2897,14 +2929,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="PresetDateFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -2992,14 +3028,18 @@ Off: Single selection, hide incompatible options"
                                  ScrollViewer.CanContentScroll="True"
                                  Style="{StaticResource FilterListBoxStyle}"
                                  SelectionChanged="PresetFileSizeFilterList_SelectionChanged">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
                             <Setter Property="Padding" Value="5"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="6,0,0,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -3451,7 +3491,14 @@ Off: Single selection, hide incompatible options"
                                 <DataTemplate>
                                     <StackPanel Margin="8" Orientation="Vertical">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <Grid>
+                                                <Border x:Name="SceneDisplayBorder" PreviewMouseDown="SceneName_PreviewMouseDown" Cursor="Hand" ToolTip="Double-click to rename scene" Background="Transparent">
+                                                    <TextBlock x:Name="SceneDisplayTextBlock" FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBox x:Name="SceneEditTextBox" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" FontSize="14" FontWeight="Bold"
+                                                         Visibility="Collapsed" KeyDown="SceneNameEdit_KeyDown" LostFocus="SceneNameEdit_LostFocus"
+                                                         Tag="{Binding}" Background="Transparent" BorderThickness="1"/>
+                                            </Grid>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="❤️" Foreground="#FF6B6B" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Marked as favorite" Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="🙈" Foreground="#6B9EFF" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Hidden" Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding OptimizationIcon}" Foreground="#FFD700" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Scene has been optimized"/>
@@ -3526,7 +3573,14 @@ Off: Single selection, hide incompatible options"
                                 <DataTemplate>
                                     <StackPanel Margin="8" Orientation="Vertical">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                            <TextBlock FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                            <Grid>
+                                                <Border x:Name="PresetDisplayBorder" PreviewMouseDown="PresetName_PreviewMouseDown" Cursor="Hand" ToolTip="Double-click to rename preset" Background="Transparent">
+                                                    <TextBlock x:Name="PresetDisplayTextBlock" FontSize="14" FontWeight="Bold" Text="{Binding DisplayName}" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <TextBox x:Name="PresetEditTextBox" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" FontSize="14" FontWeight="Bold"
+                                                         Visibility="Collapsed" KeyDown="PresetNameEdit_KeyDown" LostFocus="PresetNameEdit_LostFocus"
+                                                         Tag="{Binding}" Background="Transparent" BorderThickness="1"/>
+                                            </Grid>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="❤️" Foreground="#FF6B6B" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Marked as favorite" Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock FontSize="14" FontWeight="Bold" Text="🙈" Foreground="#6B9EFF" Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Hidden" Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}"/>
                                             <TextBlock FontSize="11" Foreground="#888888" Text=" • " Margin="6,0" VerticalAlignment="Center"/>

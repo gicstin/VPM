@@ -47,7 +47,14 @@ namespace VPM.Models
         public string Name
         {
             get => _name;
-            set => SetProperty(ref _name, value);
+            set
+            {
+                if (SetProperty(ref _name, value))
+                {
+                    // Notify that DisplayName has also changed
+                    OnPropertyChanged(nameof(DisplayName));
+                }
+            }
         }
 
         public string Status
