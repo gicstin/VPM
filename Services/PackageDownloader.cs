@@ -320,15 +320,16 @@ namespace VPM.Services
                 }
                 else
                 {
-                    // Parse JSON format with better error handling
+                    // Parse JSON format with better error handling using source generation
                     var options = new JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true,
                         AllowTrailingCommas = true,
-                        ReadCommentHandling = JsonCommentHandling.Skip
+                        ReadCommentHandling = JsonCommentHandling.Skip,
+                        TypeInfoResolver = JsonSourceGenerationContext.Default
                     };
 
-                    packageList = JsonSerializer.Deserialize<List<PackageDownloadInfo>>(content, options);
+                    packageList = JsonSerializer.Deserialize(content, JsonSourceGenerationContext.Default.ListPackageDownloadInfo);
                 }
                 
                 if (packageList == null || packageList.Count == 0)

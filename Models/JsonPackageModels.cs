@@ -11,7 +11,7 @@ namespace VPM.Models
     public class JsonPackageDatabase
     {
         [JsonExtensionData]
-        public Dictionary<string, Dictionary<string, JsonPackageInfo>> Creators { get; set; }
+        public Dictionary<string, object> ExtensionData { get; set; } = new Dictionary<string, object>();
     }
 
     /// <summary>

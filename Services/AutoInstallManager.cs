@@ -3,20 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using VPM.Models;
 
 namespace VPM.Services
 {
-    public class AutoInstallData
-    {
-        public List<string> Names { get; set; } = new List<string>();
-    }
-
-    public class ShadowAutoInstallData
-    {
-        public List<string> Additions { get; set; } = new List<string>();
-        public List<string> Removals { get; set; } = new List<string>();
-    }
-
     public class AutoInstallManager
     {
         private readonly string _autoInstallFilePath;
@@ -186,7 +176,7 @@ namespace VPM.Services
                 if (File.Exists(_autoInstallFilePath))
                 {
                     string json = File.ReadAllText(_autoInstallFilePath);
-                    var data = JsonSerializer.Deserialize<AutoInstallData>(json);
+                    var data = JsonSerializer.Deserialize(json, JsonSourceGenerationContext.Default.AutoInstallData);
 
                     if (data?.Names != null)
                     {
@@ -200,7 +190,7 @@ namespace VPM.Services
                 if (File.Exists(_shadowFilePath))
                 {
                     string shadowJson = File.ReadAllText(_shadowFilePath);
-                    var shadowData = JsonSerializer.Deserialize<ShadowAutoInstallData>(shadowJson);
+                    var shadowData = JsonSerializer.Deserialize(shadowJson, JsonSourceGenerationContext.Default.ShadowAutoInstallData);
 
                     if (shadowData != null)
                     {
@@ -262,7 +252,7 @@ namespace VPM.Services
                     Names = _autoInstallNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
                 };
 
-                string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+                string json = JsonSerializer.Serialize(data, JsonSourceGenerationContext.Default.AutoInstallData);
                 
                 using (var fileStream = new FileStream(_autoInstallFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
                 using (var writer = new StreamWriter(fileStream))
@@ -292,7 +282,7 @@ namespace VPM.Services
                     try
                     {
                         string json = File.ReadAllText(_autoInstallFilePath);
-                        var data = JsonSerializer.Deserialize<AutoInstallData>(json);
+                        var data = JsonSerializer.Deserialize(json, JsonSourceGenerationContext.Default.AutoInstallData);
                         if (data?.Names != null)
                         {
                             foreach (var name in data.Names)
@@ -318,7 +308,7 @@ namespace VPM.Services
                     Removals = removals.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
                 };
 
-                string shadowJson = JsonSerializer.Serialize(shadowData, new JsonSerializerOptions { WriteIndented = true });
+                string shadowJson = JsonSerializer.Serialize(shadowData, JsonSourceGenerationContext.Default.ShadowAutoInstallData);
                 File.WriteAllText(_shadowFilePath, shadowJson);
 
                 _shadowChanges = additions;

@@ -77,7 +77,7 @@ namespace VPM
         
         #region Constructor
         
-        public MainWindow()
+        public MainWindow(SettingsManager settingsManager = null)
         {
             InitializeComponent();
             
@@ -104,8 +104,8 @@ namespace VPM
             var customAtomItemsSource = new CollectionViewSource { Source = CustomAtomItems };
             CustomAtomItemsView = customAtomItemsSource.View;
 
-            // Initialize settings manager first
-            _settingsManager = new SettingsManager();
+            // Initialize settings manager first (use provided instance or create new one)
+            _settingsManager = settingsManager ?? new SettingsManager();
             _settingsManager.SettingsChanged += OnSettingsChanged;
 
             // Apply loaded settings to current variables
@@ -150,12 +150,6 @@ namespace VPM
 
             // Initialize renaming service
             InitializeRenamingService();
-
-            // Only load sample data if no folder is selected (not first launch with auto-detected path)
-            if (string.IsNullOrEmpty(_settingsManager.Settings.SelectedFolder))
-            {
-                LoadSampleData();
-            }
 
             // Set up data binding
             PackageDataGrid.ItemsSource = PackagesView;

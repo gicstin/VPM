@@ -67,7 +67,7 @@ try {
     $dotnetVersion = dotnet --version 2>$null
     Write-Status ("SUCCESS: .NET SDK found: " + $dotnetVersion) "Success"
 } catch {
-    Write-Status "ERROR: .NET SDK not found! Please install .NET 8/9 SDK." "Error"
+    Write-Status "ERROR: .NET SDK not found! Please install .NET 10 SDK." "Error"
     Read-Host "Press Enter to exit"
     exit 1
 }
@@ -199,6 +199,12 @@ if (Test-Path "_links\VPM.bin") {
 } else {
     Write-Status "INFO: VPM.bin not found in _links folder (offline mode disabled)" "Info"
 }
+
+Write-Host "Cleaning up extracted native DLLs from output folder..." -ForegroundColor Yellow
+@("$outputDir\*.dll") | ForEach-Object {
+    Get-Item $_ -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+Write-Status "SUCCESS: Cleaned up extracted DLLs" "Success"
 
 @("bin", "obj") | ForEach-Object {
     if (Test-Path $_) {

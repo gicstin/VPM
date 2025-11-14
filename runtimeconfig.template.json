@@ -1,5 +1,36 @@
 {
   "configProperties": {
-    "System.Drawing.EnableUnixSupport": false
+    "System.Drawing.EnableUnixSupport": false,
+    "System.GC.Server": true,
+    "System.GC.Concurrent": true,
+    "System.GC.RetainVM": true,
+    "System.Runtime.Serialization.EnableUnsafeBinaryFormatterSerialization": false,
+    "System.Threading.ThreadPool.MinThreads": 8,
+    "System.Threading.ThreadPool.MaxThreads": 32,
+    "System.Threading.Tasks.TaskScheduler.UseNewTaskScheduler": true,
+    "System.Net.Http.EnableActivityPropagation": false,
+    "System.Net.Http.UseSocketsHttpHandler": true,
+    "System.Net.SocketsHttpHandler.Http2Support": true,
+    "System.Net.SocketsHttpHandler.Http3Support": true,
+    "System.Text.Json.JsonSerializer.IsReflectionEnabledByDefault": false,
+    "System.Text.Json.Serialization.EnableSourceGeneration": true,
+    "System.GC.HeapHardLimit": 2147483648,
+    "System.GC.HighMemoryPercent": 90,
+    "System.GC.LOHThreshold": 85000,
+    "System.Runtime.TieredCompilation": true,
+    "System.Runtime.TieredCompilation.QuickJit": true,
+    "System.Runtime.TieredPGO": true,
+    "System.Diagnostics.Debugger.IsSupported": false,
+    "System.Diagnostics.Tracing.EventSource.IsSupported": true,
+    "Switch.System.Windows.Input.Stylus.EnablePointerSupport": true,
+    "Switch.System.Windows.Media.ImageSourceConverter.OverrideExceptionWithNullOnFailure": true,
+    "System.Net.Security.UseManagedNtlm": false,
+    "System.Security.Cryptography.UseManagedNtlm": false
+  },
+  "runtimeOptions": {
+    "configProperties": {
+      "System.Globalization.Invariant": false,
+      "System.Globalization.PredefinedCulturesOnly": true
+    }
   }
 }

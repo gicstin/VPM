@@ -1197,6 +1197,11 @@ namespace VPM.Services
         public void UpdatePackageMappingFast(List<string> installedFiles, List<string> availableFiles, IProgress<(int current, int total)> progress = null)
         {
             PackageMetadata.Clear();
+            
+            // Force garbage collection to free memory before loading new packages
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
 
             var descriptors = BuildVariantDescriptors(installedFiles, availableFiles);
             var totalDescriptors = descriptors.Count;
@@ -1261,22 +1266,44 @@ namespace VPM.Services
                 }
             }
 
-            foreach (var kvp in _snapshotCache.ToArray())
+            int materializedCount = 0;
+            var inactivePackages = new List<string>();
+            
+            foreach (var kvp in _snapshotCache)
             {
                 var packageBase = kvp.Key;
                 var snapshot = kvp.Value;
 
                 if (!activePackages.Contains(packageBase))
                 {
-                    snapshot.RemoveMaterializedKeys(PackageMetadata);
-                    _snapshotCache.TryRemove(packageBase, out _);
-                    PreviewImageIndex.TryRemove(packageBase, out _);
+                    inactivePackages.Add(packageBase);
                     continue;
                 }
 
                 snapshot.FinalizeVariants();
                 snapshot.Materialize(PackageMetadata);
+                
+                // Periodic garbage collection to prevent memory buildup during materialization
+                materializedCount++;
+                if (materializedCount % 1000 == 0)
+                {
+                    GC.Collect(0, GCCollectionMode.Optimized);
+                }
             }
+            
+            // Remove inactive packages after iteration
+            foreach (var packageBase in inactivePackages)
+            {
+                if (_snapshotCache.TryRemove(packageBase, out var snapshot))
+                {
+                    snapshot.RemoveMaterializedKeys(PackageMetadata);
+                }
+                PreviewImageIndex.TryRemove(packageBase, out _);
+            }
+            
+            // Force garbage collection after materializing all packages
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
 
             int optimizedCount = PackageMetadata.Values.Count(m => m.IsOptimized);
             

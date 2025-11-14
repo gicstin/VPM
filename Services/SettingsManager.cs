@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using VPM.Models;
@@ -22,11 +23,13 @@ namespace VPM.Services
         private readonly object _saveLock = new object();
         
         // Cache JsonSerializerOptions to avoid repeated allocations
+        // Using JSON source generation for .NET 10 performance optimization
         private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
             WriteIndented = true,
-            Converters = { new JsonStringEnumConverter() }
+            Converters = { new JsonStringEnumConverter() },
+            TypeInfoResolver = JsonSourceGenerationContext.Default
         };
         
         // Cache property accessors for fast reflection-free access
@@ -43,7 +46,42 @@ namespace VPM.Services
         /// <param name="settingsFilePath">Path to the settings file (defaults to VPM.json in current directory)</param>
         public SettingsManager(string settingsFilePath = null)
         {
-            _settingsFilePath = settingsFilePath ?? Path.Combine(Environment.CurrentDirectory, "VPM.json");
+            // Use application directory if no path is specified
+            // This ensures settings are saved in the same directory as the executable
+            if (settingsFilePath != null)
+            {
+                _settingsFilePath = settingsFilePath;
+            }
+            else
+            {
+                var appDirectory = AppDomain.CurrentDomain.BaseDirectory;
+                var appPath = Path.Combine(appDirectory, "VPM.json");
+                
+                // Try to use app directory first
+                try
+                {
+                    // Test if we can write to app directory
+                    var testFile = Path.Combine(appDirectory, ".write_test");
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                    _settingsFilePath = appPath;
+                }
+                catch
+                {
+                    // Fall back to user's local app data directory if app directory is not writable
+                    var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                    var vpmFolder = Path.Combine(localAppData, "VPM");
+                    if (!Directory.Exists(vpmFolder))
+                    {
+                        Directory.CreateDirectory(vpmFolder);
+                    }
+                    _settingsFilePath = Path.Combine(vpmFolder, "VPM.json");
+                }
+            }
+            
+            Console.WriteLine($"[SettingsManager] AppDomain.CurrentDomain.BaseDirectory: {AppDomain.CurrentDomain.BaseDirectory}");
+            Console.WriteLine($"[SettingsManager] Settings file path: {_settingsFilePath}");
+            Console.WriteLine($"[SettingsManager] Settings directory exists: {Directory.Exists(Path.GetDirectoryName(_settingsFilePath))}");
             
             // Initialize auto-save timer (saves after 1 second of inactivity)
             _saveTimer = new DispatcherTimer
@@ -54,7 +92,7 @@ namespace VPM.Services
 
             // Load existing settings or create defaults
             LoadSettings();
-
+            
             // Subscribe to property changes for auto-save
             Settings.PropertyChanged += Settings_PropertyChanged;
         }
@@ -66,30 +104,38 @@ namespace VPM.Services
         {
             try
             {
+                Console.WriteLine($"[SettingsManager] Loading settings from: {_settingsFilePath}");
+                
                 if (File.Exists(_settingsFilePath))
                 {
+                    Console.WriteLine($"[SettingsManager] Settings file exists, loading...");
                     var json = File.ReadAllText(_settingsFilePath);
                     var loadedSettings = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
                     
                     if (loadedSettings != null)
                     {
                         Settings = loadedSettings;
+                        Console.WriteLine($"[SettingsManager] Settings loaded successfully. IsFirstLaunch: {Settings.IsFirstLaunch}");
                     }
                     else
                     {
                         Settings = AppSettings.CreateDefault();
+                        Console.WriteLine($"[SettingsManager] Failed to deserialize settings, using defaults");
                     }
                 }
                 else
                 {
+                    Console.WriteLine($"[SettingsManager] Settings file does not exist, creating defaults...");
                     Settings = AppSettings.CreateDefault();
                     
-                    // Save default settings immediately
-                    SaveSettingsImmediate();
+                    // Don't save default settings immediately on first launch
+                    // Let the first launch setup process handle saving after user selects game path
+                    Console.WriteLine($"[SettingsManager] Default settings created, waiting for first launch setup to complete before saving");
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Console.WriteLine($"[SettingsManager] Error loading settings: {ex.Message}");
                 Settings = AppSettings.CreateDefault();
             }
         }
@@ -110,14 +156,31 @@ namespace VPM.Services
                     if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                     {
                         Directory.CreateDirectory(directory);
+                        Console.WriteLine($"[SettingsManager] Created directory: {directory}");
+                    }
+
+                    // Test write permissions before attempting to save
+                    var tempFile = Path.Combine(directory ?? ".", ".write_test_" + Guid.NewGuid().ToString("N")[..8]);
+                    try
+                    {
+                        File.WriteAllText(tempFile, "test");
+                        File.Delete(tempFile);
+                    }
+                    catch (Exception permEx)
+                    {
+                        Console.WriteLine($"[SettingsManager] No write permission to directory {directory}: {permEx.Message}");
+                        throw new UnauthorizedAccessException($"Cannot write to settings directory: {directory}", permEx);
                     }
 
                     File.WriteAllText(_settingsFilePath, json);
                     _hasUnsavedChanges = false;
                     
+                    Console.WriteLine($"[SettingsManager] Settings saved successfully to: {_settingsFilePath}");
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"[SettingsManager] Error saving settings to {_settingsFilePath}: {ex.Message}");
+                    throw; // Re-throw to let caller handle the error
                 }
             }
         }

@@ -3,20 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using VPM.Models;
 
 namespace VPM.Services
 {
-    public class FavoritesData
-    {
-        public List<string> FavoriteNames { get; set; } = new List<string>();
-    }
-
-    public class ShadowFavoritesData
-    {
-        public List<string> Additions { get; set; } = new List<string>();
-        public List<string> Removals { get; set; } = new List<string>();
-    }
-
     public class FavoritesManager
     {
         private readonly string _favoritesFilePath;
@@ -191,7 +181,7 @@ namespace VPM.Services
                 if (File.Exists(_favoritesFilePath))
                 {
                     string json = File.ReadAllText(_favoritesFilePath);
-                    var data = JsonSerializer.Deserialize<FavoritesData>(json);
+                    var data = JsonSerializer.Deserialize(json, JsonSourceGenerationContext.Default.FavoritesData);
 
                     if (data?.FavoriteNames != null)
                     {
@@ -206,7 +196,7 @@ namespace VPM.Services
                 if (File.Exists(_shadowFilePath))
                 {
                     string shadowJson = File.ReadAllText(_shadowFilePath);
-                    var shadowData = JsonSerializer.Deserialize<ShadowFavoritesData>(shadowJson);
+                    var shadowData = JsonSerializer.Deserialize(shadowJson, JsonSourceGenerationContext.Default.ShadowFavoritesData);
 
                     if (shadowData != null)
                     {
@@ -273,7 +263,7 @@ namespace VPM.Services
                     FavoriteNames = _favoriteNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
                 };
 
-                string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+                string json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true, TypeInfoResolver = JsonSourceGenerationContext.Default });
                 
                 // Try to open file with exclusive access
                 using (var fileStream = new FileStream(_favoritesFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -306,7 +296,7 @@ namespace VPM.Services
                     try
                     {
                         string json = File.ReadAllText(_favoritesFilePath);
-                        var data = JsonSerializer.Deserialize<FavoritesData>(json);
+                        var data = JsonSerializer.Deserialize(json, JsonSourceGenerationContext.Default.FavoritesData);
                         if (data?.FavoriteNames != null)
                         {
                             foreach (var name in data.FavoriteNames)
@@ -334,7 +324,7 @@ namespace VPM.Services
                     Removals = removals.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
                 };
 
-                string shadowJson = JsonSerializer.Serialize(shadowData, new JsonSerializerOptions { WriteIndented = true });
+                string shadowJson = JsonSerializer.Serialize(shadowData, new JsonSerializerOptions { WriteIndented = true, TypeInfoResolver = JsonSourceGenerationContext.Default });
                 File.WriteAllText(_shadowFilePath, shadowJson);
 
                 _shadowChanges = additions;

@@ -82,6 +82,9 @@ namespace VPM
                 // Load settings to check if this is first launch
                 var settingsManager = new SettingsManager();
                 
+                Console.WriteLine($"[App] IsFirstLaunch: {settingsManager.Settings.IsFirstLaunch}");
+                Console.WriteLine($"[App] SelectedFolder: {settingsManager.Settings.SelectedFolder}");
+                
                 if (settingsManager.Settings.IsFirstLaunch)
                 {
                     // Show first launch setup window
@@ -93,12 +96,27 @@ namespace VPM
                         // Save the selected path
                         settingsManager.Settings.SelectedFolder = setupWindow.SelectedGamePath;
                         settingsManager.Settings.IsFirstLaunch = false;
-                        settingsManager.SaveSettingsImmediate();
                         
-                        // Create and show main window
                         try
                         {
-                            var mainWindow = new MainWindow();
+                            settingsManager.SaveSettingsImmediate();
+                            Console.WriteLine($"[App] Settings saved successfully after first launch setup");
+                        }
+                        catch (Exception saveEx)
+                        {
+                            Console.WriteLine($"[App] Warning: Failed to save settings after first launch setup: {saveEx.Message}");
+                            MessageBox.Show(
+                                $"Settings could not be saved to disk:\n\n{saveEx.Message}\n\n" +
+                                "The application will continue to work, but your settings may not persist between sessions.",
+                                "Settings Save Warning",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Warning);
+                        }
+                        
+                        // Create and show main window with the settings manager instance
+                        try
+                        {
+                            var mainWindow = new MainWindow(settingsManager);
                             MainWindow = mainWindow;
                             
                             // Change shutdown mode to close when main window closes
@@ -131,10 +149,10 @@ namespace VPM
                 }
                 else
                 {
-                    // Not first launch, show main window normally
+                    // Not first launch, show main window normally with loaded settings
                     try
                     {
-                        var mainWindow = new MainWindow();
+                        var mainWindow = new MainWindow(settingsManager);
                         MainWindow = mainWindow;
                         
                         // Change shutdown mode to close when main window closes

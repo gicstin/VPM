@@ -744,51 +744,17 @@ namespace VPM
 
         #endregion
 
-        #region Sample Data
-
-        private void LoadSampleData()
-        {
-            // Add sample packages
-            Packages.Add(new PackageItem 
-            { 
-                Name = "Sample.Package.1", 
-                Status = "Loaded",
-                Creator = "SampleCreator",
-                FileSize = 1024000,
-                ModifiedDate = DateTime.Now.AddDays(-1)
-            });
-            
-            Packages.Add(new PackageItem 
-            { 
-                Name = "Another.Package.2", 
-                Status = "Available",
-                Creator = "AnotherCreator",
-                FileSize = 2048000,
-                ModifiedDate = DateTime.Now.AddDays(-5)
-            });
-            
-            Packages.Add(new PackageItem 
-            { 
-                Name = "Missing.Package.3", 
-                Status = "Missing",
-                Creator = "MissingCreator",
-                FileSize = 512000,
-                ModifiedDate = DateTime.Now.AddDays(-10)
-            });
-            
-            // Add sample dependencies
-            Dependencies.Add(new DependencyItem { Name = "Dependency.1", Status = "Loaded" });
-            Dependencies.Add(new DependencyItem { Name = "Dependency.2", Status = "Available" });
-            Dependencies.Add(new DependencyItem { Name = "Dependency.3", Status = "Missing" });
-            
-        }
-
-        #endregion
 
         #region Package Management Operations
 
         private async void RefreshPackages()
         {
+            // Ensure _selectedFolder is in sync with settings
+            if (string.IsNullOrEmpty(_selectedFolder) && !string.IsNullOrEmpty(_settingsManager?.Settings.SelectedFolder))
+            {
+                _selectedFolder = _settingsManager.Settings.SelectedFolder;
+            }
+            
             if (string.IsNullOrEmpty(_selectedFolder))
             {
                 MessageBox.Show("Please select a VAM root folder first.", "No Folder Selected", 
