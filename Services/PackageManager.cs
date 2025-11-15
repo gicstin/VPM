@@ -1198,10 +1198,7 @@ namespace VPM.Services
         {
             PackageMetadata.Clear();
             
-            // Force garbage collection to free memory before loading new packages
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-            GC.Collect();
+            // .NET 10 GC will handle memory pressure automatically
 
             var descriptors = BuildVariantDescriptors(installedFiles, availableFiles);
             var totalDescriptors = descriptors.Count;
@@ -1283,12 +1280,8 @@ namespace VPM.Services
                 snapshot.FinalizeVariants();
                 snapshot.Materialize(PackageMetadata);
                 
-                // Periodic garbage collection to prevent memory buildup during materialization
+                // .NET 10 GC handles memory pressure automatically
                 materializedCount++;
-                if (materializedCount % 1000 == 0)
-                {
-                    GC.Collect(0, GCCollectionMode.Optimized);
-                }
             }
             
             // Remove inactive packages after iteration
@@ -1301,9 +1294,7 @@ namespace VPM.Services
                 PreviewImageIndex.TryRemove(packageBase, out _);
             }
             
-            // Force garbage collection after materializing all packages
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
+            // .NET 10 GC handles cleanup automatically
 
             int optimizedCount = PackageMetadata.Values.Count(m => m.IsOptimized);
             

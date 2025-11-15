@@ -2727,8 +2727,8 @@ namespace VPM
                 else if (selectedPackages.Count == 1)
                 {
                     var packageItem = selectedPackages[0];
-                    DisplayPackageInfo(packageItem);
                     
+                    DisplayPackageInfo(packageItem);
                     UpdateBothTabCounts(packageItem);
                     
                     if (_showingDependents)
@@ -2741,7 +2741,6 @@ namespace VPM
                 else
                 {
                     DisplayMultiplePackageInfo(selectedPackages);
-                    
                     UpdateBothTabCountsForMultiple(selectedPackages);
                     
                     if (_showingDependents)

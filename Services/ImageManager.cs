@@ -889,7 +889,7 @@ namespace VPM.Services
                 _cacheMisses = 0;
             }
             
-            GC.Collect();
+            // .NET 10 GC handles cleanup automatically
         }
         
         /// <summary>
@@ -1143,8 +1143,7 @@ namespace VPM.Services
                     CleanupDeadReferences();
                 }
 
-                // Force garbage collection
-                GC.Collect(1, GCCollectionMode.Optimized);
+                // .NET 10 GC handles cleanup automatically
             }
             else if (memoryUsage > HIGH_MEMORY_THRESHOLD)
             {

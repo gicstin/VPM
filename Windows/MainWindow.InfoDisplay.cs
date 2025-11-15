@@ -770,9 +770,9 @@ namespace VPM
 
             // Use stored metadata key for O(1) performance
             _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var packageMetadata);
-
             if (packageMetadata?.Dependencies != null && packageMetadata.Dependencies.Any())
             {
+                int depCount = 0;
                 foreach (var dependency in packageMetadata.Dependencies)
                 {
                     // dependency is the RAW string from metadata - could be "package.name.5.var" or "package.name:/path/to/file.var"
@@ -820,6 +820,7 @@ namespace VPM
                     
                     Dependencies.Add(dependencyItem);
                     _originalDependencies.Add(dependencyItem); // Store for filtering
+                    depCount++;
                 }
             }
             else
@@ -856,7 +857,6 @@ namespace VPM
 
             Dependencies.Clear();
             _originalDependencies.Clear(); // Clear original dependencies when loading new ones
-
             var allDependencies = new Dictionary<string, DependencyItem>();
             foreach (var package in selectedPackages)
             {
@@ -913,7 +913,6 @@ namespace VPM
                     }
                 }
             }
-            
             if (allDependencies.Any())
             {
                 // Sort dependencies by name

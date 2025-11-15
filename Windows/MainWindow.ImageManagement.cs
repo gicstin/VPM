@@ -83,18 +83,6 @@ namespace VPM
         {
             try
             {
-                // Memory pressure management (adjusted for full-resolution images)
-                var memoryBefore = GC.GetTotalMemory(false);
-                if (memoryBefore > 1_200_000_000) // 1.2GB threshold - higher for full-res images
-                {
-                    _imageManager.ClearBitmapCache();
-                    GC.Collect();
-                }
-                else if (memoryBefore > 600_000_000) // 600MB threshold for partial cleanup
-                {
-                    _imageManager.PartialCacheCleanup();
-                }
-                
                 // Initialize packageSources if not provided (all packages are considered packages)
                 if (packageSources == null || packageSources.Count != selectedPackages.Count)
                 {
@@ -128,7 +116,6 @@ namespace VPM
                 // Load ALL available images (virtualization ensures only visible ones actually load)
                 // Always display grouped by package
                 await DisplayGroupedPackageImagesAsync(selectedPackages, packageSources);
-                
             }
             catch (Exception)
             {
@@ -137,13 +124,10 @@ namespace VPM
 
         private async Task DisplayGroupedPackageImagesAsync(List<PackageItem> selectedPackages, List<bool> packageSources)
         {
-            var startTime = DateTime.Now;
-            
             // Optimized batching: Smaller first batch for instant feedback, larger for remaining
             const int firstBatchSize = 3; // Show first few packages immediately
             const int batchSize = 8; // Larger batches for remaining packages
             var remainingContainers = new List<StackPanel>();
-            var totalImagesLoaded = 0;
             var isFirstBatch = true;
             var firstBatchAdded = false;
             
@@ -159,8 +143,6 @@ namespace VPM
                 
                 var batchContainers = await Task.WhenAll(batchTasks);
                 var validBatchContainers = batchContainers.Where(c => c != null).ToList();
-                
-                totalImagesLoaded += validBatchContainers.Sum(c => CountImagesInContainer(c));
                 
                 // After first batch, immediately show it to user for instant feedback
                 if (isFirstBatch && validBatchContainers.Count > 0)
@@ -223,9 +205,6 @@ namespace VPM
                     await _virtualizedImageManager.LoadInitialVisibleImagesAsync();
                 }
             }), DispatcherPriority.Loaded);
-            
-            var elapsed = DateTime.Now - startTime;
-            var cacheStats = _imageManager.GetCacheStats();
         }
 
         /// <summary>
@@ -235,7 +214,6 @@ namespace VPM
         {
             try
             {
-                
                 // Find the package metadata - use cached lookup for performance
                 // Use MetadataKey for accurate lookup (handles multiple versions of same package)
                 var packageMetadata = GetCachedPackageMetadata(!string.IsNullOrEmpty(packageItem.MetadataKey) ? packageItem.MetadataKey : packageItem.Name);
@@ -250,6 +228,7 @@ namespace VPM
                 
                 // First get total available images to show in header
                 var totalAvailableImages = _imageManager.GetCachedImageCount(packageBase);
+                
                 if (totalAvailableImages == 0)
                 {
                     return null;

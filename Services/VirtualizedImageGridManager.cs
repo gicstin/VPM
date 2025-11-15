@@ -93,7 +93,8 @@ namespace VPM.Services
                     .Where(x => x.Position <= loadBottom && (x.Position + 200) >= loadTop)  // In load zone
                     .OrderBy(x => Math.Abs(x.Position - viewportCenter))  // Closest to center first
                     .Select(x => x.Image)
-                    .ToList();                
+                    .ToList();
+                
                 // Load images in priority order (closest to viewport center first)
                 int loadedCount = 0;
                 foreach (var image in imagesToLoad)
@@ -104,12 +105,15 @@ namespace VPM.Services
                         var wasLoaded = await image.CheckAndLoadIfVisibleAsync(_scrollViewer, LoadBufferSize);
                         if (wasLoaded)
                         {
-                            loadedCount++;                        }
+                            loadedCount++;
+                        }
                     }
                     catch (Exception)
-                    {                    }
+                    {
+                    }
                 }
-                                return loadedCount;
+                
+                return loadedCount;
             }
             finally
             {
