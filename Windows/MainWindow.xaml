@@ -894,41 +894,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="DateFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="DateFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="DateFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="DateFilterToggleButtonCollapsed" Grid.Column="1"
+                            <Button x:Name="DateFilterToggleButtonCollapsed" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="DateFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="DateFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📅 Filter by Date"/>
+                            <Button x:Name="DateFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="DateFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="DateFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="DateFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📅 Filter by Date"/>
                         </Grid>
                         
                         <!-- Expanded state (shown when visible) -->
@@ -1011,41 +1011,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="StatusFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="StatusFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="StatusFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="StatusFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="StatusFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="StatusFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="StatusFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📊 Filter by Status"/>
+                            <Button x:Name="StatusFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="StatusFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="StatusFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="StatusFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📊 Filter by Status"/>
                         </Grid>
                         
                         <!-- Expanded state (shown when visible) -->
@@ -1122,42 +1122,42 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="ContentTypesFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="ContentTypesFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="ContentTypesFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="ContentTypesFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="ContentTypesFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="ContentTypesFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="ContentTypesFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" 
+                                   Content="📦 Filter content types"/>
+                            <Button x:Name="ContentTypesFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="ContentTypesFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="ContentTypesFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="ContentTypesFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" 
-                                   Content="📦 Filter content types"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -1251,42 +1251,42 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="CreatorsFilterCollapsedGrid" Margin="0,0,0,5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="CreatorsFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="CreatorsFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="CreatorsFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="CreatorsFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="CreatorsFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="CreatorsFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" 
+                                   Content="👤 Filter creators"/>
+                            <Button x:Name="CreatorsFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="CreatorsFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="CreatorsFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="CreatorsFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" 
-                                   Content="👤 Filter creators"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -1382,41 +1382,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SubfoldersFilterCollapsedGrid" Margin="0,0,0,5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SubfoldersFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SubfoldersFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SubfoldersFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SubfoldersFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SubfoldersFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SubfoldersFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📁 Filter by subfolders"/>
+                            <Button x:Name="SubfoldersFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SubfoldersFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SubfoldersFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SubfoldersFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📁 Filter by subfolders"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -1511,42 +1511,42 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="LicenseTypeFilterCollapsedGrid" Margin="0,0,0,5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="LicenseTypeFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="LicenseTypeFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="LicenseTypeFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="LicenseTypeFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="LicenseTypeFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="LicenseTypeFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" 
+                                   Content="⚖️ Filter license types"/>
+                            <Button x:Name="LicenseTypeFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="LicenseTypeFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="LicenseTypeFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="LicenseTypeFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" 
-                                   Content="⚖️ Filter license types"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -1641,41 +1641,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="FileSizeFilterCollapsedGrid" Margin="0,0,0,5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="FileSizeFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="FileSizeFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="FileSizeFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="FileSizeFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="FileSizeFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="FileSizeFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📦 Filter by size"/>
+                            <Button x:Name="FileSizeFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="FileSizeFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="FileSizeFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="FileSizeFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📦 Filter by size"/>
                         </Grid>
                         
                         <!-- Expanded state (shown when visible) -->
@@ -1743,41 +1743,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="DamagedFilterCollapsedGrid" Margin="0,0,0,5" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="DamagedFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="DamagedFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="DamagedFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="DamagedFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="DamagedFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="DamagedFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="⚠️ Filter damaged packages"/>
+                            <Button x:Name="DamagedFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="DamagedFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="DamagedFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="DamagedFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="⚠️ Filter damaged packages"/>
                         </Grid>
                         
                         <Grid x:Name="DamagedFilterExpandedGrid" Margin="0,0,0,5">
@@ -1850,41 +1850,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneTypeFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneTypeFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneTypeFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneTypeFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneTypeFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneTypeFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneTypeFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="🎬 Filter scene types"/>
+                            <Button x:Name="SceneTypeFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneTypeFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneTypeFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneTypeFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="🎬 Filter scene types"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -1978,41 +1978,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneCreatorFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneCreatorFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneCreatorFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneCreatorFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneCreatorFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneCreatorFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneCreatorFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="👤 Filter scene creators"/>
+                            <Button x:Name="SceneCreatorFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneCreatorFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneCreatorFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneCreatorFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="👤 Filter scene creators"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -2105,41 +2105,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneStatusFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneStatusFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneStatusFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneStatusFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneStatusFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneStatusFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneStatusFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                            <Button x:Name="SceneStatusFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneStatusFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneStatusFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneStatusFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="❤️ Filter by status"/>
                         </Grid>
                         
                         <Grid x:Name="SceneStatusFilterExpandedGrid" Margin="0,0,0,6">
@@ -2205,41 +2205,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneSourceFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneSourceFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneSourceFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneSourceFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneSourceFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneSourceFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneSourceFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="✗ Filter scene source"/>
+                            <Button x:Name="SceneSourceFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneSourceFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneSourceFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneSourceFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="✗ Filter scene source"/>
                         </Grid>
                         
                         <!-- Expanded state (shown when visible) -->
@@ -2306,41 +2306,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneDateFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneDateFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneDateFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneDateFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneDateFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneDateFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneDateFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                            <Button x:Name="SceneDateFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneDateFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneDateFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneDateFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📅 Filter by date"/>
                         </Grid>
                         
                         <Grid x:Name="SceneDateFilterExpandedGrid" Margin="0,0,0,6">
@@ -2405,41 +2405,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="SceneFileSizeFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="SceneFileSizeFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="SceneFileSizeFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneFileSizeFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="SceneFileSizeFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="SceneFileSizeFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="SceneFileSizeFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                            <Button x:Name="SceneFileSizeFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="SceneFileSizeFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="SceneFileSizeFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="SceneFileSizeFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="💾 Filter by file size"/>
                         </Grid>
                         
                         <Grid x:Name="SceneFileSizeFilterExpandedGrid" Margin="0,0,0,6">
@@ -2510,41 +2510,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="PresetCategoryFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="PresetCategoryFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="PresetCategoryFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetCategoryFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="PresetCategoryFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="PresetCategoryFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetCategoryFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📂 Filter by category"/>
+                            <Button x:Name="PresetCategoryFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="PresetCategoryFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="PresetCategoryFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="PresetCategoryFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📂 Filter by category"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -2638,41 +2638,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="PresetSubfolderFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="PresetSubfolderFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="PresetSubfolderFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetSubfolderFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="PresetSubfolderFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="PresetSubfolderFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetSubfolderFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📁 Filter by subfolder"/>
+                            <Button x:Name="PresetSubfolderFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="PresetSubfolderFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="PresetSubfolderFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="PresetSubfolderFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📁 Filter by subfolder"/>
                         </Grid>
                         
                         <!-- TextBox Grid with eye button (shown when expanded) -->
@@ -2765,41 +2765,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="PresetStatusFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="PresetStatusFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="PresetStatusFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetStatusFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="PresetStatusFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="PresetStatusFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetStatusFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="❤️ Filter by status"/>
+                            <Button x:Name="PresetStatusFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="PresetStatusFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="PresetStatusFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="PresetStatusFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="❤️ Filter by status"/>
                         </Grid>
                         
                         <Grid x:Name="PresetStatusFilterExpandedGrid" Margin="0,0,0,6">
@@ -2864,41 +2864,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="PresetDateFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="PresetDateFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="PresetDateFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetDateFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="PresetDateFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="PresetDateFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetDateFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="📅 Filter by date"/>
+                            <Button x:Name="PresetDateFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="PresetDateFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="PresetDateFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="PresetDateFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="📅 Filter by date"/>
                         </Grid>
                         
                         <Grid x:Name="PresetDateFilterExpandedGrid" Margin="0,0,0,6">
@@ -2963,41 +2963,41 @@ Off: Single selection, hide incompatible options"
                         <Grid x:Name="PresetFileSizeFilterCollapsedGrid" Margin="0,0,0,6" Visibility="Collapsed">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <Button x:Name="PresetFileSizeFilterMoveUpButton" Grid.Column="0"
-                                    Content="▲" 
-                                    Width="{StaticResource FilterToggleButtonSize}" 
-                                    Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
-                                    Padding="0" FontSize="12" FontWeight="Bold"
-                                    Click="FilterMoveUp_Click"
-                                    Tag="PresetFileSizeFilter"
-                                    ToolTip="Move filter up"
-                                    Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetFileSizeFilterToggleButton" Grid.Column="1"
+                            <Button x:Name="PresetFileSizeFilterToggleButton" Grid.Column="0"
                                     Content="👁️‍🗨️" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,3,0"
+                                    Margin="0,0,6,0"
                                     Padding="0" FontSize="15"
                                     Click="ToggleFilterVisibility_Click"
                                     Tag="PresetFileSizeFilter"
                                     ToolTip="Toggle filter section visibility"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Button x:Name="PresetFileSizeFilterMoveDownButton" Grid.Column="2"
+                            <Label Grid.Column="1" Content="💾 Filter by file size"/>
+                            <Button x:Name="PresetFileSizeFilterMoveUpButton" Grid.Column="2"
+                                    Content="▲" 
+                                    Width="{StaticResource FilterToggleButtonSize}" 
+                                    Height="{StaticResource FilterToggleButtonSize}"
+                                    Margin="3,0,3,0"
+                                    Padding="0" FontSize="12" FontWeight="Bold"
+                                    Click="FilterMoveUp_Click"
+                                    Tag="PresetFileSizeFilter"
+                                    ToolTip="Move filter up"
+                                    Style="{StaticResource BlueHoverButtonStyle}"/>
+                            <Button x:Name="PresetFileSizeFilterMoveDownButton" Grid.Column="3"
                                     Content="▼" 
                                     Width="{StaticResource FilterToggleButtonSize}" 
                                     Height="{StaticResource FilterToggleButtonSize}"
-                                    Margin="0,0,6,0"
+                                    Margin="0,0,0,0"
                                     Padding="0" FontSize="12" FontWeight="Bold"
                                     Click="FilterMoveDown_Click"
                                     Tag="PresetFileSizeFilter"
                                     ToolTip="Move filter down"
                                     Style="{StaticResource BlueHoverButtonStyle}"/>
-                            <Label Grid.Column="3" Content="💾 Filter by file size"/>
                         </Grid>
                         
                         <Grid x:Name="PresetFileSizeFilterExpandedGrid" Margin="0,0,0,6">
