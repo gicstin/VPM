@@ -121,9 +121,16 @@ namespace VPM
                 
                 // Show package search, hide scene search
                 PackageSearchBox.Visibility = Visibility.Visible;
-                PackageSearchClearButton.Visibility = PackageSearchBox.Text != "📦 Filter packages, descriptions, tags..." ? Visibility.Visible : Visibility.Collapsed;
+                // Reset package search box to placeholder
+                PackageSearchBox.Text = "📦 Filter packages, descriptions, tags...";
+                PackageSearchBox.Foreground = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+                PackageSearchClearButton.Visibility = Visibility.Collapsed;
                 SceneSearchBox.Visibility = Visibility.Collapsed;
                 SceneSearchClearButton.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchBox != null)
+                    CustomAtomSearchBox.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchClearButton != null)
+                    CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
                 
                 // Make sorting button context-aware for packages
                 PackageSortButton.IsEnabled = true;
@@ -183,7 +190,14 @@ namespace VPM
                 PackageSearchBox.Visibility = Visibility.Collapsed;
                 PackageSearchClearButton.Visibility = Visibility.Collapsed;
                 SceneSearchBox.Visibility = Visibility.Visible;
-                SceneSearchClearButton.Visibility = SceneSearchBox.Text != "🎬 Filter scenes by name, creator, type..." ? Visibility.Visible : Visibility.Collapsed;
+                // Reset scene search box to placeholder
+                SceneSearchBox.Text = "📝 Filter scenes by name, creator, type...";
+                SceneSearchBox.Foreground = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+                SceneSearchClearButton.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchBox != null)
+                    CustomAtomSearchBox.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchClearButton != null)
+                    CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
 
                 // Enable sorting for scenes mode
                 PackageSortButton.IsEnabled = true;
@@ -281,7 +295,12 @@ namespace VPM
                 SceneSearchBox.Visibility = Visibility.Collapsed;
                 SceneSearchClearButton.Visibility = Visibility.Collapsed;
                 if (CustomAtomSearchBox != null)
+                {
                     CustomAtomSearchBox.Visibility = Visibility.Visible;
+                    // Reset presets search box to placeholder
+                    CustomAtomSearchBox.Text = "🔍 Filter presets by name...";
+                    CustomAtomSearchBox.Foreground = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+                }
                 if (CustomAtomSearchClearButton != null)
                     CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
                 

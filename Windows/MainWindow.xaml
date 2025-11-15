@@ -3593,12 +3593,12 @@ Off: Single selection, hide incompatible options"
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,2">
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="Path: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding Subfolder}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Deps: "/>
+                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding DependencyCount}" FontWeight="Bold" ToolTip="Number of package dependencies"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Size: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding FileSizeFormatted}" FontWeight="Bold"/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Date: "/>
                                             <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="{Binding DateFormatted}" FontWeight="Bold"/>
-                                            <TextBlock FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Text="  •  Deps: "/>
-                                            <TextBlock FontSize="11" Foreground="#4CAF50" Text="{Binding DependencyCount}" FontWeight="Bold" ToolTip="Number of package dependencies"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </DataTemplate>
