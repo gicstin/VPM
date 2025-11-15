@@ -423,8 +423,8 @@ namespace VPM
                 }
 
                 // Update button tooltip to show current sort
-                var directionText = direction ? "†‘" : "†“";
-                PackageSortButton.ToolTip = $"Sort packages (Current: {sortOption.GetDescription()} {directionText})";
+                var directionText = direction ? "↑" : "↓";
+                PackageSortButton.ToolTip = $"Sort (Current: {sortOption.GetDescription()} {directionText}) - Scroll to navigate";
             }
             catch (Exception)
             {
@@ -437,7 +437,7 @@ namespace VPM
             try
             {
                 _sortingManager?.ClearSorting("Packages");
-                PackageSortButton.ToolTip = "Sort packages";
+                PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
 
                 // Clear sorting from CollectionView
                 if (PackagesView != null)
@@ -489,8 +489,8 @@ namespace VPM
                 }
 
                 // Update button tooltip to show current sort
-                var directionText = direction ? "†‘" : "†“";
-                PackageSortButton.ToolTip = $"Sort scenes (Current: {sortOption.GetDescription()} {directionText})";
+                var directionText = direction ? "↑" : "↓";
+                PackageSortButton.ToolTip = $"Sort (Current: {sortOption.GetDescription()} {directionText}) - Scroll to navigate";
             }
             catch (Exception)
             {
@@ -503,7 +503,7 @@ namespace VPM
             try
             {
                 _sortingManager?.ClearSorting("Scenes");
-                PackageSortButton.ToolTip = "Sort scenes";
+                PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
 
                 // Clear sorting from CollectionView
                 if (ScenesView != null)
@@ -557,7 +557,7 @@ namespace VPM
 
                 // Update button tooltip to show current sort
                 var directionText = direction ? "↑" : "↓";
-                PackageSortButton.ToolTip = $"Sort presets (Current: {sortOption.GetDescription()} {directionText})";
+                PackageSortButton.ToolTip = $"Sort (Current: {sortOption.GetDescription()} {directionText}) - Scroll to navigate";
             }
             catch (Exception)
             {
@@ -570,7 +570,7 @@ namespace VPM
             try
             {
                 _sortingManager?.ClearSorting("Presets");
-                PackageSortButton.ToolTip = "Sort presets";
+                PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
 
                 // Clear sorting from CollectionView
                 if (CustomAtomItemsView != null)

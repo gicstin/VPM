@@ -187,7 +187,7 @@ namespace VPM
 
                 // Enable sorting for scenes mode
                 PackageSortButton.IsEnabled = true;
-                PackageSortButton.ToolTip = "Sort scenes";
+                PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
 
                 // Enable Favorite button in scene mode, hide AutoInstall button and show Hide button
                 if (FavoriteToggleButton != null)
@@ -287,7 +287,7 @@ namespace VPM
                 
                 // Enable sorting button
                 PackageSortButton.IsEnabled = true;
-                PackageSortButton.ToolTip = "Sort presets";
+                PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
                 
                 // Enable Favorite and Hide buttons in presets mode
                 if (FavoriteToggleButton != null)

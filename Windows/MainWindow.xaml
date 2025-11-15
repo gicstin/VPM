@@ -3234,7 +3234,7 @@ Off: Single selection, hide incompatible options"
                             Margin="2,6,0,0" Padding="0" FontSize="14" FontWeight="Bold"
                             Click="PackageSortButton_Click"
                             MouseWheel="PackageSortButton_MouseWheel"
-                            ToolTip="Sort packages (Scroll to navigate)"
+                            ToolTip="Sort (Scroll to navigate)"
                             VerticalAlignment="Center"
                             MinWidth="30">
                         <Button.Style>

@@ -703,7 +703,12 @@ namespace VPM
             try
             {
                 // Context-aware: use appropriate grid based on current content mode
-                DataGrid targetGrid = _currentContentMode == "Scenes" ? ScenesDataGrid : PackageDataGrid;
+                DataGrid targetGrid = _currentContentMode switch
+                {
+                    "Scenes" => ScenesDataGrid,
+                    "Presets" => CustomAtomDataGrid,
+                    _ => PackageDataGrid
+                };
                 
                 if (targetGrid == null || targetGrid.Items.Count == 0)
                     return;
