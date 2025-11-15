@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using VPM.Models;
 using VPM.Services;
@@ -23,24 +22,24 @@ namespace VPM
             {
                 _favoritesManager = new FavoritesManager(_settingsManager.Settings.SelectedFolder);
                 _favoritesManager.LoadFavorites();
-                
+
                 // Subscribe to favorites changes (when game modifies the file)
                 _favoritesManager.FavoritesChanged += OnFavoritesChanged;
-                
+
                 if (_filterManager != null)
                 {
                     _filterManager.FavoritesManager = _favoritesManager;
                 }
-                
+
                 // Initialize scene favorites manager
                 string savesPath = Path.Combine(_settingsManager.Settings.SelectedFolder, "Saves");
                 _sceneFavoritesManager = new SceneFavoritesManager(savesPath);
                 _sceneFavoritesManager.LoadFavorites();
-                
+
                 // Initialize scene hide manager
                 _sceneHideManager = new SceneHideManager(savesPath);
                 _sceneHideManager.LoadHidden();
-                
+
                 UpdateFavoritesInPackages();
             }
         }
@@ -50,7 +49,7 @@ namespace VPM
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 UpdateFavoritesInPackages();
-                
+
                 if (_reactiveFilterManager != null)
                 {
                     UpdateFilterCountsLive();
@@ -89,7 +88,7 @@ namespace VPM
 
                 // Refresh preset filter counters to reflect favorite changes
                 RefreshPresetFilterCounters();
-                
+
                 SetStatus($"Added {selectedItems.Count} custom atom item(s) to favorites");
                 return;
             }
@@ -111,7 +110,7 @@ namespace VPM
                 }
 
                 _sceneFavoritesManager.AddFavoriteBatch(selectedScenes.Select(s => s.FilePath));
-                
+
                 foreach (var scene in selectedScenes)
                 {
                     scene.IsFavorite = true;
@@ -119,7 +118,7 @@ namespace VPM
 
                 // Refresh scene filter counters to reflect favorite changes
                 RefreshSceneFilterCounters();
-                
+
                 SetStatus($"Added {selectedScenes.Count} scene(s) to favorites");
                 return;
             }
@@ -145,14 +144,14 @@ namespace VPM
             ExecuteWithPreservedSelections(() =>
             {
                 _favoritesManager.AddFavoriteBatch(selectedPackages.Select(p => p.Name));
-                
+
                 foreach (var package in selectedPackages)
                 {
                     package.IsFavorite = true;
                 }
 
                 bool favoritesFilterActive = _filterManager?.SelectedFavoriteStatuses?.Count > 0;
-                
+
                 if (favoritesFilterActive)
                 {
                     RefreshFilterLists();
@@ -189,7 +188,7 @@ namespace VPM
 
                 // Refresh preset filter counters to reflect favorite changes
                 RefreshPresetFilterCounters();
-                
+
                 SetStatus($"Removed {selectedItems.Count} custom atom item(s) from favorites");
                 e.Handled = true;
                 return;
@@ -206,7 +205,7 @@ namespace VPM
                     return;
 
                 _sceneFavoritesManager.RemoveFavoriteBatch(selectedScenes.Select(s => s.FilePath));
-                
+
                 foreach (var scene in selectedScenes)
                 {
                     scene.IsFavorite = false;
@@ -214,7 +213,7 @@ namespace VPM
 
                 // Refresh scene filter counters to reflect favorite changes
                 RefreshSceneFilterCounters();
-                
+
                 SetStatus($"Removed {selectedScenes.Count} scene(s) from favorites");
                 e.Handled = true;
                 return;
@@ -235,14 +234,14 @@ namespace VPM
             ExecuteWithPreservedSelections(() =>
             {
                 _favoritesManager.RemoveFavoriteBatch(selectedPackages.Select(p => p.Name));
-                
+
                 foreach (var package in selectedPackages)
                 {
                     package.IsFavorite = false;
                 }
 
                 bool favoritesFilterActive = _filterManager?.SelectedFavoriteStatuses?.Count > 0;
-                
+
                 if (favoritesFilterActive)
                 {
                     RefreshFilterLists();
@@ -281,7 +280,7 @@ namespace VPM
 
                 // Refresh preset filter counters to reflect hidden changes
                 RefreshPresetFilterCounters();
-                
+
                 SetStatus($"Hidden {selectedItems.Count} custom atom item(s)");
                 return;
             }
@@ -297,7 +296,7 @@ namespace VPM
                     return;
 
                 _sceneHideManager.AddHiddenBatch(selectedScenes.Select(s => s.FilePath));
-                
+
                 foreach (var scene in selectedScenes)
                 {
                     scene.IsHidden = true;
@@ -305,7 +304,7 @@ namespace VPM
 
                 // Refresh scene filter counters to reflect hidden changes
                 RefreshSceneFilterCounters();
-                
+
                 SetStatus($"Hidden {selectedScenes.Count} scene(s)");
                 return;
             }
@@ -332,7 +331,7 @@ namespace VPM
 
                 // Refresh preset filter counters to reflect hidden changes
                 RefreshPresetFilterCounters();
-                
+
                 SetStatus($"Unhidden {selectedItems.Count} custom atom item(s)");
                 e.Handled = true;
                 return;
@@ -349,7 +348,7 @@ namespace VPM
                     return;
 
                 _sceneHideManager.RemoveHiddenBatch(selectedScenes.Select(s => s.FilePath));
-                
+
                 foreach (var scene in selectedScenes)
                 {
                     scene.IsHidden = false;
@@ -357,7 +356,7 @@ namespace VPM
 
                 // Refresh scene filter counters to reflect hidden changes
                 RefreshSceneFilterCounters();
-                
+
                 SetStatus($"Unhidden {selectedScenes.Count} scene(s)");
                 e.Handled = true;
                 return;
@@ -369,7 +368,7 @@ namespace VPM
             try
             {
                 string favoritesPath = Path.Combine(_settingsManager.Settings.SelectedFolder, "Custom", "PluginData", "sfishere", "Favorites.txt");
-                
+
                 if (File.Exists(favoritesPath))
                 {
                     Process.Start(new ProcessStartInfo
@@ -395,7 +394,7 @@ namespace VPM
             if (OptimizeCountText == null) return;
 
             int optimizeableCount = 0;
-            
+
             // Check current content mode
             if (_currentContentMode == "Scenes")
             {

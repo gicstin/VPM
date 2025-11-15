@@ -2264,6 +2264,90 @@ namespace VPM
             }
         }
 
+        private void ScenesDataGrid_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Handle Space or Ctrl+Space to load all dependencies
+            if (e.Key == Key.Space && ScenesDataGrid.SelectedItems.Count > 0)
+            {
+                // Prevent key repeat - only trigger on first press
+                if (e.IsRepeat)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check if Ctrl is pressed for multiple selection, or single item without Ctrl
+                bool isCtrlPressed = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                bool isSingleSelection = ScenesDataGrid.SelectedItems.Count == 1;
+
+                // Only allow: single item with Space, or multiple items with Ctrl+Space
+                if (isSingleSelection || isCtrlPressed)
+                {
+                    // Check if there are available dependencies to load
+                    var hasAvailableDependencies = Dependencies.Any(d => d.Status == "Available" && d.Name != "No dependencies");
+                    if (hasAvailableDependencies)
+                    {
+                        // Trigger load all dependencies button click
+                        LoadAllDependenciesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        e.Handled = true;
+                        // Restore focus to DataGrid cell after operation
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            ScenesDataGrid.Focus();
+                            if (ScenesDataGrid.SelectedItem != null)
+                            {
+                                ScenesDataGrid.CurrentCell = new DataGridCellInfo(ScenesDataGrid.SelectedItem, ScenesDataGrid.Columns[0]);
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                }
+
+                return;
+            }
+        }
+
+        private void CustomAtomDataGrid_KeyDown(object sender, KeyEventArgs e)
+        {
+            // Handle Space or Ctrl+Space to load all dependencies
+            if (e.Key == Key.Space && CustomAtomDataGrid.SelectedItems.Count > 0)
+            {
+                // Prevent key repeat - only trigger on first press
+                if (e.IsRepeat)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                // Check if Ctrl is pressed for multiple selection, or single item without Ctrl
+                bool isCtrlPressed = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+                bool isSingleSelection = CustomAtomDataGrid.SelectedItems.Count == 1;
+
+                // Only allow: single item with Space, or multiple items with Ctrl+Space
+                if (isSingleSelection || isCtrlPressed)
+                {
+                    // Check if there are available dependencies to load
+                    var hasAvailableDependencies = Dependencies.Any(d => d.Status == "Available" && d.Name != "No dependencies");
+                    if (hasAvailableDependencies)
+                    {
+                        // Trigger load all dependencies button click
+                        LoadAllDependenciesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        e.Handled = true;
+                        // Restore focus to DataGrid cell after operation
+                        _ = Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            CustomAtomDataGrid.Focus();
+                            if (CustomAtomDataGrid.SelectedItem != null)
+                            {
+                                CustomAtomDataGrid.CurrentCell = new DataGridCellInfo(CustomAtomDataGrid.SelectedItem, CustomAtomDataGrid.Columns[0]);
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                }
+
+                return;
+            }
+        }
+
         #endregion
 
         #region Dependencies Drag Selection Handlers

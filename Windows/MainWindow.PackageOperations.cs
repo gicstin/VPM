@@ -874,6 +874,148 @@ namespace VPM
             }
         }
 
+        private async void LoadAllDependencies_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!EnsureVamFolderSelected()) return;
+
+                // Get all available dependencies from the Dependencies collection
+                var allAvailableDependencies = Dependencies
+                    .Where(d => d.Status == "Available" && d.Name != "No dependencies")
+                    .ToList();
+
+                if (allAvailableDependencies.Count == 0)
+                {
+                    MessageBox.Show("No available dependencies to load.", "No Dependencies",
+                                   MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // Enhanced confirmation dialog with better information
+                if (allAvailableDependencies.Count >= 100)
+                {
+                    var dependencyNames = allAvailableDependencies.Take(5).Select(d => d.Name).ToList();
+                    var displayNames = string.Join("\n", dependencyNames);
+                    if (allAvailableDependencies.Count > 5)
+                    {
+                        displayNames += $"\n... and {allAvailableDependencies.Count - 5} more dependencies";
+                    }
+
+                    var result = CustomMessageBox.Show(
+                        $"Load {allAvailableDependencies.Count} dependencies?\n\nThis operation may take several minutes for large batches.\n\n{displayNames}",
+                        "Confirm Load Operation",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result != MessageBoxResult.Yes)
+                        return;
+                }
+
+                // Disable UI during operation
+                LoadAllDependenciesButton.IsEnabled = false;
+                var originalCursor = Cursor;
+                Cursor = Cursors.Wait;
+
+                try
+                {
+                    // Use enhanced batch operation with progress reporting
+                    var dependencyNames = allAvailableDependencies.Select(d => d.Name).ToList();
+                    var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
+                    {
+                        // Update status with progress
+                        SetStatus(p.total > 1
+                            ? $"Loading dependencies... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
+                            : $"Loading {p.currentPackage}...");
+                    });
+
+                    var results = await _packageFileManager.LoadPackagesAsync(dependencyNames, progress);
+
+                    // Update dependency statuses based on results
+                    var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
+
+                    foreach ((string packageName, bool success, string error) in results)
+                    {
+                        var dependency = allAvailableDependencies.FirstOrDefault(d => d.Name == packageName);
+                        if (dependency != null && success)
+                        {
+                            dependency.Status = "Loaded";
+                            statusUpdates.Add((packageName, "Loaded", dependency.StatusColor));
+                        }
+                        if (!success)
+                        {
+                            // Load failed - error handled in status reporting below
+                        }
+                    }
+
+                    // Update image grid status indicators in batch
+                    if (statusUpdates.Count > 0)
+                    {
+                        UpdateMultiplePackageStatusInImageGrid(statusUpdates);
+                    }
+
+                    // Update status for successfully loaded packages (efficient bulk update)
+                    var successfullyLoaded = results
+                        .Where(r => r.success)
+                        .Select(r => r.packageName)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    if (successfullyLoaded.Count > 0)
+                    {
+                        await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
+                    }
+
+                    // Enhanced status reporting
+                    var successCount = results.Count(r => r.success);
+                    var failureCount = results.Count(r => !r.success);
+
+                    var throttledCount = results.Count(r => !r.success && r.error.Contains("recently performed"));
+                    var actualFailureCount = failureCount - throttledCount;
+
+                    if (successCount > 0 && actualFailureCount == 0)
+                    {
+                        SetStatus($"Successfully loaded {successCount} dependencies" +
+                                 (throttledCount > 0 ? $" ({throttledCount} skipped - too soon)" : ""));
+                    }
+                    else if (successCount > 0 && actualFailureCount > 0)
+                    {
+                        SetStatus($"Loaded {successCount} dependencies ({actualFailureCount} failed)");
+                    }
+                    else if (actualFailureCount > 0)
+                    {
+                        SetStatus($"Failed to load {actualFailureCount} dependencies");
+
+                        var actualErrors = results.Where(r => !r.success && !r.error.Contains("recently performed")).ToList();
+                        if (actualErrors.Count > 0 && actualErrors.Count <= 5)
+                        {
+                            var errors = actualErrors.Select(r => $"{r.packageName}: {r.error}");
+                            MessageBox.Show($"Load operation failed:\n\n{string.Join("\n", errors)}",
+                                          "Load Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                    else if (throttledCount > 0)
+                    {
+                        SetStatus($"Operation skipped - please wait a moment before retrying");
+                    }
+
+                }
+                finally
+                {
+                    // Re-enable UI
+                    LoadAllDependenciesButton.IsEnabled = true;
+                    Cursor = originalCursor;
+                    UpdatePackageButtonBar();
+                }
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("Error during load operation", "Error",
+                               MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("Load operation failed");
+            }
+        }
+
         #endregion
 
         #region Button Bar Management
@@ -885,14 +1027,39 @@ namespace VPM
         {
             try
             {
-                // Context-aware: if in Scenes mode, show scene info instead
-                if (_currentContentMode == "Scenes")
+                // Context-aware: if in Scenes or Presets mode, show scene/preset info instead
+                if (_currentContentMode == "Scenes" || _currentContentMode == "Presets")
                 {
-                    var selectedScenes = ScenesDataGrid?.SelectedItems?.Cast<SceneItem>()?.ToList() ?? new List<SceneItem>();
+                    var selectedItems = _currentContentMode == "Scenes" 
+                        ? ScenesDataGrid?.SelectedItems?.Cast<object>()?.ToList() ?? new List<object>()
+                        : CustomAtomDataGrid?.SelectedItems?.Cast<object>()?.ToList() ?? new List<object>();
                     
                     PackageButtonBar.Visibility = Visibility.Visible;
                     PackageButtonGrid.Visibility = Visibility.Collapsed;
                     ArchiveOldButton.Visibility = Visibility.Collapsed;
+                    FixDuplicatesButton.Visibility = Visibility.Collapsed;
+                    
+                    // Show Load All Dependencies button if there are available dependencies
+                    var hasAvailableDependencies = Dependencies.Any(d => d.Status == "Available" && d.Name != "No dependencies");
+                    LoadAllDependenciesButton.Visibility = selectedItems.Count > 0 && hasAvailableDependencies ? Visibility.Visible : Visibility.Collapsed;
+                    
+                    if (selectedItems.Count > 0 && hasAvailableDependencies)
+                    {
+                        var availableCount = Dependencies.Count(d => d.Status == "Available");
+                        if (selectedItems.Count == 1)
+                        {
+                            LoadAllDependenciesButton.Content = availableCount == 1 
+                                ? "📥 Load Dependency (Space)" 
+                                : $"📥 Load All Dependencies ({availableCount}) (Space)";
+                        }
+                        else
+                        {
+                            LoadAllDependenciesButton.Content = availableCount == 1 
+                                ? "📥 Load Dependency (Ctrl+Space)" 
+                                : $"📥 Load All Dependencies ({availableCount}) (Ctrl+Space)";
+                        }
+                    }
+                    
                     return;
                 }
 
@@ -907,6 +1074,7 @@ namespace VPM
                     PackageButtonGrid.Visibility = Visibility.Collapsed;
                     ArchiveOldButton.Visibility = Visibility.Collapsed;
                     FixDuplicatesButton.Visibility = Visibility.Collapsed;
+                    LoadAllDependenciesButton.Visibility = Visibility.Collapsed;
                     return;
                 }
 
@@ -922,6 +1090,7 @@ namespace VPM
                 {
                     PackageButtonGrid.Visibility = Visibility.Collapsed;
                     ArchiveOldButton.Visibility = Visibility.Collapsed;
+                    LoadAllDependenciesButton.Visibility = Visibility.Collapsed;
                     
                     // Show Fix Duplicates button
                     FixDuplicatesButton.Visibility = Visibility.Visible;
@@ -934,6 +1103,7 @@ namespace VPM
                 // Otherwise show Load/Unload buttons for non-duplicates
                 PackageButtonGrid.Visibility = Visibility.Visible;
                 FixDuplicatesButton.Visibility = Visibility.Collapsed;
+                LoadAllDependenciesButton.Visibility = Visibility.Collapsed;
                 
                 // If ANY old versions are selected, show Archive button
                 if (oldVersionCount > 0)
@@ -956,6 +1126,7 @@ namespace VPM
                 if (!hasLoaded && !hasAvailable)
                 {
                     PackageButtonGrid.Visibility = Visibility.Collapsed;
+                    LoadAllDependenciesButton.Visibility = Visibility.Collapsed;
                     return;
                 }
 
