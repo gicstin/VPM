@@ -2946,29 +2946,21 @@ namespace VPM
                 // Convert selected dependencies to package items
                 var dependencyPackages = ConvertDependenciesToPackages(selectedDependencies);
 
-                // Combine packages and dependency packages with proper deduplication
+                // If dependencies are selected, show ONLY their images, not the parent packages
                 var allPackages = new List<PackageItem>();
                 var packageSources = new List<bool>(); // true = package, false = dependency
-                var seenPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                // Add packages first (prioritize as packages)
-                foreach (var package in selectedPackages)
+                if (dependencyPackages.Count > 0)
                 {
-                    if (seenPackageNames.Add(package.Name))
-                    {
-                        allPackages.Add(package);
-                        packageSources.Add(true); // true indicates this is a package
-                    }
+                    // Show only dependency/dependent images
+                    allPackages = dependencyPackages;
+                    packageSources = Enumerable.Repeat(false, dependencyPackages.Count).ToList();
                 }
-
-                // Add dependency packages only if not already added
-                foreach (var depPackage in dependencyPackages)
+                else
                 {
-                    if (seenPackageNames.Add(depPackage.Name))
-                    {
-                        allPackages.Add(depPackage);
-                        packageSources.Add(false); // false indicates this is a dependency
-                    }
+                    // Show only parent package images
+                    allPackages = selectedPackages;
+                    packageSources = Enumerable.Repeat(true, selectedPackages.Count).ToList();
                 }
 
                 if (allPackages.Count == 0)
@@ -2977,7 +2969,7 @@ namespace VPM
                 }
                 else
                 {
-                    // Display images for all packages (packages + dependencies) using combined logic
+                    // Display images for either parent packages or selected dependencies/dependents
                     if (allPackages.Count == 1)
                     {
                         await DisplayPackageImagesAsync(allPackages[0]);
@@ -3021,7 +3013,8 @@ namespace VPM
             foreach (var dependency in dependencies)
             {
                 // Skip placeholder items
-                if (dependency.Name == "No dependencies" || dependency.Name == "No dependencies found")
+                if (dependency.Name == "No dependencies" || dependency.Name == "No dependencies found" ||
+                    dependency.Name == "No dependents" || dependency.Name == "No dependents found")
                     continue;
 
                 string baseDependencyName = dependency.Name;
@@ -3036,8 +3029,15 @@ namespace VPM
                 }
 
                 // Collect metadata keys matching this dependency (handles archived variants via normalization)
+                // For dependents, the name might be the full package name (e.g., "Creator.Package.1")
+                // For dependencies, the name might be just the base (e.g., "Creator.Package")
                 var matchingKeys = _packageManager.PackageMetadata.Keys
-                    .Where(k => NormalizePackageName(k).StartsWith(baseDependencyName + ".", StringComparison.OrdinalIgnoreCase))
+                    .Where(k => {
+                        var normalizedKey = NormalizePackageName(k);
+                        // Check for exact match or match with version suffix
+                        return normalizedKey.Equals(baseDependencyName, StringComparison.OrdinalIgnoreCase) ||
+                               normalizedKey.StartsWith(baseDependencyName + ".", StringComparison.OrdinalIgnoreCase);
+                    })
                     .ToList();
 
                 if (matchingKeys.Count == 0)

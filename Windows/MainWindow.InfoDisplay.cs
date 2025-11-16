@@ -1400,6 +1400,13 @@ namespace VPM
         {
             var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
             
+            // Clear any existing selection in the dependencies grid when refreshing
+            // This ensures we show the parent package's images until a dependency/dependent is selected
+            if (DependenciesDataGrid?.SelectedItems != null && DependenciesDataGrid.SelectedItems.Count > 0)
+            {
+                DependenciesDataGrid.SelectedItems.Clear();
+            }
+            
             if (selectedPackages == null || selectedPackages.Count == 0)
             {
                 ClearDependenciesDisplay();
