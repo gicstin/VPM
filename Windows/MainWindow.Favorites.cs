@@ -448,6 +448,172 @@ namespace VPM
                 OptimizeCountText.Text = "";
             }
         }
+
+        private void UpdateFavoriteCounter()
+        {
+            if (FavoriteCountText == null) return;
+
+            int favoriteableCount = 0;
+
+            // Check current content mode
+            if (_currentContentMode == "Scenes")
+            {
+                // Count selected scenes
+                if (ScenesDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in ScenesDataGrid.SelectedItems)
+                    {
+                        if (item is SceneItem scene)
+                        {
+                            favoriteableCount++;
+                        }
+                    }
+                }
+            }
+            else if (_currentContentMode == "Presets")
+            {
+                // Count selected presets
+                if (CustomAtomDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in CustomAtomDataGrid.SelectedItems)
+                    {
+                        if (item is CustomAtomItem preset)
+                        {
+                            favoriteableCount++;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Count selected packages
+                if (PackageDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in PackageDataGrid.SelectedItems)
+                    {
+                        if (item is PackageItem package)
+                        {
+                            favoriteableCount++;
+                        }
+                    }
+                }
+            }
+
+            if (favoriteableCount > 0)
+            {
+                FavoriteCountText.Text = $"({favoriteableCount})";
+            }
+            else
+            {
+                FavoriteCountText.Text = "";
+            }
+        }
+
+        private void UpdateAutoinstallCounter()
+        {
+            if (AutoinstallCountText == null) return;
+
+            int autoinstallableCount = 0;
+
+            // Check current content mode
+            if (_currentContentMode == "Scenes")
+            {
+                // Count selected scenes
+                if (ScenesDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in ScenesDataGrid.SelectedItems)
+                    {
+                        if (item is SceneItem scene)
+                        {
+                            autoinstallableCount++;
+                        }
+                    }
+                }
+            }
+            else if (_currentContentMode == "Presets")
+            {
+                // Count selected presets
+                if (CustomAtomDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in CustomAtomDataGrid.SelectedItems)
+                    {
+                        if (item is CustomAtomItem preset)
+                        {
+                            autoinstallableCount++;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Count selected packages
+                if (PackageDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in PackageDataGrid.SelectedItems)
+                    {
+                        if (item is PackageItem package)
+                        {
+                            autoinstallableCount++;
+                        }
+                    }
+                }
+            }
+
+            if (autoinstallableCount > 0)
+            {
+                AutoinstallCountText.Text = $"({autoinstallableCount})";
+            }
+            else
+            {
+                AutoinstallCountText.Text = "";
+            }
+        }
+
+        private void UpdateHideCounter()
+        {
+            if (HideCountText == null) return;
+
+            int hideableCount = 0;
+
+            // Check current content mode
+            if (_currentContentMode == "Scenes")
+            {
+                // Count selected scenes
+                if (ScenesDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in ScenesDataGrid.SelectedItems)
+                    {
+                        if (item is SceneItem scene)
+                        {
+                            hideableCount++;
+                        }
+                    }
+                }
+            }
+            else if (_currentContentMode == "Presets")
+            {
+                // Count selected presets
+                if (CustomAtomDataGrid?.SelectedItems != null)
+                {
+                    foreach (var item in CustomAtomDataGrid.SelectedItems)
+                    {
+                        if (item is CustomAtomItem preset)
+                        {
+                            hideableCount++;
+                        }
+                    }
+                }
+            }
+
+            if (hideableCount > 0)
+            {
+                HideCountText.Text = $"({hideableCount})";
+            }
+            else
+            {
+                HideCountText.Text = "";
+            }
+        }
     }
 }
 

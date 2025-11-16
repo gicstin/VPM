@@ -75,7 +75,7 @@ namespace VPM.Services
 
                 using (var zipFile = new ZipFile(varPath))
                 {
-                    var allEntries = SharpZipLibHelper.GetAllEntries(zipFile);
+                    var allEntries = SharpCompressHelper.GetAllEntries(zipFile);
                     // Look for scene files in Saves/scene/ path
                     var sceneEntries = allEntries
                         .Where(e => !e.IsDirectory && e.Name.StartsWith("Saves/scene/", StringComparison.OrdinalIgnoreCase) &&
@@ -174,7 +174,7 @@ namespace VPM.Services
             {
                 using (var zipFile = new ZipFile(varPath))
                 {
-                    var jsonContent = SharpZipLibHelper.ReadEntryAsString(zipFile, entry);
+                    var jsonContent = SharpCompressHelper.ReadEntryAsString(zipFile, entry);
                     var metadata = ParseSceneMetadataFromJson(jsonContent);
                     ApplyMetadataToScene(scene, metadata);
                 }
@@ -222,7 +222,7 @@ namespace VPM.Services
                     foreach (var ext in extensions)
                     {
                         var thumbPath = basePath + ext;
-                        var thumbEntry = SharpZipLibHelper.FindEntryByPath(zipFile, thumbPath);
+                        var thumbEntry = SharpCompressHelper.FindEntryByPath(zipFile, thumbPath);
                         if (thumbEntry != null)
                         {
                             // Return virtual path to thumbnail in VAR
@@ -518,14 +518,18 @@ namespace VPM.Services
                     return cachePath;
                 }
 
-                // Extract thumbnail from VAR
+                // Extract thumbnail from VAR using streaming
+                // Benefit: Efficient memory usage for thumbnail extraction
                 using (var zipFile = new ZipFile(varPath))
                 {
-                    var entry = SharpZipLibHelper.FindEntryByPath(zipFile, entryPath);
+                    var entry = SharpCompressHelper.FindEntryByPath(zipFile, entryPath);
                     if (entry != null)
                     {
-                        var data = SharpZipLibHelper.ReadEntryAsBytes(zipFile, entry);
-                        File.WriteAllBytes(cachePath, data);
+                        // Use streaming to write directly to file without loading entire image into memory
+                        using (var fileStream = File.Create(cachePath))
+                        {
+                            SharpCompressHelper.ReadEntryToStream(zipFile, entry, fileStream);
+                        }
                         return cachePath;
                     }
                 }

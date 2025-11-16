@@ -412,6 +412,9 @@ namespace VPM
             // Update toolbar buttons and optimize counter immediately
             UpdateToolbarButtons();
             UpdateOptimizeCounter();
+            UpdateFavoriteCounter();
+            UpdateAutoinstallCounter();
+            UpdateHideCounter();
             
             if (ScenesDataGrid.SelectedItems.Count == 0)
             {

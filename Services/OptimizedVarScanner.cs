@@ -81,15 +81,15 @@ namespace VPM.Services
                 string metaJsonContent = null;
 
                 // First pass: collect all entries and metadata
-                var allEntries = SharpZipLibHelper.GetAllEntries(zipFile);
+                var allEntries = SharpCompressHelper.GetAllEntries(zipFile);
                 totalFileCount = allEntries.Count;
 
                 // Extract meta.json content
-                var metaEntry = SharpZipLibHelper.FindEntryByPath(zipFile, "meta.json");
+                var metaEntry = SharpCompressHelper.FindEntryByPath(zipFile, "meta.json");
                 if (metaEntry != null)
                 {
                     result.HasMetaJson = true;
-                    metaJsonContent = SharpZipLibHelper.ReadEntryAsString(zipFile, metaEntry);
+                    metaJsonContent = SharpCompressHelper.ReadEntryAsString(zipFile, metaEntry);
                 }
 
                 // Process entries
@@ -135,7 +135,7 @@ namespace VPM.Services
                             var testPath = baseName + jpgExt;
                             if (!pairedFiles.Contains(testPath))
                             {
-                                jpgEntry = SharpZipLibHelper.FindEntryByPath(zipFile, testPath);
+                                jpgEntry = SharpCompressHelper.FindEntryByPath(zipFile, testPath);
                                 if (jpgEntry != null)
                                 {
                                     jpgPath = testPath;
@@ -294,7 +294,7 @@ namespace VPM.Services
         public ZipEntry GetEntry(string entryName)
         {
             EnsureOpen();
-            return _zipFile != null ? SharpZipLibHelper.FindEntryByPath(_zipFile, entryName) : null;
+            return _zipFile != null ? SharpCompressHelper.FindEntryByPath(_zipFile, entryName) : null;
         }
 
         public List<ZipEntry> Entries
@@ -302,7 +302,7 @@ namespace VPM.Services
             get
             {
                 EnsureOpen();
-                return _zipFile != null ? SharpZipLibHelper.GetAllEntries(_zipFile) : new List<ZipEntry>();
+                return _zipFile != null ? SharpCompressHelper.GetAllEntries(_zipFile) : new List<ZipEntry>();
             }
         }
 

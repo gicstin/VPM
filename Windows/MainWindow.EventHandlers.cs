@@ -101,6 +101,9 @@ namespace VPM
             // Update toolbar buttons
             UpdateToolbarButtons();
             UpdateOptimizeCounter();
+            UpdateFavoriteCounter();
+            UpdateAutoinstallCounter();
+            UpdateHideCounter();
             
             if (_suppressSelectionEvents) return;
 

@@ -138,6 +138,12 @@ namespace VPM
         /// </summary>
         private void CustomAtomDataGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            // Update counters immediately
+            UpdateOptimizeCounter();
+            UpdateFavoriteCounter();
+            UpdateAutoinstallCounter();
+            UpdateHideCounter();
+
             if (CustomAtomDataGrid?.SelectedItems.Count == 0)
             {
                 Dependencies.Clear();
@@ -175,7 +181,6 @@ namespace VPM
 
                     // Update the details area
                     UpdatePackageButtonBar();
-                    UpdateOptimizeCounter();
 
                     // Set opacity to 0 before animating to ensure animation runs
                     if (DependenciesDataGrid != null)

@@ -3923,6 +3923,14 @@
                                             Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                             Text="❤️ " />
                                         <TextBlock VerticalAlignment="Center" Text="Favorite" />
+                                        <TextBlock
+                                            Name="FavoriteCountText"
+                                            Margin="4,0,0,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="11"
+                                            FontWeight="Bold"
+                                            Foreground="#FF1493"
+                                            Text="" />
                                     </StackPanel>
                                 </Button.Content>
                                 <Button.Style>
@@ -3951,6 +3959,14 @@
                                             Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                             Text="A " />
                                         <TextBlock VerticalAlignment="Center" Text="AutoInstall" />
+                                        <TextBlock
+                                            Name="AutoinstallCountText"
+                                            Margin="4,0,0,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="11"
+                                            FontWeight="Bold"
+                                            Foreground="#00CED1"
+                                            Text="" />
                                     </StackPanel>
                                 </Button.Content>
                                 <Button.Style>
@@ -3980,6 +3996,14 @@
                                             Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                             Text="🙈 " />
                                         <TextBlock VerticalAlignment="Center" Text="Hide" />
+                                        <TextBlock
+                                            Name="HideCountText"
+                                            Margin="4,0,0,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="11"
+                                            FontWeight="Bold"
+                                            Foreground="#FF6347"
+                                            Text="" />
                                     </StackPanel>
                                 </Button.Content>
                                 <Button.Style>
