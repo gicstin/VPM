@@ -95,6 +95,26 @@ namespace VPM
                 if (selectedPackages.Count == 0)
                     return;
 
+                // Pre-index all selected packages to ensure images are found
+                var packagesToIndex = selectedPackages
+                    .Select(pkg => GetCachedPackageMetadata(!string.IsNullOrEmpty(pkg.MetadataKey) ? pkg.MetadataKey : pkg.Name))
+                    .Where(meta => meta?.FilePath != null && !_imageManager.IsPackageIndexed(Path.GetFileNameWithoutExtension(meta.Filename)))
+                    .Select(meta => meta.FilePath)
+                    .ToList();
+
+                if (packagesToIndex.Count > 0)
+                {
+                    try
+                    {
+                        Mouse.OverrideCursor = Cursors.Wait;
+                        await _imageManager.BuildImageIndexFromVarsAsync(packagesToIndex, forceRebuild: false);
+                    }
+                    finally
+                    {
+                        Mouse.OverrideCursor = null;
+                    }
+                }
+
                 var selectedPackageNames = selectedPackages.Select(p => p.Name).ToList();
 
                 // Determine operation mode: full redraw, selective removal, or incremental append
@@ -1108,7 +1128,7 @@ namespace VPM
         /// <summary>
         /// Gets cached package metadata or performs lookup and caches result
         /// </summary>
-        private VarMetadata GetCachedPackageMetadata(string packageName)
+        public VarMetadata GetCachedPackageMetadata(string packageName)
         {
             lock (_metadataCacheLock)
             {

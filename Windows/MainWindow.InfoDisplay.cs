@@ -1173,22 +1173,24 @@ namespace VPM
 
                         if (!dependents.ContainsKey(dependentPackageName))
                         {
-                            // Extract base name for status check (remove version and #archived suffix)
+                            // Extract base name and version for display (similar to DisplayDependencies)
                             string baseName = dependentPackageName;
+                            string version = "";
                             
-                            // Remove #archived suffix if present for status check
+                            // Remove #archived suffix if present
                             if (baseName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
                             {
                                 baseName = baseName.Substring(0, baseName.Length - 9); // Remove "#archived"
                             }
                             
-                            // Remove version number if present
+                            // Extract version number if present
                             var baseNameDotIndex = baseName.LastIndexOf('.');
                             if (baseNameDotIndex > 0)
                             {
                                 var potentialVersion = baseName.Substring(baseNameDotIndex + 1);
                                 if (int.TryParse(potentialVersion, out _))
                                 {
+                                    version = potentialVersion;
                                     baseName = baseName.Substring(0, baseNameDotIndex);
                                 }
                             }
@@ -1197,7 +1199,8 @@ namespace VPM
                             
                             dependents[dependentPackageName] = new DependencyItem
                             {
-                                Name = dependentPackageName,
+                                Name = baseName,
+                                Version = version,
                                 Status = status
                             };
                         }
@@ -1340,22 +1343,24 @@ namespace VPM
 
                         if (!allDependents.ContainsKey(dependentPackageName))
                         {
-                            // Extract base name for status check (remove version and #archived suffix)
+                            // Extract base name and version for display (similar to DisplayDependencies)
                             string baseName = dependentPackageName;
+                            string version = "";
                             
-                            // Remove #archived suffix if present for status check
+                            // Remove #archived suffix if present
                             if (baseName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
                             {
                                 baseName = baseName.Substring(0, baseName.Length - 9); // Remove "#archived"
                             }
                             
-                            // Remove version number if present
+                            // Extract version number if present
                             var baseNameDotIndex = baseName.LastIndexOf('.');
                             if (baseNameDotIndex > 0)
                             {
                                 var potentialVersion = baseName.Substring(baseNameDotIndex + 1);
                                 if (int.TryParse(potentialVersion, out _))
                                 {
+                                    version = potentialVersion;
                                     baseName = baseName.Substring(0, baseNameDotIndex);
                                 }
                             }
@@ -1364,7 +1369,8 @@ namespace VPM
                             
                             allDependents[dependentPackageName] = new DependencyItem
                             {
-                                Name = dependentPackageName,
+                                Name = baseName,
+                                Version = version,
                                 Status = status
                             };
                         }

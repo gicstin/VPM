@@ -31,11 +31,18 @@ namespace VPM.Services
             _cacheDirectory = Path.Combine(appDataPath, "VPM", "Cache");
             _cacheFilePath = Path.Combine(_cacheDirectory, "PackageMetadata.cache");
             
-            if (!Directory.Exists(_cacheDirectory))
+            try
             {
-                Directory.CreateDirectory(_cacheDirectory);
+                if (!Directory.Exists(_cacheDirectory))
+                {
+                    Directory.CreateDirectory(_cacheDirectory);
+                    Console.WriteLine($"[BinaryCache] Created cache directory: {_cacheDirectory}");
+                }
             }
-            
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BinaryCache] Error creating cache directory: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -141,8 +148,17 @@ namespace VPM.Services
 
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[BinaryCache] Error in SaveCache: {ex.Message}");
+                // Clean up temp file if it exists
+                try
+                {
+                    var tempPath = _cacheFilePath + ".tmp";
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+                catch { }
                 return false;
             }
         }

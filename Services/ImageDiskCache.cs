@@ -49,10 +49,19 @@ namespace VPM.Services
             // Generate machine-specific encryption key (not stored, derived from machine ID)
             _encryptionKey = GenerateMachineKey();
             
-            // Load cache database into memory
-            LoadCacheDatabase();
+            // Don't load cache database here - it will be loaded asynchronously
+            // to avoid blocking the UI thread during startup
             
             Console.WriteLine($"[ImageDiskCache] Cache location: {_cacheFilePath}");
+        }
+        
+        /// <summary>
+        /// Loads the cache database asynchronously
+        /// Call this after UI initialization to avoid blocking startup
+        /// </summary>
+        public async Task LoadCacheDatabaseAsync()
+        {
+            await Task.Run(() => LoadCacheDatabase());
         }
 
         /// <summary>

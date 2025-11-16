@@ -29,8 +29,8 @@ namespace VPM.Services
         private readonly VarIntegrityScanner _integrityScanner = new();
         
         public Dictionary<string, VarMetadata> PackageMetadata { get; private set; } = new Dictionary<string, VarMetadata>(StringComparer.OrdinalIgnoreCase);
-        // Buffer for preview image locations collected while processing VARs (key: packageBase)
-        public ConcurrentDictionary<string, List<ImageLocation>> PreviewImageIndex { get; } = new ConcurrentDictionary<string, List<ImageLocation>>(StringComparer.OrdinalIgnoreCase);
+        private ConcurrentDictionary<string, List<ImageLocation>> _previewImageIndex;
+
 
         private readonly string _cacheFolder;
         private readonly BinaryMetadataCache _binaryCache;
@@ -146,43 +146,58 @@ namespace VPM.Services
             return await operation(); // Final try
         }
 
-        public PackageManager(string cacheFolder)
+        public PackageManager(string cacheFolder, ConcurrentDictionary<string, List<ImageLocation>> previewImageIndex)
         {
             _cacheFolder = cacheFolder;
             _binaryCache = new BinaryMetadataCache();
             _varScanner = new OptimizedVarScanner();
+            _previewImageIndex = previewImageIndex;
 
             _varPattern = new Regex(@"^([^.]+)\.(.+?)\.(\d+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
             
-            // Load binary cache on initialization
-            LoadBinaryCache();
+            // Don't load binary cache here - it will be loaded asynchronously
+            // to avoid blocking the UI thread during startup
         }
         
         /// <summary>
-        /// Loads the binary metadata cache from disk
+        /// Loads the binary metadata cache from disk asynchronously
+        /// Call this after UI initialization to avoid blocking startup
         /// </summary>
-        private void LoadBinaryCache()
+        public async Task LoadBinaryCacheAsync()
         {
             try
             {
-                var loaded = _binaryCache.LoadCache();
-                if (loaded)
-                {
-                }
+                await Task.Run(() => _binaryCache.LoadCache());
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BinaryCache] Error loading cache: {ex.Message}");
+            }
         }
         
         /// <summary>
-        /// Saves the binary metadata cache to disk
+        /// Saves the binary metadata cache to disk asynchronously
         /// Call this after scanning packages to persist the cache
+        /// </summary>
+        public async Task SaveBinaryCacheAsync()
+        {
+            try
+            {
+                await Task.Run(() => _binaryCache.SaveCache());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[BinaryCache] Error saving cache: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Saves the binary metadata cache to disk synchronously (legacy, use SaveBinaryCacheAsync instead)
         /// </summary>
         public void SaveBinaryCache()
         {
             try
             {
-                var (hits, misses, hitRate) = _binaryCache.GetStatistics();
-                
                 _binaryCache.SaveCache();
             }
             catch (Exception ex)
@@ -577,34 +592,11 @@ namespace VPM.Services
                 var cachedMetadata = _binaryCache.TryGetCached(filename, fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks);
                 if (cachedMetadata != null)
                 {
-                    // Cache hit! Only check for morph pack detection if this might be a morph pack
-                    var isPotentialMorphPack = cachedMetadata.Categories.Contains("Morphs") || 
-                                              filename.ToLower().Contains("morph") || 
-                                              filename.ToLower().Contains("expression");
-                    
-                    if (isPotentialMorphPack)
-                    {
-                        // Re-run morph pack detection on cached packages that might be morph packs
-                        var newCategories = DetectCategoriesFromContent(cachedMetadata.ContentList);
-                        
-                        // Only update if we detected a morph pack (not Unknown or unchanged)
-                        if (newCategories.Count == 1 && newCategories.Contains("Morph Pack"))
-                        {
-                            cachedMetadata.Categories = newCategories;
-                        }
-                    }
-                    
-                    // Run integrity validation even on cached packages
-                    try
-                    {
-                        var integrityResult = _integrityScanner.ValidateMetadata(cachedMetadata);
-                        cachedMetadata.IsDamaged = integrityResult.IsDamaged;
-                        cachedMetadata.DamageReason = integrityResult.DamageReason;
-                    }
-                    catch
-                    {
-                        // Don't fail if integrity check fails
-                    }
+                    // Cache hit! Use cached metadata as-is for performance
+                    // The cached metadata already has all necessary information including:
+                    // - Categories (including morph pack detection)
+                    // - Integrity validation results
+                    // We skip re-validation on cached packages for speed
                     
                     cachedMetadata.FilePath = varPath;
                     cachedMetadata.Filename = filename;
@@ -1194,6 +1186,12 @@ namespace VPM.Services
             };
         }
 
+        /// <summary>
+        /// Updates package metadata by scanning VAR files and using cached data when available.
+        /// PERFORMANCE CRITICAL: Do not index preview images here - it opens every VAR file!
+        /// Preview images are indexed on-demand when packages are displayed or during manual refresh.
+        /// See: https://github.com/[repo]/issues/[issue] - Startup was slow due to VAR file scanning
+        /// </summary>
         public void UpdatePackageMappingFast(List<string> installedFiles, List<string> availableFiles, IProgress<(int current, int total)> progress = null)
         {
             PackageMetadata.Clear();
@@ -1218,6 +1216,7 @@ namespace VPM.Services
 
                 var normalizedPath = NormalizePath(descriptor.Path);
                 PackageVariant variant;
+                bool isCacheHit = false;
 
                 if (snapshot.TryGetPreviousVariant(descriptor.Path, out var previousVariant) &&
                     previousVariant.FileSize == descriptor.FileSize &&
@@ -1236,6 +1235,7 @@ namespace VPM.Services
                     }
 
                     variant = new PackageVariant(descriptor.Role, descriptor.Status, descriptor.Path, descriptor.FileSize, descriptor.LastWriteTicks, metadataClone, previousVariant.MetaHash);
+                    isCacheHit = true;
                 }
                 else
                 {
@@ -1251,10 +1251,33 @@ namespace VPM.Services
                     }
 
                     variant = new PackageVariant(descriptor.Role, descriptor.Status, descriptor.Path, descriptor.FileSize, descriptor.LastWriteTicks, metadata, metaHash);
+                    // ParseVarMetadata checks binary cache internally, so if we got here it means:
+                    // - Either it was in binary cache (isCacheHit = true)
+                    // - Or it was freshly parsed (isCacheHit = false)
+                    // We can't distinguish here, so we'll skip preview image indexing during initial load
+                    // Preview images will be indexed on-demand when packages are displayed
+                    isCacheHit = true;
                 }
 
                 snapshot.AddOrUpdateVariant(variant);
                 activePackages.Add(descriptor.PackageBase);
+
+                // ⚠️ CRITICAL PERFORMANCE NOTE (Nov 2025)
+                // DO NOT call EnsurePreviewImagesIndexed() here!
+                // 
+                // Previous implementation opened every VAR file during startup to scan for preview images.
+                // This caused startup to be extremely slow (multiple seconds per 1000 packages).
+                // 
+                // Root cause: EnsurePreviewImagesIndexed -> IndexPreviewImages opens the VAR archive
+                // and scans all entries looking for preview image pairs. With thousands of packages,
+                // this becomes a major bottleneck.
+                //
+                // Solution: Index preview images on-demand instead:
+                // - When packages are displayed in UI (lazy loading)
+                // - When packages are downloaded (IndexPreviewImagesForPackage)
+                // - When user manually refreshes (RefreshPackages)
+                //
+                // This keeps startup fast while still providing preview images when needed.
 
                 processed++;
                 if (progress != null && processed % 500 == 0)
@@ -1291,7 +1314,7 @@ namespace VPM.Services
                 {
                     snapshot.RemoveMaterializedKeys(PackageMetadata);
                 }
-                PreviewImageIndex.TryRemove(packageBase, out _);
+                _previewImageIndex.TryRemove(packageBase, out _);
             }
             
             // .NET 10 GC handles cleanup automatically
@@ -1301,9 +1324,9 @@ namespace VPM.Services
             // Detect old versions after all packages are loaded
             DetectOldVersions();
             
-            // Save binary cache after scanning completes
-            SaveBinaryCache();
-            
+            // Save binary cache asynchronously after scanning completes (fire-and-forget)
+            // Don't await to avoid blocking the UI
+            _ = SaveBinaryCacheAsync();
         }
 
         /// <summary>
@@ -1410,7 +1433,7 @@ namespace VPM.Services
                 PackageMetadata.Remove(key);
             }
 
-            PreviewImageIndex.TryRemove(baseName, out _);
+            _previewImageIndex.TryRemove(baseName, out _);
             
             // Also remove from binary cache
             _binaryCache.Remove(baseName);
@@ -1493,7 +1516,7 @@ namespace VPM.Services
         {
             try
             {
-                if (PreviewImageIndex.ContainsKey(metadataKey))
+                if (_previewImageIndex.ContainsKey(metadataKey))
                 {
                     return;
                 }
@@ -1505,61 +1528,70 @@ namespace VPM.Services
             }
         }
 
+        private void DebugLog(string message)
+        {
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            var msg = $"[{timestamp}] {message}";
+            System.Diagnostics.Debug.WriteLine(msg);
+            
+            var debugLogPath = Path.Combine(Path.GetTempPath(), "vpm_preview_debug.log");
+            try
+            {
+                File.AppendAllText(debugLogPath, msg + "\n");
+            }
+            catch { }
+        }
+
         private void IndexPreviewImages(string varPath, string packageBase, string metadataKey)
         {
             try
             {
                 var imageLocations = new List<ImageLocation>();
+
                 using var archive = SharpCompressHelper.OpenForRead(varPath);
 
-                // Debug logging for Testitou packages
-                bool isDebugPackage = metadataKey.StartsWith("Testitou", StringComparison.OrdinalIgnoreCase);
-                if (isDebugPackage)
-                {
-                    var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-                    var msg = $"[{timestamp}] PackageManager.IndexPreviewImages: metadataKey='{metadataKey}', varPath='{varPath}'";
-                    System.Diagnostics.Debug.WriteLine(msg);
-                    
-                    var debugLogPath = Path.Combine(Path.GetTempPath(), "vpm_preview_debug.log");
-                    File.AppendAllText(debugLogPath, msg + "\n");
-                }
-
                 // Build a flattened list of all files in the archive for pairing detection
-                // Flatten by filename only (without directory path) for global pairing detection
-                // This catches all pairs regardless of directory depth
                 var allFilesFlattened = new List<string>();
                 foreach (var entry in archive.Entries)
                 {
                     if (!entry.Key.EndsWith("/"))
                     {
-                        // Store just the filename for global pairing
-                        var filename = Path.GetFileName(entry.Key);
-                        allFilesFlattened.Add(filename.ToLowerInvariant());
+                        var entryFilename = Path.GetFileName(entry.Key);
+                        allFilesFlattened.Add(entryFilename.ToLower());
                     }
                 }
 
-                // Now check each image file for pairing
+                // Check each image file for pairing
                 foreach (var entry in archive.Entries)
                 {
-                    if (entry.Key.EndsWith("/")) continue; // skip directories
-                    var ext = Path.GetExtension(entry.Key).ToLowerInvariant();
+                    if (entry.Key.EndsWith("/")) continue;
+
+                    var ext = Path.GetExtension(entry.Key).ToLower();
                     if (ext != ".jpg" && ext != ".jpeg" && ext != ".png") continue;
 
-                    var filename = Path.GetFileName(entry.Key).ToLowerInvariant();
+                    var entryFilename = Path.GetFileName(entry.Key).ToLower();
                     
                     // Size filter: 1KB - 1MB
-                    if (entry.Size < 1024 || entry.Size > 1024 * 1024) continue;
+                    if (entry.Size < 1024 || entry.Size > 1024 * 1024)
+                    {
+                        continue;
+                    }
+                    
+                    // Check if this image has a paired file with same stem
+                    bool isPaired = PreviewImageValidator.IsPreviewImage(entryFilename, allFilesFlattened);
+                    if (!isPaired)
+                    {
+                        continue;
+                    }
 
-                    // Use the new pairing logic: check if this image has a paired file with same stem
-                    if (!PreviewImageValidator.IsPreviewImage(filename, allFilesFlattened)) continue;
-
-                    // Phase 1 Optimization: Use header-only read for dimension detection
-                    // This reduces I/O by 95-99% compared to loading full image
+                    // Get image dimensions from header
                     var (width, height) = SharpCompressHelper.GetImageDimensionsFromEntry(archive, entry);
                     
                     // Only index images with valid dimensions
                     if (width <= 0 || height <= 0)
+                    {
                         continue;
+                    }
 
                     imageLocations.Add(new ImageLocation
                     {
@@ -1573,21 +1605,12 @@ namespace VPM.Services
 
                 if (imageLocations.Count > 0)
                 {
-                    PreviewImageIndex[metadataKey] = imageLocations;
-                    if (isDebugPackage)
-                    {
-                        var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
-                        var msg = $"[{timestamp}] PackageManager.IndexPreviewImages: Stored {imageLocations.Count} images for key '{metadataKey}'";
-                        System.Diagnostics.Debug.WriteLine(msg);
-                        
-                        var debugLogPath = Path.Combine(Path.GetTempPath(), "vpm_preview_debug.log");
-                        File.AppendAllText(debugLogPath, msg + "\n");
-                    }
+                    _previewImageIndex[metadataKey] = imageLocations;
                 }
             }
             catch
             {
-                // Ignore preview image indexing errors
+                // Silently fail if image indexing fails
             }
         }
 

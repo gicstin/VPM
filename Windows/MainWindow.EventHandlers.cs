@@ -1963,6 +1963,10 @@ namespace VPM
         {
             var settings = _settingsManager.Settings;
             
+            // Load caches asynchronously, then refresh packages after cache is ready
+            // This prevents rebuilding the cache on every startup
+            _ = LoadCachesAndRefreshAsync(settings);
+            
             // Bind ScenesDataGrid ItemsSource to ScenesView for filtering support
             ScenesDataGrid.ItemsSource = ScenesView;
             
@@ -1972,14 +1976,36 @@ namespace VPM
             
             // Initialize button states
             UpdateLinkedFiltersButtonState();
-            
-            // If folder is selected (from first launch or previous session), load packages
-            if (!string.IsNullOrEmpty(settings.SelectedFolder) && 
-                System.IO.Directory.Exists(settings.SelectedFolder))
+        }
+        
+        private async Task LoadCachesAndRefreshAsync(AppSettings settings)
+        {
+            try
             {
-                RefreshPackages();
+                // Load binary cache first (critical for performance)
+                await _packageManager.LoadBinaryCacheAsync();
+                
+                // Load image cache in parallel
+                _ = _imageManager.LoadImageCacheAsync();
+                
+                // Now refresh packages with cache ready
+                if (!string.IsNullOrEmpty(settings.SelectedFolder) && 
+                    System.IO.Directory.Exists(settings.SelectedFolder))
+                {
+                    RefreshPackages();
+                }
+                
+                // Apply window settings after packages are loaded
+                ApplyWindowSettings(settings);
             }
-            
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Startup] Error during cache loading: {ex.Message}");
+            }
+        }
+        
+        private void ApplyWindowSettings(AppSettings settings)
+        {
             // Apply window settings
             if (settings.WindowWidth > 0 && settings.WindowHeight > 0)
             {
@@ -2022,7 +2048,6 @@ namespace VPM
             
             // Apply other UI settings
             ApplySettingsToUI();
-            
         }
 
         private void OnWindowClosing(object sender, System.ComponentModel.CancelEventArgs e)
@@ -4077,16 +4102,7 @@ namespace VPM
                             dep.Status = "Available";
                         }
                         
-                        // Always update toolbar buttons to reflect new missing count
-                        UpdateToolbarButtons();
-                        
-                        // Add metadata to PackageManager's metadata dictionary
-                        if (_packageManager?.PackageMetadata != null)
-                        {
-                            _packageManager.PackageMetadata[metadata.PackageName] = metadata;
-                        }
-                        
-                        // Check if package already exists in the list
+                        // Check if package already exists in the Packages collection
                         var existingPackage = Packages.FirstOrDefault(p => 
                             p.Name.Equals(metadata.PackageName, StringComparison.OrdinalIgnoreCase));
                         
@@ -4134,11 +4150,11 @@ namespace VPM
                         }, System.Windows.Threading.DispatcherPriority.Background);
                         
                         // Load preview images for the newly downloaded package
-                        if (_packageManager != null && _imageManager != null && _packageManager.PreviewImageIndex.Count > 0)
+                        if (_packageManager != null && _imageManager != null && _imageManager.PreviewImageIndex.Count > 0)
                         {
                             // The preview images were indexed during ParseVarMetadataComplete
                             // Now load them into the ImageManager
-                            await Task.Run(() => _imageManager.LoadExternalImageIndex(_packageManager.PreviewImageIndex));
+                            await Task.Run(() => _imageManager.LoadExternalImageIndex(_imageManager.PreviewImageIndex.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)));
                         }
                         
                         // Recalculate update count after successful download

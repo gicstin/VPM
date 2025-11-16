@@ -21,6 +21,10 @@ namespace VPM
     {
         private string _selectedFolder = "";
         private string _currentTheme = "System";
+        
+        // Cache for dependents count calculation to avoid O(n²) recalculation
+        private Dictionary<string, int> _cachedDependentsCount = null;
+        private int _cachedPackageMetadataVersion = -1;
 
         // Windows API for dark title bar
         [DllImport("dwmapi.dll", PreserveSig = true)]
@@ -795,12 +799,10 @@ namespace VPM
                     _reactiveFilterManager.Initialize(_packageManager.PackageMetadata);
                 }
 
-                // Copy preview image index from package manager (piggy-back)
-                // Always reload to include newly downloaded packages
-                if (_packageManager.PreviewImageIndex.Count > 0)
-                {
-                    _imageManager.LoadExternalImageIndex(_packageManager.PreviewImageIndex);
-                }
+                // Copy preview image index from ImageManager
+                var totalImages = _imageManager.PreviewImageIndex.Values.Sum(list => list.Count);
+                var totalPackagesWithImages = _imageManager.PreviewImageIndex.Count;
+                var avgImagesPerPackage = totalPackagesWithImages > 0 ? (double)totalImages / totalPackagesWithImages : 0;
 
                 // Reload favorites and autoinstall to get latest changes from game
                 if (_favoritesManager != null)
@@ -1683,7 +1685,12 @@ namespace VPM
         /// </summary>
         private Dictionary<string, int> CalculateDependentsCount()
         {
-            Console.WriteLine("[CALC] CalculateDependentsCount called");
+            // Use cached result if PackageMetadata hasn't changed
+            if (_cachedDependentsCount != null && _packageManager?.PackageMetadata?.Count == _cachedPackageMetadataVersion)
+            {
+                return _cachedDependentsCount;
+            }
+            
             var dependentsCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
             if (_packageManager?.PackageMetadata == null)
@@ -1791,11 +1798,9 @@ namespace VPM
                 dependentsCount[kvp.Key] = kvp.Value.Count;
             }
             
-            // Debug: Log MacGruber.PostMagic count
-            if (dependentsCount.TryGetValue("MacGruber.PostMagic.4", out var postMagicCount))
-            {
-                Console.WriteLine($"[CALC] MacGruber.PostMagic.4 has {postMagicCount} unique dependents");
-            }
+            // Cache the result
+            _cachedDependentsCount = dependentsCount;
+            _cachedPackageMetadataVersion = _packageManager.PackageMetadata.Count;
             
             return dependentsCount;
         }

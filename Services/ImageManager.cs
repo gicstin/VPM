@@ -25,15 +25,16 @@ namespace VPM.Services
     
     public class ImageManager : IDisposable
     {
-        private readonly PackageManager _packageManager;
         
         private readonly string _cacheFolder;
         private readonly ResiliencyManager _resiliencyManager = new();
+        private readonly IPackageMetadataProvider _metadataProvider;
         private readonly ImageDiskCache _diskCache;
         private readonly ImageLoaderThreadPool _threadPool;
 
         // Image index mapping package names to their VAR file paths and internal image paths
-        public Dictionary<string, List<ImageLocation>> ImageIndex { get; private set; } = new Dictionary<string, List<ImageLocation>>();
+        public Dictionary<string, List<ImageLocation>> ImageIndex { get; private set; } = new Dictionary<string, List<ImageLocation>>(StringComparer.OrdinalIgnoreCase);
+        public ConcurrentDictionary<string, List<ImageLocation>> PreviewImageIndex { get; } = new ConcurrentDictionary<string, List<ImageLocation>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, (long length, long lastWriteTicks)> _imageIndexSignatures = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _signatureLock = new();
         
@@ -91,10 +92,10 @@ namespace VPM.Services
         private readonly object _parallelMetricsLock = new();
 
 
-        public ImageManager(string cacheFolder, PackageManager packageManager)
+        public ImageManager(string cacheFolder, IPackageMetadataProvider metadataProvider)
         {
             _cacheFolder = cacheFolder;
-            _packageManager = packageManager;
+            _metadataProvider = metadataProvider;
             _diskCache = new ImageDiskCache();
             
             // Initialize dedicated worker thread pool
@@ -104,6 +105,15 @@ namespace VPM.Services
             
             _preloadCancellation = new CancellationTokenSource();
             StartPreloadingTask();
+        }
+        
+        /// <summary>
+        /// Loads the image disk cache asynchronously
+        /// Call this after UI initialization to avoid blocking startup
+        /// </summary>
+        public async Task LoadImageCacheAsync()
+        {
+            await _diskCache.LoadCacheDatabaseAsync();
         }
         
         /// <summary>
@@ -132,13 +142,20 @@ namespace VPM.Services
         {
             var varPathsList = varPaths.ToList();
 
-            if (!forceRebuild && ImageIndex.Count > 0)
+            if (forceRebuild)
             {
-                return true;
+                ImageIndex.Clear();
+                _imageIndexSignatures.Clear();
             }
-            
-            ImageIndex.Clear();
-            _imageIndexSignatures.Clear();
+            else
+            {
+                // Filter out packages that are already indexed
+                varPathsList.RemoveAll(varPath => 
+                    ImageIndex.ContainsKey(Path.GetFileNameWithoutExtension(varPath)));
+                
+                if (varPathsList.Count == 0)
+                    return true;
+            }
             
             var maxConcurrency = Math.Min(Environment.ProcessorCount, 4);
             using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
@@ -860,7 +877,8 @@ namespace VPM.Services
             // Lazy build image index for this package if missing
             if (!ImageIndex.ContainsKey(packageName))
             {
-                if (_packageManager?.PackageMetadata != null && _packageManager.PackageMetadata.TryGetValue(packageName, out var meta))
+                var meta = _metadataProvider.GetCachedPackageMetadata(packageName);
+                if (meta != null)
                 {
                     // Try to get cached image paths first (avoids opening VAR)
                     var fileInfo = new FileInfo(meta.FilePath);
@@ -1111,6 +1129,17 @@ namespace VPM.Services
             }
                 
             return 0;
+        }
+
+        /// <summary>
+        /// Checks if a package has already been indexed
+        /// </summary>
+        public bool IsPackageIndexed(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName))
+                return false;
+            
+            return ImageIndex.ContainsKey(packageName);
         }
 
         /// <summary>

@@ -108,8 +108,9 @@ namespace VPM.Services
             // Ensure directories exist
             EnsureDirectoriesExist();
             
-            // Build initial package status index
-            BuildPackageStatusIndex();
+            // Don't build package status index here - it will be built lazily on first use
+            // to avoid blocking the UI thread during startup
+            _statusIndexBuilt = false;
         }
 
         private void EnsureDirectoriesExist()

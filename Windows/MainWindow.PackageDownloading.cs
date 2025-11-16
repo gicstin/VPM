@@ -582,9 +582,9 @@ namespace VPM
                 await Task.Run(() => _packageManager?.IndexPreviewImagesForPackage(filePath, fullPackageName));
                 
                 // Reload the preview image index to include this package
-                if (_packageManager != null && _imageManager != null && _packageManager.PreviewImageIndex.Count > 0)
+                if (_packageManager != null && _imageManager != null && _imageManager.PreviewImageIndex.Count > 0)
                 {
-                    await Task.Run(() => _imageManager.LoadExternalImageIndex(_packageManager.PreviewImageIndex));
+                    await Task.Run(() => _imageManager.LoadExternalImageIndex(_imageManager.PreviewImageIndex.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)));
                 }
                 
                 // Check if package already exists in the list

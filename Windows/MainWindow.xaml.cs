@@ -21,12 +21,17 @@ namespace VPM
     /// - MainWindow.FilteringAndSearch.cs: Search and filtering functionality
     /// - MainWindow.UIManagement.cs: Theme, console, and settings management
     /// </summary>
-        public partial class MainWindow : Window
+        public partial class MainWindow : Window, IPackageMetadataProvider
         {
+            // Ensure ImageManager and PackageDownloader are disposed to release resources
             // Ensure ImageManager and PackageDownloader are disposed to release resources
             protected override void OnClosed(EventArgs e)
             {
                 base.OnClosed(e);
+
+                // Save package metadata cache on exit
+                _packageManager?.SaveBinaryCache();
+
                 _imageManager?.Dispose();
                 DisposePackageDownloader();
                 _sceneSelectionDebouncer?.Dispose();
@@ -134,8 +139,8 @@ namespace VPM
 
 
             // Initialize service managers
-            _packageManager = new PackageManager(_cacheFolder);
-            _imageManager = new ImageManager(_cacheFolder, _packageManager);
+            _imageManager = new ImageManager(_cacheFolder, this);
+            _packageManager = new PackageManager(_cacheFolder, _imageManager.PreviewImageIndex);
 
             _filterManager = new FilterManager();
             _reactiveFilterManager = new ReactiveFilterManager(_filterManager);
