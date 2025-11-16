@@ -534,7 +534,7 @@
                                                     Storyboard.TargetProperty="Opacity"
                                                     From="0.0"
                                                     To="1.0"
-                                                    Duration="0:0:0.15">
+                                                    Duration="0:0:0">
                                                     <DoubleAnimation.EasingFunction>
                                                         <QuadraticEase EasingMode="EaseOut" />
                                                     </DoubleAnimation.EasingFunction>

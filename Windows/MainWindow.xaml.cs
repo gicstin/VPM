@@ -87,8 +87,8 @@ namespace VPM
         private System.Threading.CancellationTokenSource _presetSelectionCts;
         private System.Threading.CancellationTokenSource _packageSelectionCts;
         
-        // Animation configuration
-        private const int SELECTION_DEBOUNCE_DELAY_MS = 75;
+        // Animation configuration - reduced for better responsiveness
+        private const int SELECTION_DEBOUNCE_DELAY_MS = 15;
         private const int FADE_ANIMATION_DURATION_MS = 300;
         
         #endregion
@@ -303,4 +303,3 @@ namespace VPM
         #endregion
     }
 }
-

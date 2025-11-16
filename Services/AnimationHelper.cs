@@ -30,17 +30,17 @@ namespace VPM.Services
             }
         }
         /// <summary>
-        /// Creates a fade-in animation for opacity
+        /// Creates a fade-in animation for opacity (disabled for performance)
         /// </summary>
         /// <param name="durationMilliseconds">Duration of the animation in milliseconds</param>
         /// <param name="fromOpacity">Starting opacity (default 0)</param>
         /// <param name="toOpacity">Ending opacity (default 1)</param>
         /// <returns>DoubleAnimation configured for fade-in</returns>
-        public static DoubleAnimation CreateFadeInAnimation(int durationMilliseconds = 300, double fromOpacity = 0, double toOpacity = 1)
+        public static DoubleAnimation CreateFadeInAnimation(int durationMilliseconds = 0, double fromOpacity = 0, double toOpacity = 1)
         {
             var animation = new DoubleAnimation
             {
-                From = fromOpacity,
+                From = toOpacity,
                 To = toOpacity,
                 Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
@@ -68,12 +68,12 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Applies a professional fade-in animation using storyboard
+        /// Applies a professional fade-in animation using storyboard (disabled for performance)
         /// </summary>
         /// <param name="element">The element to animate</param>
         /// <param name="durationMilliseconds">Duration of the animation in milliseconds</param>
         /// <param name="completedCallback">Optional callback when animation completes</param>
-        public static void FadeIn(UIElement element, int durationMilliseconds = 300, EventHandler completedCallback = null)
+        public static void FadeIn(UIElement element, int durationMilliseconds = 0, EventHandler completedCallback = null)
         {
             if (element == null)
                 return;
@@ -81,40 +81,21 @@ namespace VPM.Services
             // Stop any existing animation
             StopActiveStoryboard(element);
 
-            element.Opacity = 0;
-            
-            // Create fade-in animation with QuadraticEase for smooth feel
-            var fadeAnimation = new DoubleAnimation
-            {
-                From = 0,
-                To = 1,
-                Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-            };
+            // Set opacity immediately without animation
+            element.Opacity = 1;
+            element.Visibility = Visibility.Visible;
 
-            // Create storyboard
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fadeAnimation);
-            Storyboard.SetTarget(fadeAnimation, element);
-            Storyboard.SetTargetProperty(fadeAnimation, new PropertyPath(UIElement.OpacityProperty));
-
-            if (completedCallback != null)
-            {
-                storyboard.Completed += completedCallback;
-            }
-
-            // Track and begin storyboard
-            _activeStoryboards[element] = storyboard;
-            storyboard.Begin();
+            // Call completed callback immediately if provided
+            completedCallback?.Invoke(null, EventArgs.Empty);
         }
 
         /// <summary>
-        /// Applies a fade-out animation using storyboard
+        /// Applies a fade-out animation using storyboard (disabled for performance)
         /// </summary>
         /// <param name="element">The element to animate</param>
         /// <param name="durationMilliseconds">Duration of the animation in milliseconds</param>
         /// <param name="completedCallback">Optional callback when animation completes</param>
-        public static void FadeOut(UIElement element, int durationMilliseconds = 300, EventHandler completedCallback = null)
+        public static void FadeOut(UIElement element, int durationMilliseconds = 0, EventHandler completedCallback = null)
         {
             if (element == null)
                 return;
@@ -122,28 +103,12 @@ namespace VPM.Services
             // Stop any existing animation
             StopActiveStoryboard(element);
 
-            var fadeAnimation = new DoubleAnimation
-            {
-                From = 1,
-                To = 0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
+            // Set opacity immediately without animation
+            element.Opacity = 0;
+            element.Visibility = Visibility.Collapsed;
 
-            // Create storyboard
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fadeAnimation);
-            Storyboard.SetTarget(fadeAnimation, element);
-            Storyboard.SetTargetProperty(fadeAnimation, new PropertyPath(UIElement.OpacityProperty));
-
-            if (completedCallback != null)
-            {
-                storyboard.Completed += completedCallback;
-            }
-
-            // Track and begin storyboard
-            _activeStoryboards[element] = storyboard;
-            storyboard.Begin();
+            // Call completed callback immediately if provided
+            completedCallback?.Invoke(null, EventArgs.Empty);
         }
 
         /// <summary>
@@ -172,26 +137,20 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Creates a professional staggered fade-in with scale animation for multiple elements
+        /// Creates a professional staggered fade-in with scale animation for multiple elements (disabled for performance)
         /// </summary>
         /// <param name="elements">Array of elements to animate</param>
         /// <param name="durationMilliseconds">Duration of each animation in milliseconds</param>
         /// <param name="staggerDelayMilliseconds">Delay between each element animation</param>
-        public static void StaggeredFadeIn(UIElement[] elements, int durationMilliseconds = 300, int staggerDelayMilliseconds = 50)
+        public static void StaggeredFadeIn(UIElement[] elements, int durationMilliseconds = 0, int staggerDelayMilliseconds = 0)
         {
             if (elements == null || elements.Length == 0)
                 return;
 
-            for (int i = 0; i < elements.Length; i++)
+            // Disable staggered animation for performance - show all elements immediately
+            foreach (var element in elements)
             {
-                var element = elements[i];
-                var delay = i * staggerDelayMilliseconds;
-
-                // Schedule the fade-in with delay
-                _ = System.Threading.Tasks.Task.Delay(delay).ContinueWith(_ =>
-                {
-                    FadeIn(element, durationMilliseconds);
-                });
+                FadeIn(element, 0); // Set opacity immediately without delay
             }
         }
 
@@ -240,12 +199,12 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Internal method to perform snap-in animation with flicker prevention
+        /// Internal method to perform snap-in animation with flicker prevention (disabled for performance)
         /// </summary>
         private static void PerformSnapInSmooth(UIElement element, int durationMilliseconds)
         {
-            // If element is already fully visible and no animation is running, skip animation
-            if (element.Opacity >= 0.99 && !_activeStoryboards.ContainsKey(element))
+            // If element is already fully visible, skip
+            if (element.Opacity >= 0.99)
             {
                 return;
             }
@@ -253,69 +212,22 @@ namespace VPM.Services
             // Stop any existing animation
             StopActiveStoryboard(element);
 
-            // Only set opacity to 0 if it's not already animating or visible
-            if (element.Opacity < 0.5)
-            {
-                element.Opacity = 0;
-            }
-
-            // Create snappy fade-in animation with CubicEase for responsive feel
-            var fadeAnimation = new DoubleAnimation
-            {
-                From = element.Opacity, // Start from current opacity to avoid flicker
-                To = 1,
-                Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-
-            // Create and configure storyboard
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fadeAnimation);
-
-            // Set animation target
-            Storyboard.SetTarget(fadeAnimation, element);
-            Storyboard.SetTargetProperty(fadeAnimation, new PropertyPath(UIElement.OpacityProperty));
-
-            // Track storyboard for potential cancellation
-            _activeStoryboards[element] = storyboard;
-
-            // Begin the storyboard animation
-            storyboard.Begin();
+            // Set opacity immediately without animation
+            element.Opacity = 1;
+            element.Visibility = Visibility.Visible;
         }
 
         /// <summary>
-        /// Internal method to perform snap-in animation with snappy fade-in using storyboard
+        /// Internal method to perform snap-in animation with snappy fade-in using storyboard (disabled for performance)
         /// </summary>
         private static void PerformSnapIn(UIElement element, int durationMilliseconds)
         {
             // Stop any existing animation
             StopActiveStoryboard(element);
 
-            // Set initial opacity to 0
-            element.Opacity = 0;
-
-            // Create snappy fade-in animation with CubicEase for responsive feel
-            var fadeAnimation = new DoubleAnimation
-            {
-                From = 0,
-                To = 1,
-                Duration = new Duration(TimeSpan.FromMilliseconds(durationMilliseconds)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-
-            // Create and configure storyboard
-            var storyboard = new Storyboard();
-            storyboard.Children.Add(fadeAnimation);
-
-            // Set animation target
-            Storyboard.SetTarget(fadeAnimation, element);
-            Storyboard.SetTargetProperty(fadeAnimation, new PropertyPath(UIElement.OpacityProperty));
-
-            // Track storyboard for potential cancellation
-            _activeStoryboards[element] = storyboard;
-
-            // Begin the storyboard animation
-            storyboard.Begin();
+            // Set opacity immediately without animation
+            element.Opacity = 1;
+            element.Visibility = Visibility.Visible;
         }
     }
 }

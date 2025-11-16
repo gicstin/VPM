@@ -121,14 +121,13 @@ namespace VPM.Windows
                 
                 if (image != null)
                 {
-                    // Set the Source and animate fade-in for smooth loading effect
+                    // Set the Source and show immediately without animation for performance
                     await Dispatcher.InvokeAsync(() =>
                     {
                         _imageControl.Source = image;
+                        _imageControl.Opacity = 1;
+                        _imageControl.Visibility = Visibility.Visible;
                         _isLoaded = true;
-                        
-                        // Use .NET 10 storyboard animation via AnimationHelper for consistent performance
-                        AnimationHelper.FadeIn(_imageControl, 250);
                     });
                     
                     ImageLoaded?.Invoke(this, EventArgs.Empty);
@@ -204,4 +203,3 @@ namespace VPM.Windows
         public bool IsImageLoaded => _isLoaded;
     }
 }
-

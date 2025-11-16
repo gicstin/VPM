@@ -200,12 +200,12 @@
                                   HorizontalAlignment="Center"
                                   Margin="3,0,3,0"/>
                             
-                            <Popup Name="Popup" 
-                                   Placement="Right" 
-                                   IsOpen="{TemplateBinding IsSubmenuOpen}" 
-                                   AllowsTransparency="True" 
-                                   Focusable="False" 
-                                   PopupAnimation="Fade">
+                            <Popup Name="Popup"
+                                   Placement="Right"
+                                   IsOpen="{TemplateBinding IsSubmenuOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="None">
                                 <Border Name="SubmenuBorder" 
                                         SnapsToDevicePixels="True" 
                                         Background="{StaticResource MenuBackgroundBrush}" 
