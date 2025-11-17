@@ -1216,7 +1216,6 @@ namespace VPM.Services
 
                 var normalizedPath = NormalizePath(descriptor.Path);
                 PackageVariant variant;
-                bool isCacheHit = false;
 
                 if (snapshot.TryGetPreviousVariant(descriptor.Path, out var previousVariant) &&
                     previousVariant.FileSize == descriptor.FileSize &&
@@ -1235,7 +1234,6 @@ namespace VPM.Services
                     }
 
                     variant = new PackageVariant(descriptor.Role, descriptor.Status, descriptor.Path, descriptor.FileSize, descriptor.LastWriteTicks, metadataClone, previousVariant.MetaHash);
-                    isCacheHit = true;
                 }
                 else
                 {
@@ -1252,11 +1250,10 @@ namespace VPM.Services
 
                     variant = new PackageVariant(descriptor.Role, descriptor.Status, descriptor.Path, descriptor.FileSize, descriptor.LastWriteTicks, metadata, metaHash);
                     // ParseVarMetadata checks binary cache internally, so if we got here it means:
-                    // - Either it was in binary cache (isCacheHit = true)
-                    // - Or it was freshly parsed (isCacheHit = false)
+                    // - Either it was in binary cache (cache hit)
+                    // - Or it was freshly parsed (cache miss)
                     // We can't distinguish here, so we'll skip preview image indexing during initial load
                     // Preview images will be indexed on-demand when packages are displayed
-                    isCacheHit = true;
                 }
 
                 snapshot.AddOrUpdateVariant(variant);

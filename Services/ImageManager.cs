@@ -732,6 +732,13 @@ namespace VPM.Services
 
             try
             {
+                // Check if file exists before attempting to open
+                if (!File.Exists(varPath))
+                {
+                    Console.WriteLine($"[ImageManager] VAR file not found: {varPath}");
+                    return results; // Return empty results
+                }
+
                 using var pool = new ArchiveHandlePool(varPath, maxParallelism);
                 
                 // Get VAR file signature for disk cache
@@ -771,16 +778,18 @@ namespace VPM.Services
                 // Phase 4: Parallel loading with archive pool
                 var tasks = uncachedPaths.Select(internalPath => Task.Run(() =>
                 {
-                    var archive = pool.AcquireHandle();
                     try
                     {
-                        var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
-                        if (entry == null)
-                            return (internalPath, bitmap: (BitmapImage)null);
+                        var archive = pool.AcquireHandle();
+                        try
+                        {
+                            var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
+                            if (entry == null)
+                                return (internalPath, bitmap: (BitmapImage)null);
 
-                        var pathNorm = internalPath.Replace('\\', '/').ToLower();
-                        if (!IsValidImageEntry(entry, pathNorm))
-                            return (internalPath, bitmap: (BitmapImage)null);
+                            var pathNorm = internalPath.Replace('\\', '/').ToLower();
+                            if (!IsValidImageEntry(entry, pathNorm))
+                                return (internalPath, bitmap: (BitmapImage)null);
 
                         byte[] imageData;
                         if (entry.Size > CHUNKED_LOADING_THRESHOLD)
@@ -819,11 +828,22 @@ namespace VPM.Services
                         if (!IsValidImageDimensions(bitmap))
                             return (internalPath, bitmap: (BitmapImage)null);
 
-                        return (internalPath, bitmap);
+                            return (internalPath, bitmap);
+                        }
+                        finally
+                        {
+                            pool.ReleaseHandle(archive);
+                        }
                     }
-                    finally
+                    catch (FileNotFoundException fnfEx)
                     {
-                        pool.ReleaseHandle(archive);
+                        Console.WriteLine($"[ImageManager] Archive file not found during parallel load: {fnfEx.Message}");
+                        return (internalPath, bitmap: (BitmapImage)null);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[ImageManager] Error loading image {internalPath}: {ex.Message}");
+                        return (internalPath, bitmap: (BitmapImage)null);
                     }
                 })).ToArray();
 

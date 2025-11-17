@@ -715,6 +715,9 @@ namespace VPM.Services
         /// </summary>
         private bool ShouldInvalidateCache(string packagePath, bool isVarFile)
         {
+            if (string.IsNullOrEmpty(packagePath))
+                return false;
+            
             string currentFlags = GetConversionFlags(packagePath, isVarFile);
             
             if (_packageConversionFlags.TryGetValue(packagePath, out string cachedFlags))
@@ -723,7 +726,7 @@ namespace VPM.Services
                 if (cachedFlags != currentFlags)
                 {
                     // Clear all cache entries for this package
-                    var keysToRemove = _textureCache.Keys.Where(k => k.StartsWith(packagePath + "|")).ToList();
+                    var keysToRemove = _textureCache.Keys.Where(k => !string.IsNullOrEmpty(k) && k.StartsWith(packagePath + "|")).ToList();
                     foreach (var key in keysToRemove)
                     {
                         _textureCache.Remove(key);

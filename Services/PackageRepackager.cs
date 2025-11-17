@@ -458,6 +458,7 @@ namespace VPM.Services
                     
                     // Open source VAR (from archive or original location)
                     using (var sourceArchive = SharpCompressHelper.OpenForRead(sourcePathForProcessing))
+                    using (var outputMemoryStream = new MemoryStream())
                     using (var outputArchive = ZipArchive.Create())
                     {
                         string originalMetaJson = null;
@@ -780,7 +781,28 @@ namespace VPM.Services
                                                       extension == ".assetbundle";
                             
                             var compression = isAlreadyCompressed ? SharpCompress.Common.CompressionType.None : SharpCompress.Common.CompressionType.Deflate;
-                            var newEntry = outputArchive.AddEntry(entry.Key, dataToWrite != null ? new MemoryStream(dataToWrite) : entry.OpenEntryStream());
+                            
+                            // CRITICAL FIX: Always buffer stream data into MemoryStream
+                            // entry.OpenEntryStream() becomes unreadable after source archive operations
+                            // This prevents "Streams must be readable" errors during archive writing
+                            Stream entryStream;
+                            if (dataToWrite != null)
+                            {
+                                entryStream = new MemoryStream(dataToWrite);
+                            }
+                            else
+                            {
+                                // Buffer the source stream into memory to ensure it remains readable
+                                using (var sourceStream = entry.OpenEntryStream())
+                                using (var ms = new MemoryStream())
+                                {
+                                    sourceStream.CopyTo(ms);
+                                    ms.Position = 0;
+                                    entryStream = new MemoryStream(ms.ToArray());
+                                }
+                            }
+                            
+                            var newEntry = outputArchive.AddEntry(entry.Key, entryStream);
 
                             // Note: SharpCompress handles compression type during archive writing, not per-entry
                             
@@ -789,12 +811,6 @@ namespace VPM.Services
                             if (writeIndex % 100 == 0)
                             {
                                 progressCallback?.Invoke($"📝 Writing files... ({writeIndex}/{totalWrites})", processedCount, totalOperations);
-                        
-                        // Save the archive
-                        using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                        {
-                            outputArchive.SaveTo(outputFileStream, SharpCompress.Common.CompressionType.Deflate);
-                        }
                             }
                         }
 
@@ -856,9 +872,14 @@ namespace VPM.Services
                         }
                         
                         // Save the archive to the temp output file
+                        // First, save the archive to the memory stream
+                        outputArchive.SaveTo(outputMemoryStream, SharpCompress.Common.CompressionType.Deflate);
+                        
+                        // Then write the memory stream to the file
+                        outputMemoryStream.Position = 0;
                         using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
                         {
-                            outputArchive.SaveTo(outputFileStream, SharpCompress.Common.CompressionType.Deflate);
+                            outputMemoryStream.CopyTo(outputFileStream);
                         }
                     }
 

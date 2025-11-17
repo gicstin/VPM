@@ -397,18 +397,27 @@ namespace VPM.Services
 
                 if (isVarFile)
                 {
-                    using (var archive = SharpCompressHelper.OpenForRead(packagePath))
+                    try
                     {
-                        // Find all scene JSON files in Saves/scene/
-                        var sceneFiles = archive.Entries
-                            .Where(e => e.Key.StartsWith("Saves/scene/", StringComparison.OrdinalIgnoreCase) &&
-                                       e.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                            .ToList();
-
-                        foreach (var sceneFile in sceneFiles)
+                        using (var archive = SharpCompressHelper.OpenForRead(packagePath))
                         {
-                            ProcessSceneFile(sceneFile, result);
+                            // Find all scene JSON files in Saves/scene/
+                            var sceneFiles = archive.Entries
+                                .Where(e => e.Key.StartsWith("Saves/scene/", StringComparison.OrdinalIgnoreCase) &&
+                                           e.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+                            foreach (var sceneFile in sceneFiles)
+                            {
+                                ProcessSceneFile(sceneFile, result);
+                            }
                         }
+                    }
+                    catch (Exception archiveEx)
+                    {
+                        // Log detailed error for archive opening issues
+                        result.ErrorMessage = $"Failed to open archive: {archiveEx.Message}";
+                        Console.WriteLine($"[HairOptimizer] Error opening archive '{packagePath}': {archiveEx.Message}");
                     }
                 }
                 else
