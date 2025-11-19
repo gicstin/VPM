@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace VPM.Services
 {
@@ -8,13 +9,17 @@ namespace VPM.Services
     /// Adaptive optimization engine that dynamically adjusts parallelism based on system resources.
     /// Monitors CPU, memory, and I/O to prevent resource exhaustion while maximizing throughput.
     /// 
+    /// Now integrated with ParallelOptimizerFacade for true parallel task execution.
+    /// 
     /// Benefits:
     /// - Stable performance across different systems
     /// - Prevents OOM and CPU throttling
     /// - Automatic backpressure handling
     /// - Real-time resource monitoring
+    /// - Parallel task execution with work queue
+    /// - Event-driven architecture for UI integration
     /// </summary>
-    public class AdaptiveOptimizer
+    public class AdaptiveOptimizer : IDisposable
     {
         /// <summary>
         /// System resource state snapshot
@@ -314,6 +319,116 @@ namespace VPM.Services
                 _currentConcurrency = _config.TargetConcurrency;
                 _lastAdjustmentTime = DateTime.UtcNow;
             }
+        }
+
+        /// <summary>
+        /// Parallel optimizer facade instance for task-based parallelism.
+        /// Lazily initialized on first use.
+        /// </summary>
+        private ParallelOptimizerFacade _parallelOptimizer;
+        private readonly object _parallelLock = new object();
+
+        /// <summary>
+        /// Gets or creates the parallel optimizer facade.
+        /// </summary>
+        public ParallelOptimizerFacade GetParallelOptimizer()
+        {
+            if (_parallelOptimizer != null)
+            {
+                System.Diagnostics.Debug.WriteLine("[PARALLEL_OPT] Returning existing parallel optimizer instance");
+                return _parallelOptimizer;
+            }
+
+            lock (_parallelLock)
+            {
+                if (_parallelOptimizer != null)
+                    return _parallelOptimizer;
+
+                System.Diagnostics.Debug.WriteLine("[PARALLEL_OPT] Initializing new parallel optimizer facade...");
+                // Configure parallel optimizer with adaptive settings
+                var config = new ParallelOptimizerFacade.OptimizerConfig
+                {
+                    SchedulerConfig = new ParallelWorkScheduler.SchedulerConfig
+                    {
+                        MinWorkers = _config.MinConcurrency,
+                        MaxWorkers = _config.MaxConcurrency,
+                        QueueMaxSize = 10000,
+                        WorkerIdleTimeoutMs = 5000,
+                        ResourceCheckIntervalMs = 1000,
+                        EnableAdaptiveScaling = _config.EnableAdaptiveAdjustment
+                    },
+                    RetryConfig = new RetryPolicy.RetryConfig
+                    {
+                        MaxRetries = 3,
+                        InitialDelayMs = 100,
+                        MaxDelayMs = 5000,
+                        BackoffMultiplier = 2.0
+                    },
+                    CircuitBreakerConfig = new CircuitBreaker.CircuitBreakerConfig
+                    {
+                        FailureThreshold = 5,
+                        FailureWindowMs = 60000
+                    },
+                    DeadLetterConfig = new DeadLetterQueue.DeadLetterConfig
+                    {
+                        MaxEntries = 1000,
+                        RetentionTimeMs = 3600000 // 1 hour
+                    },
+                    DashboardUpdateIntervalMs = 1000,
+                    EnableAutoRetry = true,
+                    EnableCircuitBreaker = true
+                };
+
+                _parallelOptimizer = new ParallelOptimizerFacade(config);
+                _parallelOptimizer.Start();
+
+                return _parallelOptimizer;
+            }
+        }
+
+        /// <summary>
+        /// Submits a work task to the parallel optimizer.
+        /// </summary>
+        public async Task SubmitTaskAsync(WorkTask task, int priority = 0)
+        {
+            var optimizer = GetParallelOptimizer();
+            await optimizer.SubmitTaskAsync(task, priority).ConfigureAwait(false);
+            
+            if (task.State == TaskState.Failed)
+                throw new InvalidOperationException($"Task failed: {task.ErrorMessage}", task.Exception);
+        }
+
+        /// <summary>
+        /// Stops the parallel optimizer gracefully.
+        /// </summary>
+        public async Task StopParallelOptimizerAsync()
+        {
+            if (_parallelOptimizer == null)
+                return;
+
+            lock (_parallelLock)
+            {
+                if (_parallelOptimizer == null)
+                    return;
+
+                var optimizer = _parallelOptimizer;
+                _parallelOptimizer = null;
+                
+                // Stop asynchronously without blocking
+                _ = optimizer.StopAsync().ContinueWith(t =>
+                {
+                    optimizer.Dispose();
+                });
+            }
+        }
+
+        /// <summary>
+        /// Disposes resources.
+        /// </summary>
+        public void Dispose()
+        {
+            StopParallelOptimizerAsync().Wait(5000);
+            _parallelOptimizer?.Dispose();
         }
     }
 

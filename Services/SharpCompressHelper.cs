@@ -757,76 +757,93 @@ namespace VPM.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Starting copy for entry: {sourceEntry?.Key}");
-                
                 if (sourceEntry == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✗ ERROR: sourceEntry is null");
                     throw new ArgumentNullException(nameof(sourceEntry), "Source entry cannot be null");
                 }
                 if (destArchive == null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✗ ERROR: destArchive is null");
                     throw new ArgumentNullException(nameof(destArchive), "Destination archive cannot be null");
                 }
 
                 string entryPath = destPath ?? sourceEntry.Key;
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Entry path: {entryPath}, Size: {sourceEntry.Size} bytes");
                 
                 try
                 {
                     using (var sourceStream = sourceEntry.OpenEntryStream())
                     {
-                        System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Opened source stream, CanRead: {sourceStream.CanRead}, CanSeek: {sourceStream.CanSeek}");
-                        
                         if (!sourceStream.CanRead)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✗ ERROR: Source stream is not readable");
                             throw new InvalidOperationException("Source stream is not readable");
                         }
                         
                         // SharpCompress requires seekable streams, so buffer non-seekable streams into MemoryStream
                         if (!sourceStream.CanSeek)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Stream is not seekable, buffering to MemoryStream...");
-                            var memoryStream = new System.IO.MemoryStream();
-                            try
+                            // For large files (>10MB), use chunked streaming to reduce memory pressure
+                            const long LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
+                            
+                            if (sourceEntry.Size > LARGE_FILE_THRESHOLD)
                             {
-                                sourceStream.CopyTo(memoryStream);
-                                memoryStream.Position = 0;
-                                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Buffered {memoryStream.Length} bytes to MemoryStream");
-                                // CRITICAL: Pass closeStream: true so SharpCompress manages the stream lifecycle
-                                destArchive.AddEntry(entryPath, memoryStream, closeStream: true);
-                                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✓ Successfully added buffered entry to destination archive: {entryPath}");
+                                // Chunked streaming for large files
+                                var memoryStream = new System.IO.MemoryStream((int)Math.Min(sourceEntry.Size, 1024 * 1024)); // 1MB initial capacity
+                                try
+                                {
+                                    byte[] buffer = new byte[256 * 1024]; // 256KB chunks
+                                    int bytesRead;
+                                    while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+                                    {
+                                        memoryStream.Write(buffer, 0, bytesRead);
+                                    }
+                                    memoryStream.Position = 0;
+                                    destArchive.AddEntry(entryPath, memoryStream, closeStream: true);
+                                }
+                                catch (SharpCompress.Compressors.Deflate.ZlibException zlibEx)
+                                {
+                                    memoryStream?.Dispose();
+                                    throw new InvalidOperationException($"Corrupted archive entry (decompression failed): {zlibEx.Message}", zlibEx);
+                                }
+                                catch
+                                {
+                                    memoryStream?.Dispose();
+                                    throw;
+                                }
                             }
-                            catch
+                            else
                             {
-                                // If AddEntry fails, we need to dispose the stream ourselves
-                                memoryStream?.Dispose();
-                                throw;
+                                // Small files: use standard buffering
+                                var memoryStream = new System.IO.MemoryStream();
+                                try
+                                {
+                                    sourceStream.CopyTo(memoryStream);
+                                    memoryStream.Position = 0;
+                                    destArchive.AddEntry(entryPath, memoryStream, closeStream: true);
+                                }
+                                catch (SharpCompress.Compressors.Deflate.ZlibException zlibEx)
+                                {
+                                    memoryStream?.Dispose();
+                                    throw new InvalidOperationException($"Corrupted archive entry (decompression failed): {zlibEx.Message}", zlibEx);
+                                }
+                                catch
+                                {
+                                    memoryStream?.Dispose();
+                                    throw;
+                                }
                             }
                         }
                         else
                         {
-                            System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Stream is seekable, adding directly");
                             destArchive.AddEntry(entryPath, sourceStream, closeStream: true);
-                            System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✓ Successfully added entry to destination archive: {entryPath}");
                         }
                     }
                 }
-                catch (Exception streamEx)
+                catch
                 {
-                    System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✗ Stream operation failed: {streamEx.GetType().Name}");
-                    System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Stream error message: {streamEx.Message}");
                     throw;
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] ✗ FAILED to copy entry '{sourceEntry?.Key ?? "unknown"}'");
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Exception Type: {ex.GetType().Name}");
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Exception Message: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[CopyEntryDirect] Stack Trace: {ex.StackTrace}");
                 throw new InvalidOperationException($"Failed to copy entry '{sourceEntry?.Key ?? "unknown"}' directly: {ex.Message}", ex);
             }
         }

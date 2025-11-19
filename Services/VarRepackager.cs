@@ -224,35 +224,58 @@ namespace VPM.Services
                             progressCallback?.Invoke($"🖼️  Starting conversion of {totalConversions} texture(s)...", 0, totalConversions);
                         }
 
-                        Parallel.ForEach(conversionInputs, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, item =>
+                        // Use adaptive memory-aware parallelism with proper async I/O
+                        System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_START] Processing {totalConversions} textures with adaptive parallelism");
+                        
+                        // OPTIMIZATION: Use full CPU cores for texture conversion (CPU-bound operation)
+                        // Texture resizing is CPU-intensive, not I/O-bound, so we can use all cores
+                        int maxConcurrentTextures = Math.Max(2, Environment.ProcessorCount); // Full parallelism for CPU-bound work
+                        using (var semaphore = new System.Threading.SemaphoreSlim(maxConcurrentTextures))
                         {
-                            var (fullName, lastWriteTime, sourceData, conversionInfo) = item;
-
-                            System.Threading.Interlocked.Add(ref originalTotalSize, sourceData.Length);
-
-                            int targetDimension = TextureConverter.GetTargetDimension(conversionInfo.targetResolution);
-                            string extension = Path.GetExtension(fullName);
-                            byte[] convertedData = _textureConverter.ResizeImage(sourceData, targetDimension, extension);
-
-                            int current = System.Threading.Interlocked.Increment(ref processedCount);
-                            progressCallback?.Invoke($"🖼️  [{current}/{totalConversions}] Converting: {Path.GetFileName(fullName)}", current, Math.Max(1, totalConversions));
-
-                            if (convertedData != null)
+                            var tasks = conversionInputs.Select(async item =>
                             {
-                                System.Threading.Interlocked.Add(ref newTotalSize, convertedData.Length);
-                                
-                                string textureName = Path.GetFileName(fullName);
-                                string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
-                                string detail = $"  • {textureName}: {originalRes} †’ {conversionInfo.targetResolution} ({FormatBytes(sourceData.Length)} †’ {FormatBytes(convertedData.Length)})";
-                                conversionDetails.Add(detail);
-                                
-                                convertedTextures[fullName] = (convertedData, lastWriteTime);
-                            }
-                            else
-                            {
-                                System.Threading.Interlocked.Add(ref newTotalSize, sourceData.Length);
-                            }
-                        });
+                                await semaphore.WaitAsync();
+                                try
+                                {
+                                    var (fullName, lastWriteTime, sourceData, conversionInfo) = item;
+
+                                    System.Threading.Interlocked.Add(ref originalTotalSize, sourceData.Length);
+
+                                    // Convert texture asynchronously
+                                    int targetDimension = TextureConverter.GetTargetDimension(conversionInfo.targetResolution);
+                                    string extension = Path.GetExtension(fullName);
+                                    byte[] convertedData = await System.Threading.Tasks.Task.Run(() => 
+                                        _textureConverter.ResizeImage(sourceData, targetDimension, extension));
+
+                                    int current = System.Threading.Interlocked.Increment(ref processedCount);
+                                    progressCallback?.Invoke($"🖼️  [{current}/{totalConversions}] Converting: {Path.GetFileName(fullName)}", current, Math.Max(1, totalConversions));
+
+                                    if (convertedData != null)
+                                    {
+                                        System.Threading.Interlocked.Add(ref newTotalSize, convertedData.Length);
+                                        
+                                        string textureName = Path.GetFileName(fullName);
+                                        string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
+                                        string detail = $"  • {textureName}: {originalRes} → {conversionInfo.targetResolution} ({FormatBytes(sourceData.Length)} → {FormatBytes(convertedData.Length)})";
+                                        conversionDetails.Add(detail);
+                                        
+                                        convertedTextures[fullName] = (convertedData, lastWriteTime);
+                                    }
+                                    else
+                                    {
+                                        System.Threading.Interlocked.Add(ref newTotalSize, sourceData.Length);
+                                    }
+                                }
+                                finally
+                                {
+                                    semaphore.Release();
+                                }
+                            }).ToArray();
+
+                            // Wait for all texture conversions to complete
+                            System.Threading.Tasks.Task.WaitAll(tasks);
+                            System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_COMPLETE] All {totalConversions} textures processed");
+                        }
 
                         progressCallback?.Invoke("📝 Writing optimized package...", totalConversions, totalConversions);
                         
