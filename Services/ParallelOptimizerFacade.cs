@@ -59,12 +59,20 @@ namespace VPM.Services
         /// <summary>
         /// Event fired when metrics are updated
         /// </summary>
-        public event EventHandler<MetricsUpdatedEventArgs> MetricsUpdated;
+        public event EventHandler<MetricsUpdatedEventArgs> MetricsUpdated
+        {
+            add { }
+            remove { }
+        }
 
         /// <summary>
         /// Event fired when bottleneck is detected
         /// </summary>
-        public event EventHandler<BottleneckDetectedEventArgs> BottleneckDetected;
+        public event EventHandler<BottleneckDetectedEventArgs> BottleneckDetected
+        {
+            add { }
+            remove { }
+        }
 
         /// <summary>
         /// Task event arguments

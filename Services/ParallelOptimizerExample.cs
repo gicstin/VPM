@@ -405,46 +405,5 @@ namespace VPM.Services
             }
         }
 
-        /// <summary>
-        /// Main entry point - run all examples
-        /// </summary>
-        public static async Task Main(string[] args)
-        {
-            Console.WriteLine("=== Parallel Optimizer Examples ===\n");
-
-            try
-            {
-                Console.WriteLine("Running Example 1: Basic Usage");
-                await Example1_BasicUsageAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 1 completed\n");
-
-                Console.WriteLine("Running Example 2: Custom Configuration");
-                await Example2_CustomConfigurationAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 2 completed\n");
-
-                Console.WriteLine("Running Example 3: Event-Driven Integration");
-                await Example3_EventDrivenIntegrationAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 3 completed\n");
-
-                Console.WriteLine("Running Example 4: Monitoring and Diagnostics");
-                await Example4_MonitoringAndDiagnosticsAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 4 completed\n");
-
-                Console.WriteLine("Running Example 5: Error Handling and Resilience");
-                await Example5_ErrorHandlingAndResilienceAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 5 completed\n");
-
-                Console.WriteLine("Running Example 6: Batch Processing with Priority");
-                await Example6_BatchProcessingWithPriorityAsync().ConfigureAwait(false);
-                Console.WriteLine("✓ Example 6 completed\n");
-
-                Console.WriteLine("All examples completed successfully!");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error: {ex.Message}");
-                Console.WriteLine(ex.StackTrace);
-            }
-        }
     }
 }

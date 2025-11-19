@@ -26,7 +26,6 @@
   <!-- Rely on in-box System.Text.Json from .NET 8 to avoid copying extra DLLs -->
   
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
     <PackageReference Include="SharpCompress" Version="0.37.2" />
   </ItemGroup>

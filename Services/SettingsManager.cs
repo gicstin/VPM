@@ -79,9 +79,7 @@ namespace VPM.Services
                 }
             }
             
-            Console.WriteLine($"[SettingsManager] AppDomain.CurrentDomain.BaseDirectory: {AppDomain.CurrentDomain.BaseDirectory}");
-            Console.WriteLine($"[SettingsManager] Settings file path: {_settingsFilePath}");
-            Console.WriteLine($"[SettingsManager] Settings directory exists: {Directory.Exists(Path.GetDirectoryName(_settingsFilePath))}");
+            // Settings file path configured
             
             // Initialize auto-save timer (saves after 1 second of inactivity)
             _saveTimer = new DispatcherTimer
@@ -104,38 +102,30 @@ namespace VPM.Services
         {
             try
             {
-                Console.WriteLine($"[SettingsManager] Loading settings from: {_settingsFilePath}");
-                
                 if (File.Exists(_settingsFilePath))
                 {
-                    Console.WriteLine($"[SettingsManager] Settings file exists, loading...");
                     var json = File.ReadAllText(_settingsFilePath);
                     var loadedSettings = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
                     
                     if (loadedSettings != null)
                     {
                         Settings = loadedSettings;
-                        Console.WriteLine($"[SettingsManager] Settings loaded successfully. IsFirstLaunch: {Settings.IsFirstLaunch}");
                     }
                     else
                     {
                         Settings = AppSettings.CreateDefault();
-                        Console.WriteLine($"[SettingsManager] Failed to deserialize settings, using defaults");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"[SettingsManager] Settings file does not exist, creating defaults...");
                     Settings = AppSettings.CreateDefault();
                     
                     // Don't save default settings immediately on first launch
                     // Let the first launch setup process handle saving after user selects game path
-                    Console.WriteLine($"[SettingsManager] Default settings created, waiting for first launch setup to complete before saving");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[SettingsManager] Error loading settings: {ex.Message}");
                 Settings = AppSettings.CreateDefault();
             }
         }
@@ -156,7 +146,6 @@ namespace VPM.Services
                     if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                     {
                         Directory.CreateDirectory(directory);
-                        Console.WriteLine($"[SettingsManager] Created directory: {directory}");
                     }
 
                     // Test write permissions before attempting to save
@@ -166,20 +155,16 @@ namespace VPM.Services
                         File.WriteAllText(tempFile, "test");
                         File.Delete(tempFile);
                     }
-                    catch (Exception permEx)
+                    catch
                     {
-                        Console.WriteLine($"[SettingsManager] No write permission to directory {directory}: {permEx.Message}");
-                        throw new UnauthorizedAccessException($"Cannot write to settings directory: {directory}", permEx);
+                        throw new UnauthorizedAccessException($"Cannot write to settings directory: {directory}");
                     }
 
                     File.WriteAllText(_settingsFilePath, json);
                     _hasUnsavedChanges = false;
-                    
-                    Console.WriteLine($"[SettingsManager] Settings saved successfully to: {_settingsFilePath}");
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"[SettingsManager] Error saving settings to {_settingsFilePath}: {ex.Message}");
                     throw; // Re-throw to let caller handle the error
                 }
             }

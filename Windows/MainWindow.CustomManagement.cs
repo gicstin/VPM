@@ -275,6 +275,10 @@ namespace VPM
         {
             try
             {
+                // Refresh package status index to ensure we have the latest status of all packages
+                // This is critical when switching presets after downloading dependencies
+                _packageFileManager?.RefreshPackageStatusIndex();
+
                 // Clear existing dependencies
                 Dependencies.Clear();
                 _originalDependencies.Clear();

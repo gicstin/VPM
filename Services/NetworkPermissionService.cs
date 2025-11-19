@@ -1,8 +1,6 @@
 ﻿using System;
 using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 using VPM.Models;
 
 namespace VPM.Services
@@ -14,8 +12,6 @@ namespace VPM.Services
     public class NetworkPermissionService
     {
         private readonly SettingsManager _settingsManager;
-        private readonly SemaphoreSlim _dialogSemaphore = new SemaphoreSlim(1, 1);
-        private Task<(bool granted, bool updateDatabase)> _pendingDialogTask;
         private bool _databaseUpdateOfferedThisSession = false;
         private readonly string _localDbPath;
 
@@ -31,11 +27,10 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Checks if network access is allowed. If permission hasn't been asked,
-        /// shows a confirmation dialog to the user.
+        /// Checks if network access is allowed. Always grants access silently without showing dialogs.
         /// </summary>
-        /// <param name="forceShowDialog">If true, always show the dialog even if offline mode is available</param>
-        /// <returns>True if network access is granted, false otherwise</returns>
+        /// <param name="forceShowDialog">Deprecated - kept for compatibility but ignored</param>
+        /// <returns>True if network access is granted (always true)</returns>
         public async Task<bool> RequestNetworkAccessAsync(bool forceShowDialog = false)
         {
             var result = await RequestNetworkAccessWithOptionsAsync(forceShowDialog: forceShowDialog);
@@ -44,135 +39,31 @@ namespace VPM.Services
         
         /// <summary>
         /// Checks if network access is allowed and returns additional options.
-        /// Shows dialog unless "Never show again" was checked with granted permission.
+        /// Always grants access silently without showing any dialogs.
         /// </summary>
-        /// <param name="offerDatabaseUpdate">If true, shows the "Update database" checkbox (only once per session)</param>
-        /// <param name="forceShowDialog">If true, always show the dialog even if offline mode is available</param>
-        /// <returns>Tuple with (granted, updateDatabase)</returns>
+        /// <param name="offerDatabaseUpdate">If true, auto-approves database update</param>
+        /// <param name="forceShowDialog">Deprecated - kept for compatibility but ignored</param>
+        /// <returns>Tuple with (granted=true, updateDatabase)</returns>
         public async Task<(bool granted, bool updateDatabase)> RequestNetworkAccessWithOptionsAsync(bool offerDatabaseUpdate = false, bool forceShowDialog = false)
         {
-            // Check for offline mode first - if .bin file exists, skip network permission popup
-            // UNLESS forceShowDialog is true (for forced refresh scenarios)
-            if (!forceShowDialog && IsOfflineModeAvailable())
-            {
-                Console.WriteLine("[NetworkPermission] Offline database detected, skipping network permission popup");
-                return (true, false); // Grant access without showing popup (offline mode)
-            }
+            // Always grant network access silently - no dialogs shown
             
-            // Use semaphore to ensure only one dialog is shown at a time
-            // This must be BEFORE checking settings to prevent race conditions
-            await _dialogSemaphore.WaitAsync();
-            try
-            {
-                // Re-check settings inside the lock to get latest values
-                var settings = _settingsManager.Settings;
-                
-                // If "Never show again" is set AND permission was granted
-                if (settings.NeverShowNetworkPermissionDialog && settings.NetworkPermissionGranted)
-                {
-                    // If offering database update for the first time, auto-approve it
-                    if (offerDatabaseUpdate && !_databaseUpdateOfferedThisSession)
-                    {
-                        _databaseUpdateOfferedThisSession = true;
-                        return (true, true); // Auto-approve database update
-                    }
-                    // Otherwise just return granted without update
-                    return (true, false);
-                }
-                
-                // If "Never show again" is set but permission was denied, still return denied
-                if (settings.NeverShowNetworkPermissionDialog && !settings.NetworkPermissionGranted)
-                {
-                    return (false, false);
-                }
-                
-                // If permission is already granted and we're not offering database update, return immediately
-                if (settings.NetworkPermissionGranted && !offerDatabaseUpdate)
-                {
-                    return (true, false);
-                }
-                
-                // If permission is granted and database update was already offered this session, return immediately
-                if (settings.NetworkPermissionGranted && offerDatabaseUpdate && _databaseUpdateOfferedThisSession)
-                {
-                    return (true, false);
-                }
-                
-                // Check if there's already a pending dialog task
-                if (_pendingDialogTask != null && !_pendingDialogTask.IsCompleted)
-                {
-                    // Wait for the existing dialog to complete and return its result
-                    return await _pendingDialogTask;
-                }
-                
-                // Create new dialog task
-                _pendingDialogTask = ShowNetworkPermissionDialogAsync();
-                var result = await _pendingDialogTask;
-                
-                // Mark that database update was offered this session
-                if (offerDatabaseUpdate)
-                {
-                    _databaseUpdateOfferedThisSession = true;
-                }
-                
-                // Clear the pending task after completion
-                _pendingDialogTask = null;
-                
-                return result;
-            }
-            finally
-            {
-                _dialogSemaphore.Release();
-            }
-        }
-
-        /// <summary>
-        /// Shows the network permission dialog and processes the user's response
-        /// </summary>
-        /// <returns>Tuple with (granted, updateDatabase)</returns>
-        private async Task<(bool granted, bool updateDatabase)> ShowNetworkPermissionDialogAsync()
-        {
-            bool permissionGranted = false;
-            bool neverShowAgain = false;
+            // Auto-approve database update if offered (only once per session)
             bool updateDatabase = false;
-
-            // Show dialog on UI thread
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            if (offerDatabaseUpdate && !_databaseUpdateOfferedThisSession)
             {
-                var dialog = new NetworkPermissionDialog();
-                var result = dialog.ShowDialog();
-
-                if (result == true)
-                {
-                    permissionGranted = true;
-                    neverShowAgain = dialog.NeverShowAgain;
-                    updateDatabase = dialog.UpdateDatabase;
-                }
-                else
-                {
-                    permissionGranted = false;
-                    neverShowAgain = dialog.NeverShowAgain;
-                    updateDatabase = false;
-                }
-            });
-
-            // Save the user's choice
-            _settingsManager.Settings.NetworkPermissionGranted = permissionGranted;
-            
-            // Only allow "Never show again" if permission was granted
-            if (permissionGranted && neverShowAgain)
-            {
-                _settingsManager.Settings.NeverShowNetworkPermissionDialog = true;
-            }
-            else
-            {
-                _settingsManager.Settings.NeverShowNetworkPermissionDialog = false;
+                _databaseUpdateOfferedThisSession = true;
+                updateDatabase = true;
             }
             
+            // Update settings to reflect that network permission was granted
+            _settingsManager.Settings.NetworkPermissionGranted = true;
+            _settingsManager.Settings.NeverShowNetworkPermissionDialog = true;
             _settingsManager.SaveSettingsImmediate();
-
-            return (permissionGranted, updateDatabase);
+            
+            return await Task.FromResult((true, updateDatabase));
         }
+
 
         /// <summary>
         /// Checks if network access is currently allowed without showing any dialogs

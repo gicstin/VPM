@@ -85,14 +85,12 @@ namespace VPM.Services
                 try
                 {
                     encryptedData = await File.ReadAllBytesAsync(_localDbPath);
-                    Console.WriteLine($"[JsonDB] ✓ Loaded offline database from: {_localDbPath}");
-                    Console.WriteLine($"[JsonDB] ✓ File size: {encryptedData.Length:N0} bytes (offline mode - no network required)");
                     _cachedEncryptedData = encryptedData;
                     goto ProcessData;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Console.WriteLine($"[JsonDB] – Failed to load offline database: {ex.Message}");
+                    // Failed to load offline database
                 }
             }
 
@@ -101,18 +99,14 @@ namespace VPM.Services
             bool hasNetworkPermission = false;
             if (_networkPermissionCheck != null)
             {
-                Console.WriteLine($"[JsonDB] Requesting network permission for download...");
                 hasNetworkPermission = await _networkPermissionCheck();
                 if (!hasNetworkPermission)
                 {
-                    Console.WriteLine($"[JsonDB] Network permission denied by user");
                     goto LoadFromCache;
                 }
-                Console.WriteLine($"[JsonDB] Network permission approved");
             }
             else
             {
-                Console.WriteLine($"[JsonDB] Warning: No network permission check configured, proceeding with download");
                 hasNetworkPermission = true;
             }
 
@@ -121,16 +115,14 @@ namespace VPM.Services
             {
                 try
                 {
-                    Console.WriteLine($"[JsonDB] Downloading from: {githubUrl}");
                     encryptedData = await _httpClient.GetByteArrayAsync(githubUrl);
                     
                     // Save to in-memory cache
                     _cachedEncryptedData = encryptedData;
-                    Console.WriteLine($"[JsonDB] Downloaded {encryptedData.Length:N0} bytes");
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Console.WriteLine($"[JsonDB] Download failed: {ex.Message}");
+                    // Download failed
                 }
             }
 
@@ -139,13 +131,11 @@ namespace VPM.Services
             if (encryptedData == null && _cachedEncryptedData != null)
             {
                 encryptedData = _cachedEncryptedData;
-                Console.WriteLine($"[JsonDB] Using in-memory cache");
             }
 
             ProcessData:
             if (encryptedData == null)
             {
-                Console.WriteLine($"[JsonDB] No data available (offline file not found and download failed)");
                 return null;
             }
 
@@ -173,11 +163,8 @@ namespace VPM.Services
                 
                 return packageList;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[JsonDB] Error during decrypt/parse: {ex.Message}");
-                Console.WriteLine($"[JsonDB] Stack trace: {ex.StackTrace}");
-                
                 // Clear corrupted cache
                 _cachedEncryptedData = null;
                 
@@ -368,13 +355,12 @@ namespace VPM.Services
                         parsedCount++;
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    Console.WriteLine($"[JsonDB] Parse error on line {lineNumber}: {ex.Message}");
+                    // Parse error on line
                 }
             }
 
-            Console.WriteLine($"[JsonDB] Plain text parsing: {parsedCount} packages parsed, {skippedCount} lines skipped");
             return packageList;
         }
 
@@ -507,17 +493,16 @@ namespace VPM.Services
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"[JsonDB] Error parsing package {creatorName}.{packageKey}: {ex.Message}");
+                                // Error parsing package
                             }
                         }
                     }
                 }
 
-                Console.WriteLine($"[JsonDB] Successfully parsed {packageList.Count} packages");
+                // Successfully parsed packages
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[JsonDB] Error parsing JSON: {ex.Message}");
                 throw;
             }
 
@@ -574,7 +559,7 @@ namespace VPM.Services
         public void ClearCache()
         {
             _cachedEncryptedData = null;
-            Console.WriteLine("[JsonDB] In-memory cache cleared");
+            // In-memory cache cleared
         }
 
         public void Dispose()

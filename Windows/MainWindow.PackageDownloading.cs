@@ -504,7 +504,7 @@ namespace VPM
                     if (dep != null)
                     {
                         Console.WriteLine($"[MainWindow] Updating dependency status for: {dep.Name}");
-                        dep.Status = "Available";
+                        dep.Status = "Loaded";
                     }
                     
                     // Incrementally add the downloaded package to the UI

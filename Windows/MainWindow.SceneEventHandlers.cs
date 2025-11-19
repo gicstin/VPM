@@ -444,6 +444,10 @@ namespace VPM
 
                 Dispatcher.Invoke(() =>
                 {
+                    // Refresh package status index to ensure we have the latest status of all packages
+                    // This is critical when switching scenes/presets after downloading dependencies
+                    _packageFileManager?.RefreshPackageStatusIndex();
+
                     // Accumulate dependencies from all selected scenes
                     Dependencies.Clear();
                     _originalDependencies.Clear();

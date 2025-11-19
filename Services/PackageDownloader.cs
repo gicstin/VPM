@@ -112,18 +112,11 @@ namespace VPM.Services
                 
                 if (packageList == null || packageList.Count == 0)
                 {
-                    Console.WriteLine($"[PackageDownloader] Failed to load package list (null or empty)");
+                    // Failed to load package list
                     return false;
                 }
 
-                Console.WriteLine($"[PackageDownloader] Loaded {packageList.Count} packages from JSON database");
-                
-                // Show first few packages for debugging
-                var samplePackages = packageList.Take(3).ToList();
-                foreach (var pkg in samplePackages)
-                {
-                    Console.WriteLine($"[PackageDownloader]   Sample: '{pkg.FullPackageName}' -> '{pkg.PrimaryUrl}'");
-                }
+                // Packages loaded from JSON database
 
                 // Convert to PackageDownloadInfo dictionary, filtering out invalid entries
                 // Handle duplicates by keeping only the first occurrence
@@ -140,7 +133,6 @@ namespace VPM.Services
                     if (_packageUrlCache.ContainsKey(pkg.FullPackageName))
                     {
                         duplicateCount++;
-                        Console.WriteLine($"[PackageDownloader] Duplicate package found: {pkg.FullPackageName} (keeping first occurrence)");
                         continue;
                     }
                     
@@ -153,61 +145,15 @@ namespace VPM.Services
                     };
                 }
                 
-                // Log validation results
-                int invalidCount = packageList.Count(p => string.IsNullOrWhiteSpace(p.FullPackageName) || string.IsNullOrWhiteSpace(p.PrimaryUrl));
-                if (invalidCount > 0)
-                {
-                    Console.WriteLine($"[PackageDownloader] Filtered out {invalidCount} packages with missing URLs");
-                }
-                if (duplicateCount > 0)
-                {
-                    Console.WriteLine($"[PackageDownloader] Filtered out {duplicateCount} duplicate packages");
-                }
-
-                Console.WriteLine($"[PackageDownloader] Created cache with {_packageUrlCache.Count} entries");
-                
-                // Show first few cache entries for debugging
-                var sampleCache = _packageUrlCache.Take(3).ToList();
-                foreach (var kvp in sampleCache)
-                {
-                    Console.WriteLine($"[PackageDownloader]   Cache: '{kvp.Key}' -> '{kvp.Value.DownloadUrl}'");
-                }
-                
-                // Show unique creators in cache
-                var creators = _packageUrlCache.Keys
-                    .Select(k => k.Split('.')[0])
-                    .Distinct()
-                    .OrderBy(c => c)
-                    .Take(20)
-                    .ToList();
-                Console.WriteLine($"[PackageDownloader] First 20 creators in cache: {string.Join(", ", creators)}");
-                
-                // Check if caelryn packages exist
-                var caelrynPackages = _packageUrlCache.Keys
-                    .Where(k => k.StartsWith("caelryn.", StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(k => k)
-                    .ToList();
-                if (caelrynPackages.Any())
-                {
-                    Console.WriteLine($"[PackageDownloader] Found {caelrynPackages.Count} caelryn packages total:");
-                    foreach (var pkg in caelrynPackages)
-                    {
-                        Console.WriteLine($"[PackageDownloader]   - {pkg}");
-                    }
-                }
-                else
-                {
-                    Console.WriteLine($"[PackageDownloader] – No caelryn packages found in cache!");
-                }
+                // Validation and cache creation complete
 
                 _cacheLastUpdated = DateTime.Now;
                 _lastLoadWasFromGitHub = true;
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[PackageDownloader] Error loading encrypted package list: {ex.Message}");
-                Console.WriteLine($"[PackageDownloader] Stack trace: {ex.StackTrace}");
+                // Error loading encrypted package list
                 return false;
             }
             finally

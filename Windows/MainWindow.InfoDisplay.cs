@@ -763,6 +763,10 @@ namespace VPM
 
         private void DisplayDependencies(PackageItem packageItem)
         {
+            // Refresh package status index to ensure we have the latest status of all packages
+            // This is critical when switching packages after downloading dependencies
+            _packageFileManager?.RefreshPackageStatusIndex();
+
             // Clear any existing filter first
             var view = CollectionViewSource.GetDefaultView(Dependencies);
             if (view != null)
@@ -853,6 +857,10 @@ namespace VPM
 
         private void DisplayConsolidatedDependencies(List<PackageItem> selectedPackages)
         {
+            // Refresh package status index to ensure we have the latest status of all packages
+            // This is critical when switching packages after downloading dependencies
+            _packageFileManager?.RefreshPackageStatusIndex();
+
             // Clear any existing filter first
             var view = CollectionViewSource.GetDefaultView(Dependencies);
             if (view != null)
@@ -975,6 +983,10 @@ namespace VPM
         /// </summary>
         private void DisplayAllAvailableDependencies()
         {
+            // Refresh package status index to ensure we have the latest status of all packages
+            // This is critical when switching packages after downloading dependencies
+            _packageFileManager?.RefreshPackageStatusIndex();
+
             // Clear any existing filter first
             var depsView = CollectionViewSource.GetDefaultView(Dependencies);
             if (depsView != null)
@@ -1081,6 +1093,10 @@ namespace VPM
 
         private void DisplayDependents(PackageItem packageItem)
         {
+            // Refresh package status index to ensure we have the latest status of all packages
+            // This is critical when switching packages after downloading dependencies
+            _packageFileManager?.RefreshPackageStatusIndex();
+
             var view = CollectionViewSource.GetDefaultView(Dependencies);
             if (view != null)
             {
@@ -1239,6 +1255,10 @@ namespace VPM
 
         private void DisplayConsolidatedDependents(List<PackageItem> selectedPackages)
         {
+            // Refresh package status index to ensure we have the latest status of all packages
+            // This is critical when switching packages after downloading dependencies
+            _packageFileManager?.RefreshPackageStatusIndex();
+
             var view = CollectionViewSource.GetDefaultView(Dependencies);
             if (view != null)
             {

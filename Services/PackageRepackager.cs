@@ -558,7 +558,7 @@ namespace VPM.Services
                                                 sourceData = ms.ToArray();
                                             }
                                         }
-                                        catch (SharpCompress.Compressors.Deflate.ZlibException zlibEx)
+                                        catch (SharpCompress.Compressors.Deflate.ZlibException)
                                         {
                                             // Only skip on actual decompression errors
                                             int procCount = Interlocked.Increment(ref processedCount);
@@ -1018,10 +1018,9 @@ namespace VPM.Services
                         // Save the archive to the temp output file
                         _performanceTimer.Start("Archive Writing - Compression & Save");
                         
-                        // OPTIMIZATION: Use no compression since most content is already compressed (PNG, JPG, etc.)
-                        // Benefit: 40-60% faster archive writing for media-heavy packages
-                        // First, save the archive to the memory stream with NO compression
-                        outputArchive.SaveTo(outputMemoryStream, SharpCompress.Common.CompressionType.None);
+                        // Save the archive to the memory stream with Deflate compression for game compatibility
+                        // Note: Most content is already compressed (PNG, JPG, etc.), so performance impact is minimal
+                        outputArchive.SaveTo(outputMemoryStream, SharpCompress.Common.CompressionType.Deflate);
                         
                         _performanceTimer.Stop("Archive Writing - Compression & Save");
                         _performanceTimer.Start("Archive Writing - File Write");
