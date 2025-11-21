@@ -229,7 +229,7 @@
                             <!--  Left Status Line  -->
                             <Border
                                 Grid.Column="0"
-                                Background="{Binding Item.StatusColor, Converter={x:Static local:ColorToBrushConverter.Instance}}" />
+                                Background="{Binding StatusColor, Converter={x:Static local:ColorToBrushConverter.Instance}}" />
                             <!--  Main Row Content  -->
                             <Border
                                 Grid.Column="1"
@@ -4231,38 +4231,39 @@
                             </Style>
                         </DataGrid.ColumnHeaderStyle>
                         <DataGrid.Columns>
-                            <!--  Status Column with Icons  -->
+                            <!--  Package Name Column with metadata in second row and status border  -->
                             <DataGridTemplateColumn
-                                Width="28"
-                                CanUserReorder="False"
-                                CanUserResize="False"
+                                Width="*"
                                 CanUserSort="True"
-                                Header="Status"
-                                SortMemberPath="Status">
+                                Header="Package Name"
+                                SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="3" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <!--  Left Status Line  -->
-                                            <Border
-                                                Grid.Column="0"
-                                                Background="{Binding StatusColor, Converter={x:Static local:ColorToBrushConverter.Instance}}" />
-                                            <!--  Icons Container  -->
-                                            <Border
-                                                Grid.Column="1"
-                                                Padding="2,0,2,0"
-                                                Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
-                                                <StackPanel
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Orientation="Vertical">
-                                                    <!--  Favorite star  -->
+                                        <Border
+                                            Padding="0"
+                                            Background="Transparent">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="3" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <!--  Left Status Border  -->
+                                                <Border
+                                                    Grid.Column="0"
+                                                    Margin="0,2,0,2"
+                                                    Background="{Binding StatusColor, Converter={x:Static local:ColorToBrushConverter.Instance}}" />
+                                                <!--  Content  -->
+                                                <StackPanel Grid.Column="1" Margin="6,2,4,2" VerticalAlignment="Center">
+                                            <TextBlock
+                                                FontWeight="SemiBold"
+                                                Text="{Binding DisplayName}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <!--  Status Icons Container  -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,6,0">
+                                                    <!--  Favorite heart  -->
                                                     <TextBlock
-                                                        Margin="0,1,0,1"
-                                                        HorizontalAlignment="Center"
+                                                        Margin="0,0,3,0"
                                                         FontSize="11"
                                                         FontWeight="Bold"
                                                         Foreground="#FF1493"
@@ -4271,8 +4272,7 @@
                                                         Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}" />
                                                     <!--  AutoInstall A icon  -->
                                                     <TextBlock
-                                                        Margin="0,1,0,1"
-                                                        HorizontalAlignment="Center"
+                                                        Margin="0,0,3,0"
                                                         FontSize="11"
                                                         FontWeight="Bold"
                                                         Foreground="#00CED1"
@@ -4281,8 +4281,7 @@
                                                         Visibility="{Binding IsAutoInstall, Converter={StaticResource BoolToVis}}" />
                                                     <!--  Optimized lightning bolt  -->
                                                     <TextBlock
-                                                        Margin="0,1,0,1"
-                                                        HorizontalAlignment="Center"
+                                                        Margin="0,0,3,0"
                                                         FontSize="11"
                                                         FontWeight="Bold"
                                                         Foreground="#FFC107"
@@ -4290,26 +4289,7 @@
                                                         ToolTip="Package has been optimized by VPM"
                                                         Visibility="{Binding IsOptimized, Converter={StaticResource BoolToVis}}" />
                                                 </StackPanel>
-                                            </Border>
-                                        </Grid>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
 
-                            <!--  Package Name Column with metadata in second row  -->
-                            <DataGridTemplateColumn
-                                Width="*"
-                                CanUserSort="True"
-                                Header="Package Name"
-                                SortMemberPath="DisplayName">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Margin="0,2,4,2" VerticalAlignment="Center">
-                                            <TextBlock
-                                                FontWeight="SemiBold"
-                                                Text="{Binding DisplayName}"
-                                                TextTrimming="CharacterEllipsis" />
-                                            <StackPanel Orientation="Horizontal">
                                                 <!--  Old Version indicator  -->
                                                 <TextBlock
                                                     Margin="-3,0,2,0"
@@ -4395,7 +4375,9 @@
                                                 Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                                 Text="{Binding Converter={StaticResource ContentCountsConverter}}"
                                                 TextWrapping="Wrap" />
-                                        </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -4658,8 +4640,9 @@
                             <DataGridTemplateColumn Width="*" IsReadOnly="True">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <StackPanel Margin="8" Orientation="Vertical">
-                                            <StackPanel Margin="0,0,0,4" Orientation="Horizontal">
+                                        <StackPanel Margin="6,2,4,2" Orientation="Vertical">
+                                            <!--  Row 1: Package Name + Icons + Category  -->
+                                            <StackPanel Margin="0,0,0,0" Orientation="Horizontal">
                                                 <Grid>
                                                     <Border
                                                         x:Name="PresetDisplayBorder"
@@ -4670,8 +4653,8 @@
                                                         <TextBlock
                                                             x:Name="PresetDisplayTextBlock"
                                                             VerticalAlignment="Center"
-                                                            FontSize="14"
-                                                            FontWeight="Bold"
+                                                            FontSize="12"
+                                                            FontWeight="SemiBold"
                                                             Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                                             Text="{Binding DisplayName}"
                                                             TextTrimming="CharacterEllipsis" />
@@ -4680,8 +4663,8 @@
                                                         x:Name="PresetEditTextBox"
                                                         Background="Transparent"
                                                         BorderThickness="1"
-                                                        FontSize="14"
-                                                        FontWeight="Bold"
+                                                        FontSize="12"
+                                                        FontWeight="SemiBold"
                                                         KeyDown="PresetNameEdit_KeyDown"
                                                         LostFocus="PresetNameEdit_LostFocus"
                                                         Tag="{Binding}"
@@ -4689,58 +4672,51 @@
                                                         Visibility="Collapsed" />
                                                 </Grid>
                                                 <TextBlock
-                                                    Margin="6,0,0,0"
+                                                    Margin="3,0,0,0"
                                                     VerticalAlignment="Center"
-                                                    FontSize="14"
+                                                    FontSize="11"
                                                     FontWeight="Bold"
-                                                    Foreground="#FF6B6B"
+                                                    Foreground="#FF1493"
                                                     Text="❤️"
                                                     ToolTip="Marked as favorite"
                                                     Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}" />
                                                 <TextBlock
-                                                    Margin="6,0,0,0"
+                                                    Margin="3,0,0,0"
                                                     VerticalAlignment="Center"
-                                                    FontSize="14"
+                                                    FontSize="11"
                                                     FontWeight="Bold"
                                                     Foreground="#6B9EFF"
                                                     Text="🙈"
                                                     ToolTip="Hidden"
                                                     Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}" />
                                                 <TextBlock
-                                                    Margin="6,0,0,0"
+                                                    Margin="3,0,0,0"
                                                     VerticalAlignment="Center"
-                                                    FontSize="14"
+                                                    FontSize="11"
                                                     FontWeight="Bold"
-                                                    Foreground="#FFD700"
-                                                    Text="{Binding OptimizationIcon}"
-                                                    ToolTip="Preset has been optimized" />
+                                                    Foreground="#FFC107"
+                                                    Text="⚡"
+                                                    ToolTip="Package has been optimized"
+                                                    Visibility="{Binding IsOptimized, Converter={StaticResource BoolToVis}}" />
                                                 <TextBlock
-                                                    Margin="6,0"
+                                                    Margin="6,0,2,0"
                                                     VerticalAlignment="Center"
                                                     FontSize="11"
                                                     Foreground="#888888"
-                                                    Text=" • " />
+                                                    Text="•" />
                                                 <TextBlock
+                                                    Margin="2,0,0,0"
                                                     VerticalAlignment="Center"
                                                     FontSize="11"
                                                     Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                                     Text="{Binding Category}" />
                                             </StackPanel>
-                                            <StackPanel Margin="0,0,0,2" Orientation="Horizontal">
+                                            <!--  Row 2: Deps, Size, Date  -->
+                                            <StackPanel Margin="0,2,0,0" Orientation="Horizontal">
                                                 <TextBlock
                                                     FontSize="11"
                                                     Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                    Text="Path: " />
-                                                <TextBlock
-                                                    FontSize="11"
-                                                    FontWeight="Bold"
-                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                    Text="{Binding Subfolder}"
-                                                    TextTrimming="CharacterEllipsis" />
-                                                <TextBlock
-                                                    FontSize="11"
-                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                    Text="  •  Deps: " />
+                                                    Text="Deps: " />
                                                 <TextBlock
                                                     FontSize="11"
                                                     FontWeight="Bold"
@@ -4765,6 +4741,19 @@
                                                     FontWeight="Bold"
                                                     Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                                     Text="{Binding DateFormatted}" />
+                                            </StackPanel>
+                                            <!--  Row 3: Path  -->
+                                            <StackPanel Margin="0,2,0,0" Orientation="Horizontal">
+                                                <TextBlock
+                                                    FontSize="10"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    Text="Path: " />
+                                                <TextBlock
+                                                    FontSize="10"
+                                                    FontWeight="Bold"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    Text="{Binding Subfolder}"
+                                                    TextTrimming="CharacterEllipsis" />
                                             </StackPanel>
                                         </StackPanel>
                                     </DataTemplate>

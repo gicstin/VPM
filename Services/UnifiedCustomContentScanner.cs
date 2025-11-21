@@ -10,20 +10,25 @@ using SharpCompress.Archives.Zip;
 namespace VPM.Services
 {
     /// <summary>
-    /// Unified scanner for both custom atom presets and scenes
-    /// Scans Custom\Atom\Person folder for .vap files and Saves\scene folder for .json files
+    /// Unified scanner for custom atom presets, scenes, and custom packages
+    /// Scans:
+    /// - Custom\Atom\Person folder for .vap preset files
+    /// - Saves\scene folder for .json scene files
+    /// - Custom\Assets, Custom\Clothing, Custom\Hair, Custom\SubScene folders for .vam package files
     /// </summary>
     public class UnifiedCustomContentScanner
     {
         private readonly string _vamPath;
+        private readonly CustomPackageScanner _customPackageScanner;
 
         public UnifiedCustomContentScanner(string vamPath)
         {
             _vamPath = vamPath;
+            _customPackageScanner = new CustomPackageScanner(vamPath);
         }
 
         /// <summary>
-        /// Scans both Presets and Scenes locations and returns unified list
+        /// Scans all custom content: presets, scenes, and custom packages
         /// </summary>
         public List<CustomAtomItem> ScanAllCustomContent()
         {
@@ -36,6 +41,10 @@ namespace VPM.Services
             // Scan scenes from Saves\scene
             var scenes = ScanScenes();
             allItems.AddRange(scenes);
+
+            // Scan custom packages from Custom folder (Hair, Clothing, Assets, SubScene, etc.)
+            var packages = _customPackageScanner.ScanCustomPackages();
+            allItems.AddRange(packages);
 
             return allItems;
         }

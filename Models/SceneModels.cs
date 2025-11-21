@@ -524,6 +524,27 @@ namespace VPM.Models
         }
 
         /// <summary>
+        /// Status color for the preset based on its status
+        /// </summary>
+        public System.Windows.Media.Color StatusColor
+        {
+            get
+            {
+                return Status switch
+                {
+                    "Loaded" => System.Windows.Media.Color.FromRgb(76, 175, 80),      // Green
+                    "Available" => System.Windows.Media.Color.FromRgb(33, 150, 243),  // Blue
+                    "Missing" => System.Windows.Media.Color.FromRgb(244, 67, 54),     // Red
+                    "Outdated" => System.Windows.Media.Color.FromRgb(255, 152, 0),    // Orange
+                    "Updating" => System.Windows.Media.Color.FromRgb(156, 39, 176),   // Purple
+                    "Duplicate" => System.Windows.Media.Color.FromRgb(255, 235, 59),  // Yellow
+                    "Archived" => System.Windows.Media.Color.FromRgb(139, 69, 19),    // Brown
+                    _ => System.Windows.Media.Color.FromRgb(158, 158, 158)            // Gray
+                };
+            }
+        }
+
+        /// <summary>
         /// List of package dependencies found in the preset
         /// </summary>
         public List<string> Dependencies { get; set; } = new List<string>();
