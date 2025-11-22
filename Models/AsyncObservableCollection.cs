@@ -24,6 +24,11 @@ namespace VPM.Models
         }
 
         /// <summary>
+        /// Gets a value indicating whether the collection is read-only
+        /// </summary>
+        public bool IsReadOnly => false;
+
+        /// <summary>
         /// Adds items in time-sliced chunks to prevent UI freezing
         /// </summary>
         public async Task AddRangeAsync(IEnumerable<T> items, int chunkSize = 100, int delayMs = 1)

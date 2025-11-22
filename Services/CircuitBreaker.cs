@@ -110,6 +110,11 @@ namespace VPM.Services
             {
                 lock (_lock)
                 {
+                    // Check if timeout has elapsed and transition to HalfOpen
+                    if (_state == CircuitState.Open && DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
+                    {
+                        TransitionToHalfOpen();
+                    }
                     return _state;
                 }
             }

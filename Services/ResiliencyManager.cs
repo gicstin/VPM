@@ -58,15 +58,26 @@ namespace VPM.Services
                     ResetCircuitBreaker(operationKey);
                     return result;
                 }
-                catch (Exception ex) when (i < maxRetries &&
-                    (ex is IOException || ex is TimeoutException || ex is UnauthorizedAccessException))
+                catch (Exception ex)
                 {
                     lastException = ex;
-                    RecordFailure(operationKey, resetTimeout);
                     
-                    if (i < maxRetries)
+                    // Check if exception is retryable and we have retries left
+                    bool isRetryable = ex is IOException || ex is TimeoutException || ex is UnauthorizedAccessException;
+                    
+                    if (isRetryable)
                     {
-                        await Task.Delay(TimeSpan.FromMilliseconds(delay.TotalMilliseconds * Math.Pow(2, i)));
+                        RecordFailure(operationKey, resetTimeout);
+                        
+                        if (i < maxRetries)
+                        {
+                            await Task.Delay(TimeSpan.FromMilliseconds(delay.TotalMilliseconds * Math.Pow(2, i)));
+                        }
+                    }
+                    else
+                    {
+                        // Non-retryable exception, throw immediately
+                        throw;
                     }
                 }
             }

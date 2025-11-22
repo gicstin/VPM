@@ -12,6 +12,7 @@ namespace VPM.Services
         private CancellationTokenSource _cancellationTokenSource;
         private readonly int _delayMilliseconds;
         private readonly Func<Task> _action;
+        private bool _disposed = false;
 
         /// <summary>
         /// Creates a new SelectionDebouncer
@@ -29,6 +30,9 @@ namespace VPM.Services
         /// </summary>
         public void Trigger()
         {
+            if (_disposed)
+                return;
+
             // Cancel any pending execution
             _cancellationTokenSource?.Cancel();
             _cancellationTokenSource?.Dispose();
@@ -38,20 +42,24 @@ namespace VPM.Services
             var token = _cancellationTokenSource.Token;
 
             // Schedule the action after delay
-            _ = Task.Delay(_delayMilliseconds, token).ContinueWith(async _ =>
+            _ = ExecuteAfterDelayAsync(token);
+        }
+
+        private async Task ExecuteAfterDelayAsync(CancellationToken token)
+        {
+            try
             {
+                await Task.Delay(_delayMilliseconds, token);
+                
                 if (!token.IsCancellationRequested)
                 {
-                    try
-                    {
-                        await _action();
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // Expected when debouncer is cancelled
-                    }
+                    await _action();
                 }
-            }, token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when debouncer is cancelled
+            }
         }
 
         /// <summary>
@@ -67,6 +75,7 @@ namespace VPM.Services
         /// </summary>
         public void Dispose()
         {
+            _disposed = true;
             _cancellationTokenSource?.Cancel();
             _cancellationTokenSource?.Dispose();
         }

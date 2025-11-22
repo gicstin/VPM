@@ -39,7 +39,7 @@ namespace VPM.Services
         /// <summary>
         /// Progress percentage (0-100)
         /// </summary>
-        public int ProgressPercent { get; protected set; } = 0;
+        public int ProgressPercent { get; set; } = 0;
 
         /// <summary>
         /// Estimated total work units
@@ -49,7 +49,7 @@ namespace VPM.Services
         /// <summary>
         /// Completed work units
         /// </summary>
-        public long CompletedWorkUnits { get; protected set; } = 0;
+        public long CompletedWorkUnits { get; set; } = 0;
 
         /// <summary>
         /// Task creation timestamp
@@ -69,12 +69,12 @@ namespace VPM.Services
         /// <summary>
         /// Error message if task failed
         /// </summary>
-        public string ErrorMessage { get; protected set; }
+        public string ErrorMessage { get; set; }
 
         /// <summary>
         /// Exception if task failed
         /// </summary>
-        public Exception Exception { get; protected set; }
+        public Exception Exception { get; set; }
 
         /// <summary>
         /// Execution duration
@@ -117,7 +117,7 @@ namespace VPM.Services
         /// <summary>
         /// Update task state and raise event
         /// </summary>
-        internal void UpdateState(TaskState newState)
+        public void UpdateState(TaskState newState)
         {
             var oldState = State;
             State = newState;
@@ -135,7 +135,7 @@ namespace VPM.Services
         /// <summary>
         /// Mark task as failed
         /// </summary>
-        internal void MarkFailed(string errorMessage, Exception exception = null)
+        public void MarkFailed(string errorMessage, Exception exception = null)
         {
             ErrorMessage = errorMessage;
             Exception = exception;
@@ -145,7 +145,7 @@ namespace VPM.Services
         /// <summary>
         /// Mark task as completed
         /// </summary>
-        internal void MarkCompleted()
+        public void MarkCompleted()
         {
             UpdateProgress(TotalWorkUnits, TotalWorkUnits);
             UpdateState(TaskState.Completed);

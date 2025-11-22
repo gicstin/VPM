@@ -1,0 +1,13 @@
+  Build version: 0.3.1164
+z:\VPM\Services\ImageManager.cs(396,21): warning CA2022: Avoid inexact read with 'System.IO.Stream.Read(byte[], int, int)' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2022) [z:\VPM\VPM.csproj]
+z:\VPM\Services\SharpCompressHelper.cs(225,17): warning CA2022: Avoid inexact read with 'System.IO.Stream.Read(byte[], int, int)' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2022) [z:\VPM\VPM.csproj]
+  VPM -> z:\VPM\bin\Debug\net10.0-windows\VPM.dll
+
+Build succeeded.
+
+z:\VPM\Services\ImageManager.cs(396,21): warning CA2022: Avoid inexact read with 'System.IO.Stream.Read(byte[], int, int)' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2022) [z:\VPM\VPM.csproj]
+z:\VPM\Services\SharpCompressHelper.cs(225,17): warning CA2022: Avoid inexact read with 'System.IO.Stream.Read(byte[], int, int)' (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/quality-rules/ca2022) [z:\VPM\VPM.csproj]
+    2 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:15.84

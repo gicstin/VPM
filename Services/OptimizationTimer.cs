@@ -57,6 +57,11 @@ namespace VPM.Services
                     return 0;
 
                 var entry = _timings[operationName];
+                
+                // Only record if stopwatch is running
+                if (!entry.Stopwatch.IsRunning)
+                    return 0;
+                
                 entry.Stopwatch.Stop();
                 
                 long elapsed = entry.Stopwatch.ElapsedMilliseconds;

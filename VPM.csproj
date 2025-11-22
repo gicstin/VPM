@@ -9,10 +9,12 @@
     <ApplicationIcon>icon.ico</ApplicationIcon>
     
     <!-- Version Configuration -->
-    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionPrefix>0.3.1164</VersionPrefix>
     <GenerateAssemblyVersionAttribute>true</GenerateAssemblyVersionAttribute>
     <GenerateAssemblyFileVersionAttribute>true</GenerateAssemblyFileVersionAttribute>
     <GenerateAssemblyInformationalVersionAttribute>true</GenerateAssemblyInformationalVersionAttribute>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
     
     <!-- Framework-Dependent Single File Publishing -->
     <SelfContained>false</SelfContained>
@@ -34,12 +36,16 @@
     <Resource Include="icon.ico" />
   </ItemGroup>
 
-  <!-- Exclude backup/reference folders from compilation -->
+  <!-- Exclude backup/reference folders and test projects from compilation -->
   <ItemGroup>
     <Compile Remove="_links\**" />
+    <Compile Remove="VPM.Tests\**" />
     <EmbeddedResource Remove="_links\**" />
+    <EmbeddedResource Remove="VPM.Tests\**" />
     <None Remove="_links\**" />
+    <None Remove="VPM.Tests\**" />
     <Page Remove="_links\**" />
+    <Page Remove="VPM.Tests\**" />
   </ItemGroup>
 
   <!-- Auto-increment build number on every build -->

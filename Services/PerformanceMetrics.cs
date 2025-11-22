@@ -291,7 +291,8 @@ namespace VPM.Services
             }
 
             var lowestThroughput = allMetrics.OrderBy(m => m.AverageThroughputMBps).FirstOrDefault();
-            if (lowestThroughput != null && lowestThroughput.AverageThroughputMBps < 10)
+            // Only flag low throughput if there's significant data being processed (> 1MB)
+            if (lowestThroughput != null && lowestThroughput.TotalBytesProcessed > 1024 * 1024 && lowestThroughput.AverageThroughputMBps < 10)
             {
                 bottlenecks.Add($"Low throughput: {lowestThroughput.OperationType} processes only {lowestThroughput.AverageThroughputMBps:F2} MB/s");
             }

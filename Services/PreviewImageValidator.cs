@@ -81,12 +81,14 @@ namespace VPM.Services
             if (!ImageExtensions.Contains(ext))
                 return false;
 
+            var pathLower = pathNorm.ToLowerInvariant();
+            
             // Exclude images in texture directories (these are typically not previews)
-            if (pathNorm.Contains("/textures/") || pathNorm.Contains("/texture/"))
+            if (pathLower.Contains("/textures/") || pathLower.Contains("/texture/"))
                 return false;
 
             // Exclude images in scripts and sounds directories
-            if (pathNorm.Contains("custom/scripts/") || pathNorm.Contains("custom/sounds/"))
+            if (pathLower.Contains("custom/scripts/") || pathLower.Contains("custom/sounds/"))
                 return false;
 
             // Conservative approach: assume it's a preview if it's an image file
