@@ -730,7 +730,7 @@ namespace VPM
         }
 
         /// <summary>
-        /// Adds a toggle column for dependency enable/disable with bubble styling
+        /// Adds a toggle column for dependency enable/disable with checkbox styling
         /// </summary>
         private void AddDependencyToggleColumn(DataGrid dataGrid, List<DependencyItemModel> dependencies, string header, bool targetState, Color color, TextBlock summaryText)
         {
@@ -741,40 +741,41 @@ namespace VPM
                 HeaderStyle = CreateCenteredHeaderStyle()
             };
 
-            // Create cell template with left status line
+            // Create cell template with checkbox
             var cellTemplate = new DataTemplate();
             var borderFactory = new FrameworkElementFactory(typeof(Border));
             borderFactory.SetValue(Border.BackgroundProperty, Brushes.Transparent);
-            borderFactory.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Stretch);
-            borderFactory.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Stretch);
+            borderFactory.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            borderFactory.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
             borderFactory.SetValue(Border.CursorProperty, System.Windows.Input.Cursors.Hand);
+            borderFactory.SetValue(Border.PaddingProperty, new Thickness(5));
 
-            var gridFactory = new FrameworkElementFactory(typeof(Grid));
+            // Create checkbox visual
+            var checkboxBorderFactory = new FrameworkElementFactory(typeof(Border));
+            checkboxBorderFactory.SetValue(Border.WidthProperty, 18.0);
+            checkboxBorderFactory.SetValue(Border.HeightProperty, 18.0);
+            checkboxBorderFactory.SetValue(Border.BackgroundProperty, new SolidColorBrush(Color.FromRgb(45, 45, 48)));
+            checkboxBorderFactory.SetValue(Border.BorderBrushProperty, new SolidColorBrush(color));
+            checkboxBorderFactory.SetValue(Border.BorderThicknessProperty, new Thickness(1.5));
+            checkboxBorderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(UI_CORNER_RADIUS));
+            checkboxBorderFactory.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
 
-            // Add column definitions: 3px line + rest
-            var col1 = new FrameworkElementFactory(typeof(ColumnDefinition));
-            col1.SetValue(ColumnDefinition.WidthProperty, new GridLength(3));
-            var col2 = new FrameworkElementFactory(typeof(ColumnDefinition));
-            col2.SetValue(ColumnDefinition.WidthProperty, new GridLength(1, GridUnitType.Star));
-            gridFactory.AppendChild(col1);
-            gridFactory.AppendChild(col2);
+            // Create checkmark path
+            var pathFactory = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
+            pathFactory.SetValue(System.Windows.Shapes.Path.DataProperty, Geometry.Parse("M 0,4 L 3,7 L 8,0"));
+            pathFactory.SetValue(System.Windows.Shapes.Path.StrokeProperty, Brushes.White);
+            pathFactory.SetValue(System.Windows.Shapes.Path.StrokeThicknessProperty, 2.0);
+            pathFactory.SetValue(System.Windows.Shapes.Path.VisibilityProperty, Visibility.Collapsed);
+            pathFactory.SetValue(System.Windows.Shapes.Path.StretchProperty, Stretch.Uniform);
+            pathFactory.SetValue(System.Windows.Shapes.Path.MarginProperty, new Thickness(3));
 
-            // Left status line
-            var lineFactory = new FrameworkElementFactory(typeof(Border));
-            lineFactory.SetValue(Grid.ColumnProperty, 0);
-            lineFactory.SetValue(Border.BackgroundProperty, new SolidColorBrush(color));
-            gridFactory.AppendChild(lineFactory);
+            // Bind visibility based on IsEnabled state
+            var visibilityBinding = new Binding("IsEnabled");
+            visibilityBinding.Converter = new BoolToVisibilityConverter(targetState);
+            pathFactory.SetBinding(System.Windows.Shapes.Path.VisibilityProperty, visibilityBinding);
 
-            // Center content area
-            var contentBorderFactory = new FrameworkElementFactory(typeof(Border));
-            contentBorderFactory.SetValue(Grid.ColumnProperty, 1);
-            contentBorderFactory.SetValue(Border.BackgroundProperty, Brushes.Transparent);
-            contentBorderFactory.SetValue(Border.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-            contentBorderFactory.SetValue(Border.VerticalAlignmentProperty, VerticalAlignment.Center);
-            contentBorderFactory.SetValue(Border.PaddingProperty, new Thickness(5));
-            gridFactory.AppendChild(contentBorderFactory);
-
-            borderFactory.AppendChild(gridFactory);
+            checkboxBorderFactory.AppendChild(pathFactory);
+            borderFactory.AppendChild(checkboxBorderFactory);
 
             // Add click handler to the outer border
             borderFactory.AddHandler(Border.MouseLeftButtonDownEvent, new System.Windows.Input.MouseButtonEventHandler((s, e) =>
@@ -918,6 +919,34 @@ namespace VPM
                     return (isEnabled == _targetState) ? new SolidColorBrush(_color) : Brushes.Transparent;
                 }
                 return Brushes.Transparent;
+            }
+
+            public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        /// <summary>
+        /// Converter for boolean to visibility with target state matching
+        /// </summary>
+        private class BoolToVisibilityConverter : System.Windows.Data.IValueConverter
+        {
+            private readonly bool _targetState;
+
+            public BoolToVisibilityConverter(bool targetState)
+            {
+                _targetState = targetState;
+            }
+
+            public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+            {
+                if (value is bool isEnabled)
+                {
+                    // Show checkmark if current state matches target state
+                    return (isEnabled == _targetState) ? Visibility.Visible : Visibility.Collapsed;
+                }
+                return Visibility.Collapsed;
             }
 
             public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)

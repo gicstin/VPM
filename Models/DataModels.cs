@@ -139,6 +139,7 @@ namespace VPM.Models
             {
                 if (SetProperty(ref _isDuplicate, value))
                 {
+                    OnPropertyChanged(nameof(DuplicateIndicator));
                     OnPropertyChanged(nameof(DuplicateTooltip));
                 }
             }
@@ -151,6 +152,7 @@ namespace VPM.Models
             {
                 if (SetProperty(ref _duplicateLocationCount, value))
                 {
+                    OnPropertyChanged(nameof(DuplicateIndicator));
                     OnPropertyChanged(nameof(DuplicateTooltip));
                 }
             }
@@ -308,6 +310,8 @@ namespace VPM.Models
             ? "Package exists in a single location"
             : $"Duplicate found in {DuplicateLocationCount} locations";
 
+        public string DuplicateIndicator => IsDuplicate ? "²" : "";
+
         public string VersionIndicator => IsOldVersion ? "³" : "";
         
         public string VersionTooltip => IsOldVersion 
@@ -324,6 +328,12 @@ namespace VPM.Models
         {
             get
             {
+                // Show duplicate indicator if this is a duplicate
+                if (IsDuplicate)
+                {
+                    return "⚡"; // Lightning bolt for duplicates
+                }
+                
                 return Status switch
                 {
                     "Loaded" => "✓",
@@ -341,6 +351,12 @@ namespace VPM.Models
         {
             get
             {
+                // Show duplicate color if this is a duplicate
+                if (IsDuplicate)
+                {
+                    return System.Windows.Media.Color.FromRgb(255, 235, 59); // Yellow for duplicates
+                }
+                
                 return Status switch
                 {
                     "Loaded" => System.Windows.Media.Color.FromRgb(76, 175, 80),      // Green
@@ -348,7 +364,6 @@ namespace VPM.Models
                     "Missing" => System.Windows.Media.Color.FromRgb(244, 67, 54),     // Red
                     "Outdated" => System.Windows.Media.Color.FromRgb(255, 152, 0),    // Orange
                     "Updating" => System.Windows.Media.Color.FromRgb(156, 39, 176),   // Purple
-                    "Duplicate" => System.Windows.Media.Color.FromRgb(255, 235, 59),  // Yellow
                     "Archived" => System.Windows.Media.Color.FromRgb(139, 69, 19),    // Brown
                     _ => System.Windows.Media.Color.FromRgb(158, 158, 158)            // Gray
                 };

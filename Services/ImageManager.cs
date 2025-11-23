@@ -71,13 +71,13 @@ namespace VPM.Services
         private int _cacheMisses = 0;
         
         // Memory pressure management
-        // Thresholds are tuned for typical systems with 8-16GB RAM
-        // 800MB (HIGH): Start aggressive cache cleanup to prevent OOM
-        // 1.2GB (CRITICAL): Pause new image loading, force immediate cleanup
+        // Reduced thresholds for more aggressive memory management
+        // 600MB (HIGH): Start aggressive cache cleanup to prevent OOM
+        // 900MB (CRITICAL): Force immediate cleanup and GC
         private DateTime _lastMemoryCheck = DateTime.MinValue;
-        private const int MEMORY_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds
-        private const long HIGH_MEMORY_THRESHOLD = 800_000_000; // 800MB
-        private const long CRITICAL_MEMORY_THRESHOLD = 1_200_000_000; // 1.2GB
+        private const int MEMORY_CHECK_INTERVAL_MS = 3000; // Check every 3 seconds (more frequent)
+        private const long HIGH_MEMORY_THRESHOLD = 600_000_000; // 600MB
+        private const long CRITICAL_MEMORY_THRESHOLD = 900_000_000; // 900MB
         
         // Live loading from VAR archives
         private readonly object _varArchiveLock = new object();
@@ -469,23 +469,32 @@ namespace VPM.Services
                             }
                         }
 
-                        // Create BitmapImage outside the using block with non-pooled stream
-                        // Using non-pooled MemoryStream to avoid .NET 10 disposal issues
-                        // where pooled streams may be disposed prematurely by GC.
-                        // TODO: Revisit when .NET 10 pooling is more stable
-                        var bitmap = new BitmapImage();
-                        bitmap.BeginInit();
-                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                        var memoryStream = new MemoryStream(imageData);
-                        bitmap.StreamSource = memoryStream;
-                        bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
-                        bitmap.EndInit();
-                        bitmap.Freeze();
+                        MemoryStream memoryStream = null;
+                        try
+                        {
+                            memoryStream = new MemoryStream(imageData);
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.StreamSource = memoryStream;
+                            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
+                            bitmap.EndInit();
+                            bitmap.Freeze();
 
-                        if (!IsValidImageDimensions(bitmap))
-                            return null;
+                            if (!IsValidImageDimensions(bitmap))
+                            {
+                                memoryStream.Dispose();
+                                return null;
+                            }
 
-                        return bitmap;
+                            memoryStream.Dispose();
+                            return bitmap;
+                        }
+                        catch
+                        {
+                            memoryStream?.Dispose();
+                            throw;
+                        }
                     }
                 }
                 catch (Exception ex) when (ex is InvalidOperationException or IOException or ArgumentException)
@@ -678,24 +687,33 @@ namespace VPM.Services
                                 }
                             }
 
-                            var bitmap = new BitmapImage();
-                            bitmap.BeginInit();
-                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                            var memoryStream = new MemoryStream(imageData);
-                            bitmap.StreamSource = memoryStream;
-                            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
-                            bitmap.EndInit();
-                            bitmap.Freeze();
-
-                            if (IsValidImageDimensions(bitmap))
+                            MemoryStream memoryStream = null;
+                            try
                             {
-                                results[internalPath] = bitmap;
-                                
-                                // Save to disk cache for future use
-                                if (fileSize > 0 && lastWriteTicks > 0)
+                                memoryStream = new MemoryStream(imageData);
+                                var bitmap = new BitmapImage();
+                                bitmap.BeginInit();
+                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmap.StreamSource = memoryStream;
+                                bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
+                                bitmap.EndInit();
+                                bitmap.Freeze();
+
+                                if (IsValidImageDimensions(bitmap))
                                 {
-                                    _diskCache.TrySaveToCache(varPath, internalPath, fileSize, lastWriteTicks, bitmap);
+                                    results[internalPath] = bitmap;
+                                    
+                                    if (fileSize > 0 && lastWriteTicks > 0)
+                                    {
+                                        _diskCache.TrySaveToCache(varPath, internalPath, fileSize, lastWriteTicks, bitmap);
+                                    }
                                 }
+                                
+                                memoryStream.Dispose();
+                            }
+                            catch
+                            {
+                                memoryStream?.Dispose();
                             }
                         }
                     }
@@ -816,19 +834,32 @@ namespace VPM.Services
                                 return (internalPath, bitmap: (BitmapImage)null);
                         }
 
-                        var bitmap = new BitmapImage();
-                        bitmap.BeginInit();
-                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                        var memoryStream = new MemoryStream(imageData);
-                        bitmap.StreamSource = memoryStream;
-                        bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
-                        bitmap.EndInit();
-                        bitmap.Freeze();
+                        MemoryStream memoryStream = null;
+                        try
+                        {
+                            memoryStream = new MemoryStream(imageData);
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.StreamSource = memoryStream;
+                            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
+                            bitmap.EndInit();
+                            bitmap.Freeze();
 
-                        if (!IsValidImageDimensions(bitmap))
-                            return (internalPath, bitmap: (BitmapImage)null);
+                            if (!IsValidImageDimensions(bitmap))
+                            {
+                                memoryStream.Dispose();
+                                return (internalPath, bitmap: (BitmapImage)null);
+                            }
 
+                            memoryStream.Dispose();
                             return (internalPath, bitmap);
+                        }
+                        catch
+                        {
+                            memoryStream?.Dispose();
+                            throw;
+                        }
                         }
                         finally
                         {
@@ -1549,7 +1580,6 @@ namespace VPM.Services
         {
             var now = DateTime.Now;
             
-            // Only check memory pressure periodically to avoid overhead
             if ((now - _lastMemoryCheck).TotalMilliseconds < MEMORY_CHECK_INTERVAL_MS)
                 return;
                 
@@ -1561,11 +1591,9 @@ namespace VPM.Services
             {
                 lock (_bitmapCacheLock)
                 {
-                    // Clear most of the strong cache using O(n) LRU traversal
-                    var itemsToRemove = _strongCache.Count * 3 / 4; // Remove 75%
+                    var itemsToRemove = _strongCache.Count * 3 / 4;
                     var keysToRemove = new List<string>(itemsToRemove);
                     
-                    // Collect oldest items from end of LRU list - O(n) instead of O(n log n)
                     var node = _strongCacheLru.Last;
                     for (int i = 0; i < itemsToRemove && node != null; i++)
                     {
@@ -1578,7 +1606,6 @@ namespace VPM.Services
                         _strongCache.Remove(key);
                         _cacheAccessTimes.Remove(key);
                         
-                        // Update LRU tracking to maintain consistency
                         if (_strongCacheLruNodes.TryGetValue(key, out var lruNode))
                         {
                             _strongCacheLru.Remove(lruNode);
@@ -1586,21 +1613,18 @@ namespace VPM.Services
                         }
                     }
 
-                    // Clean up dead weak references
                     CleanupDeadReferences();
                 }
 
-                // .NET 10 GC handles cleanup automatically
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
             }
             else if (memoryUsage > HIGH_MEMORY_THRESHOLD)
             {
                 lock (_bitmapCacheLock)
                 {
-                    // Remove half of the strong cache using O(n) LRU traversal
                     var itemsToRemove = _strongCache.Count / 2;
                     var keysToRemove = new List<string>(itemsToRemove);
                     
-                    // Collect oldest items from end of LRU list - O(n) instead of O(n log n)
                     var node = _strongCacheLru.Last;
                     for (int i = 0; i < itemsToRemove && node != null; i++)
                     {
@@ -1613,7 +1637,6 @@ namespace VPM.Services
                         _strongCache.Remove(key);
                         _cacheAccessTimes.Remove(key);
                         
-                        // Update LRU tracking to maintain consistency
                         if (_strongCacheLruNodes.TryGetValue(key, out var lruNode))
                         {
                             _strongCacheLru.Remove(lruNode);
@@ -1621,12 +1644,13 @@ namespace VPM.Services
                         }
                     }
 
-                    // Clean up some dead weak references
                     if (_bitmapCache.Count % 20 == 0)
                     {
                         CleanupDeadReferences();
                     }
                 }
+                
+                GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
             }
         }
 
@@ -1887,10 +1911,124 @@ namespace VPM.Services
 
         /// <summary>
         /// Closes any open file handles for a specific .var file
+        /// This is a critical operation that must happen BEFORE the file is moved/deleted
         /// </summary>
         public void CloseFileHandles(string varPath)
         {
             if (string.IsNullOrEmpty(varPath)) return;
+            
+            try
+            {
+                var packageName = Path.GetFileNameWithoutExtension(varPath);
+                
+                // CRITICAL: Clear bitmap cache entries for this package to release memory references
+                // This must happen BEFORE the file operation to prevent "file in use" errors
+                lock (_bitmapCacheLock)
+                {
+                    // Find all cache keys that reference this package
+                    // Match both by package name prefix and by VAR file path
+                    var keysToRemove = _bitmapCache.Keys
+                        .Where(k => 
+                            k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase) ||
+                            k.Contains(varPath, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in keysToRemove)
+                    {
+                        _bitmapCache.Remove(key);
+                        _cacheAccessTimes.Remove(key);
+                    }
+                    
+                    // Also clear strong cache entries
+                    var strongKeysToRemove = _strongCache.Keys
+                        .Where(k => 
+                            k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase) ||
+                            k.Contains(varPath, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in strongKeysToRemove)
+                    {
+                        if (_strongCacheLruNodes.TryGetValue(key, out var node))
+                        {
+                            _strongCacheLru.Remove(node);
+                            _strongCacheLruNodes.Remove(key);
+                        }
+                        _strongCache.Remove(key);
+                    }
+                }
+                
+                // Clear from preview image index as well
+                PreviewImageIndex.TryRemove(packageName, out _);
+                
+                // Clear from main image index
+                lock (_varArchiveLock)
+                {
+                    ImageIndex.Remove(packageName);
+                    _imageIndexSignatures.Remove(packageName);
+                }
+                
+                // Force garbage collection to ensure all references are released
+                GC.Collect(0, GCCollectionMode.Optimized);
+                GC.WaitForPendingFinalizers();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ImageManager] Error closing file handles for {varPath}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Invalidates all caches for a specific package name
+        /// Call this before unloading/removing a package to ensure clean state
+        /// </summary>
+        public void InvalidatePackageCache(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName)) return;
+            
+            try
+            {
+                lock (_bitmapCacheLock)
+                {
+                    // Remove all bitmap cache entries for this package
+                    var keysToRemove = _bitmapCache.Keys
+                        .Where(k => k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in keysToRemove)
+                    {
+                        _bitmapCache.Remove(key);
+                        _cacheAccessTimes.Remove(key);
+                    }
+                    
+                    // Remove strong cache entries
+                    var strongKeysToRemove = _strongCache.Keys
+                        .Where(k => k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in strongKeysToRemove)
+                    {
+                        if (_strongCacheLruNodes.TryGetValue(key, out var node))
+                        {
+                            _strongCacheLru.Remove(node);
+                            _strongCacheLruNodes.Remove(key);
+                        }
+                        _strongCache.Remove(key);
+                    }
+                }
+                
+                // Clear from indices
+                PreviewImageIndex.TryRemove(packageName, out _);
+                
+                lock (_varArchiveLock)
+                {
+                    ImageIndex.Remove(packageName);
+                    _imageIndexSignatures.Remove(packageName);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ImageManager] Error invalidating cache for {packageName}: {ex.Message}");
+            }
         }
 
         /// <summary>

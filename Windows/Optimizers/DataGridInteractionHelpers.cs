@@ -93,9 +93,18 @@ namespace VPM
                 }
             }
             
+            if (obj is System.Windows.Shapes.Path)
+            {
+                var parent = VisualTreeHelper.GetParent(obj);
+                if (parent is Border border && border.Cursor == System.Windows.Input.Cursors.Hand)
+                {
+                    return border;
+                }
+            }
+            
             if (obj is Border border2 && border2.Cursor == System.Windows.Input.Cursors.Hand)
             {
-                if (FindEllipseInBorder(border2) != null)
+                if (FindEllipseInBorder(border2) != null || FindPathInBorder(border2) != null)
                 {
                     return border2;
                 }
@@ -113,6 +122,19 @@ namespace VPM
                 var child = VisualTreeHelper.GetChild(border, i);
                 if (child is System.Windows.Shapes.Ellipse ellipse)
                     return ellipse;
+            }
+            return null;
+        }
+        
+        private System.Windows.Shapes.Path FindPathInBorder(Border border)
+        {
+            if (border == null) return null;
+            
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(border); i++)
+            {
+                var child = VisualTreeHelper.GetChild(border, i);
+                if (child is System.Windows.Shapes.Path path)
+                    return path;
             }
             return null;
         }
@@ -161,18 +183,25 @@ namespace VPM
                             if (startBubble != null)
                             {
                                 var ellipse = FindEllipseInBorder(startBubble);
+                                var path = FindPathInBorder(startBubble);
+                                
+                                bool currentState = false;
                                 if (ellipse != null)
                                 {
-                                    bool currentState = ellipse.Fill != Brushes.Transparent;
-                                    
-                                    if (currentState != _optimizeWindowDragCheckState)
+                                    currentState = ellipse.Fill != Brushes.Transparent;
+                                }
+                                else if (path != null)
+                                {
+                                    currentState = path.Visibility == Visibility.Visible;
+                                }
+                                
+                                if (currentState != _optimizeWindowDragCheckState)
+                                {
+                                    startBubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
+                                        Mouse.PrimaryDevice, 0, MouseButton.Left)
                                     {
-                                        startBubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
-                                            Mouse.PrimaryDevice, 0, MouseButton.Left)
-                                        {
-                                            RoutedEvent = Border.MouseLeftButtonDownEvent
-                                        });
-                                    }
+                                        RoutedEvent = Border.MouseLeftButtonDownEvent
+                                    });
                                 }
                             }
                         }
@@ -199,18 +228,25 @@ namespace VPM
                             if (bubble != null)
                             {
                                 var ellipse = FindEllipseInBorder(bubble);
+                                var path = FindPathInBorder(bubble);
+                                
+                                bool currentState = false;
                                 if (ellipse != null)
                                 {
-                                    bool currentState = ellipse.Fill != Brushes.Transparent;
-                                    
-                                    if (currentState != _optimizeWindowDragCheckState)
+                                    currentState = ellipse.Fill != Brushes.Transparent;
+                                }
+                                else if (path != null)
+                                {
+                                    currentState = path.Visibility == Visibility.Visible;
+                                }
+                                
+                                if (currentState != _optimizeWindowDragCheckState)
+                                {
+                                    bubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
+                                        Mouse.PrimaryDevice, 0, MouseButton.Left)
                                     {
-                                        bubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
-                                            Mouse.PrimaryDevice, 0, MouseButton.Left)
-                                        {
-                                            RoutedEvent = Border.MouseLeftButtonDownEvent
-                                        });
-                                    }
+                                        RoutedEvent = Border.MouseLeftButtonDownEvent
+                                    });
                                 }
                             }
                         }
@@ -492,18 +528,25 @@ namespace VPM
                             if (bubble != null)
                             {
                                 var ellipse = FindEllipseInBorder(bubble);
+                                var path = FindPathInBorder(bubble);
+                                
+                                bool currentState = false;
                                 if (ellipse != null)
                                 {
-                                    bool currentState = ellipse.Fill != Brushes.Transparent;
-                                    
-                                    if (currentState != _optimizeWindowDragCheckState)
+                                    currentState = ellipse.Fill != Brushes.Transparent;
+                                }
+                                else if (path != null)
+                                {
+                                    currentState = path.Visibility == Visibility.Visible;
+                                }
+                                
+                                if (currentState != _optimizeWindowDragCheckState)
+                                {
+                                    bubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
+                                        Mouse.PrimaryDevice, 0, MouseButton.Left)
                                     {
-                                        bubble.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(
-                                            Mouse.PrimaryDevice, 0, MouseButton.Left)
-                                        {
-                                            RoutedEvent = Border.MouseLeftButtonDownEvent
-                                        });
-                                    }
+                                        RoutedEvent = Border.MouseLeftButtonDownEvent
+                                    });
                                 }
                             }
                         }
@@ -550,7 +593,14 @@ namespace VPM
                 if (bubble != null)
                 {
                     var ellipse = FindEllipseInBorder(bubble);
+                    var path = FindPathInBorder(bubble);
+                    
                     if (ellipse != null && ellipse.Fill != Brushes.Transparent)
+                    {
+                        return true;
+                    }
+                    
+                    if (path != null && path.Visibility == Visibility.Visible)
                     {
                         return true;
                     }

@@ -2739,12 +2739,14 @@ namespace VPM
         
         private async Task RefreshSelectionDisplaysImmediate()
         {
-            // Prevent concurrent image display operations - skip if already displaying
-            if (_isDisplayingImages)
-            {
-                return;
-            }
+            // Cancel any previous image loading operation
+            _imageLoadingCts?.Cancel();
+            _imageLoadingCts?.Dispose();
+            _imageLoadingCts = new System.Threading.CancellationTokenSource();
+            var imageToken = _imageLoadingCts.Token;
             
+            // Always allow new selections to interrupt previous image loading
+            // This ensures clicking on a package always loads its images, even if previous loading is in progress
             _isDisplayingImages = true;
             try
             {
@@ -2787,7 +2789,7 @@ namespace VPM
                     else
                         DisplayDependencies(packageItem);
                     
-                    await DisplayPackageImagesAsync(packageItem);
+                    await DisplayPackageImagesAsync(packageItem, imageToken);
                 }
                 else
                 {
@@ -2802,11 +2804,11 @@ namespace VPM
                     // Use progressive loading for selections over 20 packages to prevent stalls
                     if (selectedPackages.Count > 20)
                     {
-                        await DisplayMultiplePackageImagesProgressiveAsync(selectedPackages);
+                        await DisplayMultiplePackageImagesProgressiveAsync(selectedPackages, null, imageToken);
                     }
                     else
                     {
-                        await DisplayMultiplePackageImagesAsync(selectedPackages);
+                        await DisplayMultiplePackageImagesAsync(selectedPackages, null, imageToken);
                     }
                 }
                 
@@ -2954,12 +2956,6 @@ namespace VPM
         {
             try
             {
-            // Prevent concurrent image display operations
-            if (_isDisplayingImages)
-            {
-                return;
-            }
-                
                 // Skip dependency image display in scene mode - scenes manage their own image display
                 if (_currentContentMode == "Scenes")
                 {
@@ -2981,6 +2977,7 @@ namespace VPM
                     return;
                 }
                 
+                // Always allow new selections to interrupt previous image loading
                 _isDisplayingImages = true;
 
                 // Update the tracking
@@ -3989,7 +3986,7 @@ namespace VPM
             // Find all packages marked as duplicates or with DuplicateLocationCount > 1
             foreach (var package in Packages)
             {
-                if (package.Status == "Duplicate" || package.DuplicateLocationCount > 1)
+                if (package.IsDuplicate || package.DuplicateLocationCount > 1)
                 {
                     duplicatePackages.Add(package);
                 }
@@ -4013,7 +4010,7 @@ namespace VPM
                 if (item is PackageItem pkg)
                 {
                     
-                    if (pkg.Status == "Duplicate" || pkg.DuplicateLocationCount > 1)
+                    if (pkg.IsDuplicate || pkg.DuplicateLocationCount > 1)
                     {
                         string baseName = ExtractBasePackageName(pkg.DisplayName);
                         selectedBaseNames.Add(baseName);

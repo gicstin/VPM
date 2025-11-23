@@ -388,6 +388,13 @@ namespace VPM
                         return;
                 }
 
+                // CRITICAL: If any of the selected packages are being previewed, clear the preview first
+                // This ensures images are released before files are unloaded
+                if (_currentPreviewPackage != null && selectedPackages.Any(p => p.Name == _currentPreviewPackage.Name))
+                {
+                    HidePreviewPanel();
+                }
+
                 // Disable UI during operation
                 UnloadPackagesButton.IsEnabled = false;
 
@@ -1061,7 +1068,7 @@ namespace VPM
                 }
 
                 // Count duplicate vs non-duplicate packages
-                int duplicateCount = selectedPackages.Count(p => p.Status == "Duplicate");
+                int duplicateCount = selectedPackages.Count(p => p.IsDuplicate);
                 int nonDuplicateCount = selectedPackages.Count - duplicateCount;
                 
                 // Count old version packages

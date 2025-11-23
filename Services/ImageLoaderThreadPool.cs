@@ -155,9 +155,6 @@ namespace VPM.Services
                         {
                             ProcessImage(queuedImage);
                             FinishImage(queuedImage);
-                            
-                            // Clear raw data to free memory
-                            queuedImage.RawData = null;
                         }
                         catch (Exception ex)
                         {
@@ -165,8 +162,6 @@ namespace VPM.Services
                             queuedImage.ErrorText = ex.Message;
                         }
                         
-                        // Always invoke callback (even on error) - outside try-catch
-                        // Callback needs to know about errors via HadError flag
                         if (!_disposed && _dispatcher != null)
                         {
                             _dispatcher.BeginInvoke(new Action(() =>
@@ -180,10 +175,17 @@ namespace VPM.Services
                                 {
                                     Console.WriteLine($"[ImageLoader] Callback error: {callbackEx.Message}");
                                 }
+                                finally
+                                {
+                                    queuedImage.RawData = null;
+                                }
                             }), DispatcherPriority.Normal);
                         }
+                        else
+                        {
+                            queuedImage.RawData = null;
+                        }
                         
-                        // Update progress
                         if (!queuedImage.IsThumbnail)
                         {
                             UpdateProgress();
@@ -296,12 +298,10 @@ namespace VPM.Services
         {
             if (qi.HadError || qi.Finished || qi.RawData == null) return;
             
+            MemoryStream memoryStream = null;
             try
             {
-                // Create BitmapImage on worker thread (frozen, so thread-safe)
-                // Do NOT use 'using' with the MemoryStream - BitmapImage holds a reference to it
-                // In .NET 10, disposing the stream while BitmapImage references it causes memory issues
-                var memoryStream = new MemoryStream(qi.RawData);
+                memoryStream = new MemoryStream(qi.RawData);
                 
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
@@ -309,7 +309,6 @@ namespace VPM.Services
                 bitmap.StreamSource = memoryStream;
                 bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
                 
-                // Apply size constraints if needed
                 if (qi.DecodeWidth > 0)
                 {
                     bitmap.DecodePixelWidth = qi.DecodeWidth;
@@ -320,13 +319,17 @@ namespace VPM.Services
                 }
                 
                 bitmap.EndInit();
-                bitmap.Freeze(); // Make thread-safe
+                bitmap.Freeze();
                 
                 qi.Texture = bitmap;
                 qi.Finished = true;
+                
+                memoryStream.Dispose();
+                memoryStream = null;
             }
             catch (Exception ex)
             {
+                memoryStream?.Dispose();
                 qi.HadError = true;
                 qi.ErrorText = ex.Message;
             }

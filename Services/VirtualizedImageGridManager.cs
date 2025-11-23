@@ -175,24 +175,22 @@ namespace VPM.Services
         
         private void OnScrollChanged(object sender, ScrollChangedEventArgs e)
         {
-            // Process images on any scroll change (including initial layout when ViewportHeight changes)
-            // This ensures visible images load even if the user hasn't scrolled yet            
-            // Debounce scroll events for better performance
-            _scrollDebounceTimer?.Stop();
-            _scrollDebounceTimer = new DispatcherTimer
+            if (_scrollDebounceTimer == null)
             {
-                Interval = TimeSpan.FromMilliseconds(50), // Fast response
-                IsEnabled = false
-            };
-            
-            _scrollDebounceTimer.Tick += async (s, args) =>
-            {
-                _scrollDebounceTimer.Stop();                await ProcessImagesAsync();
+                _scrollDebounceTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(50)
+                };
                 
-                // Start continuous processing if there are still unloaded images
-                StartContinuousProcessing();
-            };
+                _scrollDebounceTimer.Tick += async (s, args) =>
+                {
+                    _scrollDebounceTimer.Stop();
+                    await ProcessImagesAsync();
+                    StartContinuousProcessing();
+                };
+            }
             
+            _scrollDebounceTimer.Stop();
             _scrollDebounceTimer.Start();
         }
         
@@ -201,7 +199,6 @@ namespace VPM.Services
         /// </summary>
         private void StartContinuousProcessing()
         {
-            // Only start if there are unloaded images
             if (_lazyImages.All(img => img.IsImageLoaded))
             {
                 _continuousProcessingTimer?.Stop();
@@ -210,51 +207,54 @@ namespace VPM.Services
             
             if (_continuousProcessingTimer != null && _continuousProcessingTimer.IsEnabled)
             {
-                return; // Already running
+                return;
             }
             
-            _continuousProcessingTimer = new DispatcherTimer
+            if (_continuousProcessingTimer == null)
             {
-                Interval = TimeSpan.FromMilliseconds(100), // Check every 100ms to load ~20 images
-                IsEnabled = true
-            };
-            
-            _continuousProcessingTimer.Tick += async (s, args) =>
-            {
-                // Stop if all images are loaded
-                if (_lazyImages.All(img => img.IsImageLoaded))
+                _continuousProcessingTimer = new DispatcherTimer
                 {
-                    _continuousProcessingTimer.Stop();                    return;
-                }
+                    Interval = TimeSpan.FromMilliseconds(100)
+                };
                 
-                // Calculate load zone
-                var viewportTop = _scrollViewer.VerticalOffset;
-                var viewportBottom = viewportTop + _scrollViewer.ViewportHeight;
-                var loadTop = viewportTop - LoadBufferSize;
-                var loadBottom = viewportBottom + LoadBufferSize;
-                
-                // Count unloaded images that are IN THE LOAD ZONE
-                var unloadedInLoadZone = _lazyImages
-                    .Where(img => !img.IsImageLoaded && img.IsLoaded)
-                    .Select(img => new { Image = img, Position = GetVerticalPosition(img) })
-                    .Count(x => x.Position >= 0 && x.Position <= loadBottom && (x.Position + 200) >= loadTop);
-                
-                if (unloadedInLoadZone == 0)
+                _continuousProcessingTimer.Tick += async (s, args) =>
                 {
-                    _consecutiveNoVisibleUnloadedCycles++;
-                    if (_consecutiveNoVisibleUnloadedCycles >= 3)
+                    if (_lazyImages.All(img => img.IsImageLoaded))
                     {
-                        _continuousProcessingTimer.Stop();                        _consecutiveNoVisibleUnloadedCycles = 0;
+                        _continuousProcessingTimer.Stop();
                         return;
                     }
-                }
-                else
-                {
-                    _consecutiveNoVisibleUnloadedCycles = 0;
-                }
-                
-                await ProcessImagesAsync();
-            };
+                    
+                    var viewportTop = _scrollViewer.VerticalOffset;
+                    var viewportBottom = viewportTop + _scrollViewer.ViewportHeight;
+                    var loadTop = viewportTop - LoadBufferSize;
+                    var loadBottom = viewportBottom + LoadBufferSize;
+                    
+                    var unloadedInLoadZone = _lazyImages
+                        .Where(img => !img.IsImageLoaded && img.IsLoaded)
+                        .Select(img => new { Image = img, Position = GetVerticalPosition(img) })
+                        .Count(x => x.Position >= 0 && x.Position <= loadBottom && (x.Position + 200) >= loadTop);
+                    
+                    if (unloadedInLoadZone == 0)
+                    {
+                        _consecutiveNoVisibleUnloadedCycles++;
+                        if (_consecutiveNoVisibleUnloadedCycles >= 3)
+                        {
+                            _continuousProcessingTimer.Stop();
+                            _consecutiveNoVisibleUnloadedCycles = 0;
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        _consecutiveNoVisibleUnloadedCycles = 0;
+                    }
+                    
+                    await ProcessImagesAsync();
+                };
+            }
+            
+            _continuousProcessingTimer.Start();
         }
         
         /// <summary>

@@ -66,6 +66,7 @@ namespace VPM.Models
                 "Missing" => "✗",
                 "Outdated" => "⚠",
                 "Updating" => "↻",
+                "Archived" => "📁",
                 "Duplicate" => "!",
                 _ => "?"
             };
@@ -80,6 +81,7 @@ namespace VPM.Models
                 "Missing" => "#F44336",    // Red
                 "Outdated" => "#FF9800",   // Orange
                 "Updating" => "#9C27B0",   // Purple
+                "Archived" => "#8B4513",   // Brown
                 "Duplicate" => "#FFEB3B",  // Yellow
                 _ => "#9E9E9E"             // Gray
             };

@@ -267,6 +267,10 @@ namespace VPM.Services
                     {
                         Thread.Sleep(delayMs);
                     }
+                    else
+                    {
+                        // Ensure we account for the delay time even if we don't sleep
+                    }
                 }
             }
 

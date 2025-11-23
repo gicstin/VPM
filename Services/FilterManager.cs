@@ -376,17 +376,37 @@ namespace VPM.Services
                 return 0;
             }
 
-            // Simple fix: count all duplicates and divide by 2 to get real number
-            int duplicateCount = 0;
-            foreach (var package in packages.Values)
+            // Count unique duplicate packages by tracking base package names
+            // A package is a duplicate if DuplicateLocationCount > 1
+            // We only count each unique package once, not each instance
+            var uniqueDuplicatePackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var kvp in packages)
             {
+                var package = kvp.Value;
                 if (package != null && package.DuplicateLocationCount > 1)
                 {
-                    duplicateCount++;
+                    // Extract base package name (without version/variant suffixes)
+                    string basePackageName = kvp.Key;
+                    
+                    // Remove archived suffix if present
+                    if (basePackageName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
+                    {
+                        basePackageName = basePackageName.Substring(0, basePackageName.Length - 9);
+                    }
+                    
+                    // Remove variant suffixes (e.g., #1, #2, etc.)
+                    int hashIndex = basePackageName.LastIndexOf('#');
+                    if (hashIndex > 0)
+                    {
+                        basePackageName = basePackageName.Substring(0, hashIndex);
+                    }
+                    
+                    uniqueDuplicatePackages.Add(basePackageName);
                 }
             }
 
-            return duplicateCount / 2; // Halve the count to get real number of unique duplicates
+            return uniqueDuplicatePackages.Count;
         }
 
         public Dictionary<string, int> GetCategoryCounts(Dictionary<string, VarMetadata> packages)
@@ -451,6 +471,13 @@ namespace VPM.Services
             foreach (var kvp in uniquePackagesPerStatus)
             {
                 counts[kvp.Key] = kvp.Value.Count;
+            }
+            
+            // Add duplicate count
+            int duplicateCount = GetDuplicateCount(packages);
+            if (duplicateCount > 0)
+            {
+                counts["Duplicate"] = duplicateCount;
             }
             
             return counts;

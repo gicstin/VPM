@@ -48,10 +48,14 @@ namespace VPM
 
         #region Image Display Methods
 
-        private async Task DisplayPackageImagesAsync(PackageItem packageItem)
+        private async Task DisplayPackageImagesAsync(PackageItem packageItem, System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if operation was cancelled
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+                
                 // Clear existing images and status indicator tracking
                 ImagesPanel.Children.Clear();
                 lock (_statusIndicatorsLock)
@@ -64,7 +68,7 @@ namespace VPM
                 }
                 
                 // Use the same method as multiple packages but with a single package list
-                await DisplayMultiplePackageImagesAsync(new List<PackageItem> { packageItem });
+                await DisplayMultiplePackageImagesAsync(new List<PackageItem> { packageItem }, null, cancellationToken);
             }
             catch (Exception)
             {
@@ -82,10 +86,14 @@ namespace VPM
             }
         }
 
-        private async Task DisplayMultiplePackageImagesAsync(List<PackageItem> selectedPackages, List<bool> packageSources = null)
+        private async Task DisplayMultiplePackageImagesAsync(List<PackageItem> selectedPackages, List<bool> packageSources = null, System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if operation was cancelled
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+                
                 // Normalize inputs
                 if (packageSources == null || packageSources.Count != selectedPackages.Count)
                 {
@@ -138,7 +146,7 @@ namespace VPM
                 }
 
                 // Load and display images
-                await DisplayGroupedPackageImagesAsync(selectedPackages, packageSources, shouldFullRedraw, didSelectiveRemoval);
+                await DisplayGroupedPackageImagesAsync(selectedPackages, packageSources, shouldFullRedraw, didSelectiveRemoval, cancellationToken);
             }
             catch (Exception)
             {
@@ -186,10 +194,14 @@ namespace VPM
             }
         }
 
-        private async Task DisplayGroupedPackageImagesAsync(List<PackageItem> selectedPackages, List<bool> packageSources, bool isFullRedraw = true, bool didSelectiveRemoval = false)
+        private async Task DisplayGroupedPackageImagesAsync(List<PackageItem> selectedPackages, List<bool> packageSources, bool isFullRedraw = true, bool didSelectiveRemoval = false, System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if operation was cancelled
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+                
                 // Determine which packages need processing
                 List<PackageItem> packagesToProcess = selectedPackages;
                 List<bool> sourcesToProcess = packageSources;
@@ -233,6 +245,10 @@ namespace VPM
                 // Process packages in batches
                 for (int i = 0; i < packagesToProcess.Count; i += batchSize)
                 {
+                    // Check if operation was cancelled before processing next batch
+                    if (cancellationToken.IsCancellationRequested)
+                        return;
+                    
                     var isFirstBatch = (i == 0);
                     var currentBatchSize = isFirstBatch ? Math.Min(firstBatchSize, packagesToProcess.Count) : batchSize;
                     var batch = packagesToProcess.Skip(i).Take(currentBatchSize).ToList();
@@ -803,6 +819,7 @@ namespace VPM
                             var location = imageLocations[i];
                             lazyImageTile.VarFilePath = location.VarFilePath;
                             lazyImageTile.InternalImagePath = location.InternalPath;
+                            lazyImageTile.GameFolder = _settingsManager?.Settings?.SelectedFolder;
                         }
                         
                         // Apply clip geometry that updates with size changes
@@ -1832,10 +1849,13 @@ namespace VPM
         /// Progressive loading for multiple packages when selection exceeds 20 packages.
         /// Creates placeholders immediately and loads content as packages scroll into view.
         /// </summary>
-        private async Task DisplayMultiplePackageImagesProgressiveAsync(List<PackageItem> selectedPackages, List<bool> packageSources = null)
+        private async Task DisplayMultiplePackageImagesProgressiveAsync(List<PackageItem> selectedPackages, List<bool> packageSources = null, System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
+                // Check if operation was cancelled
+                if (cancellationToken.IsCancellationRequested)
+                    return;
 
                 // Clear existing images and status indicator tracking
                 ImagesPanel.Children.Clear();
@@ -1862,6 +1882,10 @@ namespace VPM
                 var packageContainers = new List<(PackageItem package, StackPanel container, bool isLoaded)>();
                 for (int i = 0; i < selectedPackages.Count; i++)
                 {
+                    // Check if operation was cancelled
+                    if (cancellationToken.IsCancellationRequested)
+                        return;
+                    
                     var packageItem = selectedPackages[i];
                     var isDependency = i < packageSources.Count ? packageSources[i] : false;
                     var placeholderContainer = CreatePackagePlaceholderContainer(packageItem, !isDependency); // Note: false means dependency
@@ -2332,6 +2356,13 @@ namespace VPM
                 if (packageItem.Status != "Loaded" || packageItem.Status == "Archived")
                 {
                     return; // Package is not loaded or is archived
+                }
+
+                // CRITICAL: If this package is currently being previewed, clear the preview first
+                // This ensures images are released before the file is unloaded
+                if (_currentPreviewPackage?.Name == packageItem.Name)
+                {
+                    HidePreviewPanel();
                 }
 
                 // Perform the unload operation

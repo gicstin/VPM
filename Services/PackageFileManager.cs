@@ -566,6 +566,18 @@ namespace VPM.Services
                     File.Move(sourcePath, destinationPath);
                     return (true, "");
                 }
+                catch (IOException ex) when (ex.Message.Contains("being used by another process") || ex.Message.Contains("cannot access the file"))
+                {
+                    lastException = ex;
+                    lastError = $"Attempt {attempt} failed: File is in use";
+                    if (attempt == maxRetries)
+                    {
+                        return (false, $"Failed after {maxRetries} attempts. Last error: The process cannot access the file because it is being used by another process.");
+                    }
+                    // Wait progressively longer before retry (100ms, 300ms, 600ms, 1000ms, 1500ms)
+                    int delay = attempt == 1 ? 100 : (attempt * attempt * 100);
+                    await Task.Delay(delay);
+                }
                 catch (Exception ex)
                 {
                     lastException = ex;
@@ -575,7 +587,7 @@ namespace VPM.Services
                         return (false, $"Failed after {maxRetries} attempts. Last error: {ex.GetType().Name}: {ex.Message}");
                     }
                     // Wait before retry
-                    await Task.Delay(1000 * attempt);
+                    await Task.Delay(500 * attempt);
                 }
             }
             // Should not reach here, but return last error if it does
@@ -653,9 +665,12 @@ namespace VPM.Services
 
                 // First ensure any open file handles are closed
                 _imageManager?.CloseFileHandles(sourceFile);
+                
+                // Give the OS time to release file handles
+                await Task.Delay(100);
 
                 // Move the file with enhanced error handling (skip validation to allow corrupt VARs to move)
-                var (success, error) = await SafeMoveFileAsync(sourceFile, destinationFile, 3, true);
+                var (success, error) = await SafeMoveFileAsync(sourceFile, destinationFile, 5, true);
                 
                 if (success)
                 {
@@ -768,8 +783,14 @@ namespace VPM.Services
                 {
                     try
                     {
-                        // Ensure any open handles are closed before deletion
+                        // CRITICAL: Invalidate all image caches for this package BEFORE file operations
+                        // This ensures no image references are held when the file is deleted
+                        _imageManager?.InvalidatePackageCache(packageName);
                         _imageManager?.CloseFileHandles(sourceFile);
+                        
+                        // Give the OS time to release file handles
+                        await Task.Delay(150);
+                        
                         File.Delete(sourceFile);
                         
                         // Remove empty directories from source location
@@ -777,7 +798,6 @@ namespace VPM.Services
                         RemoveEmptyDirectories(sourceDirectory, _addonPackagesFolder);
                         
                         UpdatePackageStatusInIndex(packageName, "Available");
-                        _imageManager?.UpdateVarPath(sourceFile, destinationFile);
                         InvalidatePackageIndex();
                         
                         OperationCompleted?.Invoke(this, new PackageOperationEventArgs
@@ -806,11 +826,16 @@ namespace VPM.Services
                     }
                 }
 
-                // First ensure any open file handles are closed
+                // CRITICAL: Invalidate all image caches for this package BEFORE file operations
+                // This ensures no image references are held when the file is moved
+                _imageManager?.InvalidatePackageCache(packageName);
                 _imageManager?.CloseFileHandles(sourceFile);
+                
+                // Give the OS time to release file handles
+                await Task.Delay(150);
 
                 // Move the file (skip validation to allow corrupt VARs to move)
-                var (success, error) = await SafeMoveFileAsync(sourceFile, destinationFile, 3, true);
+                var (success, error) = await SafeMoveFileAsync(sourceFile, destinationFile, 5, true);
 
                 if (success)
                 {
@@ -822,8 +847,6 @@ namespace VPM.Services
                     
                     // Update status index - package is now available (unloaded)
                     UpdatePackageStatusInIndex(packageName, "Available");
-                    // Update image index paths
-                    _imageManager?.UpdateVarPath(sourceFile, destinationFile);
                     InvalidatePackageIndex();
                 }
 

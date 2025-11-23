@@ -363,7 +363,7 @@ namespace VPM.Services
                     {
                         metadata.IsDuplicate = true;
                         metadata.DuplicateLocationCount = activeCount;
-                        metadata.Status = "Duplicate";
+                        metadata.Status = variant.Status; // Preserve actual status (Loaded/Available)
                     }
                     else
                     {

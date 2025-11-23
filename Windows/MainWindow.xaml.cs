@@ -93,6 +93,9 @@ namespace VPM
         private System.Threading.CancellationTokenSource _presetSelectionCts;
         private System.Threading.CancellationTokenSource _packageSelectionCts;
         
+        // Cancellation token for image loading operations
+        private System.Threading.CancellationTokenSource _imageLoadingCts;
+        
         // Animation configuration - reduced for better responsiveness
         private const int SELECTION_DEBOUNCE_DELAY_MS = 15;
         private const int FADE_ANIMATION_DURATION_MS = 300;

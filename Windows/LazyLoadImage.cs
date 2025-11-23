@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,6 +23,7 @@ namespace VPM.Windows
         private Grid _overlayGrid;
         private Button _extractButton;
         private Button _removeButton;
+        private bool _isCurrentlyExtracted = false;
         
         // Image data
         public string PackageKey { get; set; }
@@ -37,6 +40,7 @@ namespace VPM.Windows
         // Extraction data
         public string VarFilePath { get; set; }
         public string InternalImagePath { get; set; }
+        public string GameFolder { get; set; }
         
         // Events
         public event EventHandler ImageLoaded;
@@ -83,16 +87,8 @@ namespace VPM.Windows
             buttonStyle.Setters.Add(new System.Windows.Setter(Button.TemplateProperty, CreateButtonTemplate()));
             _extractButton.Style = buttonStyle;
             
-            _extractButton.Click += (s, e) =>
-            {
-                e.Handled = true;
-                ExtractionRequested?.Invoke(this, new ExtractionRequestedEventArgs
-                {
-                    VarFilePath = this.VarFilePath,
-                    InternalImagePath = this.InternalImagePath,
-                    IsRemoval = false
-                });
-            };
+            // Use named method for click handler so we can swap it later
+            _extractButton.Click += ExtractButton_Click;
             
             _overlayGrid.Children.Add(_extractButton);
 
@@ -334,19 +330,23 @@ namespace VPM.Windows
 
                     if (isExtracted)
                     {
+                        _isCurrentlyExtracted = true;
+                        
                         // Show checkmark with label
                         iconBlock.Text = "✓";
                         _extractButton.Content = stackPanel;
                         // Neutral green for extracted state (not too bright)
                         _extractButton.Background = new SolidColorBrush(Color.FromArgb(160, 60, 120, 70)); 
-                        _extractButton.ToolTip = $"Files for {category} are already extracted";
-                        _extractButton.IsEnabled = false; // Disable right button when extracted
+                        _extractButton.ToolTip = $"Click to open extracted {category} files in Explorer";
+                        _extractButton.IsEnabled = true; // Enable button to allow opening in Explorer
 
                         // Show remove button
                         _removeButton.Visibility = Visibility.Visible;
                     }
                     else
                     {
+                        _isCurrentlyExtracted = false;
+                        
                         // Determine icon based on category
                         string iconText = "📥"; // Default
                         if (string.Equals(category, "Hair", StringComparison.OrdinalIgnoreCase)) iconText = "✂️";
@@ -445,6 +445,75 @@ namespace VPM.Windows
             template.Triggers.Add(pressedTrigger);
             
             return template;
+        }
+        
+        /// <summary>
+        /// Opens the extracted files location in Windows Explorer
+        /// </summary>
+        private void OpenExtractedFilesInExplorer()
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(InternalImagePath) || string.IsNullOrWhiteSpace(GameFolder))
+                {
+                    MessageBox.Show("Cannot determine extracted files location.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Get the directory path from the internal image path
+                var directoryPath = Path.GetDirectoryName(InternalImagePath);
+                if (string.IsNullOrWhiteSpace(directoryPath))
+                {
+                    MessageBox.Show("Cannot determine extracted files location.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Construct the full path in the game folder
+                var fullPath = Path.Combine(GameFolder, directoryPath.Replace('/', Path.DirectorySeparatorChar));
+
+                // Check if the directory exists
+                if (!Directory.Exists(fullPath))
+                {
+                    MessageBox.Show($"Extracted files directory not found:\n{fullPath}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Open the directory in Explorer
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = fullPath,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open Explorer: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        
+        /// <summary>
+        /// Handler for extract button click - behavior depends on extraction state
+        /// </summary>
+        private void ExtractButton_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+            
+            if (_isCurrentlyExtracted)
+            {
+                // Open extracted files in Explorer
+                OpenExtractedFilesInExplorer();
+            }
+            else
+            {
+                // Request extraction
+                ExtractionRequested?.Invoke(this, new ExtractionRequestedEventArgs
+                {
+                    VarFilePath = this.VarFilePath,
+                    InternalImagePath = this.InternalImagePath,
+                    IsRemoval = false
+                });
+            }
         }
     }
     

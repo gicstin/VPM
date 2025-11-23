@@ -50,8 +50,19 @@ namespace VPM.Services
                         throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
                     
                     // Open file with explicit seek support
-                    var fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                    return ZipArchive.Open(fileStream);
+                    FileStream fileStream = null;
+                    try
+                    {
+                        fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
+                        var archive = ZipArchive.Open(fileStream);
+                        fileStream = null; // Archive now owns the stream
+                        return archive;
+                    }
+                    catch
+                    {
+                        fileStream?.Dispose(); // Dispose stream if archive creation failed
+                        throw;
+                    }
                 }
             }
 
@@ -112,14 +123,18 @@ namespace VPM.Services
         /// </summary>
         public static IArchive OpenForRead(string filePath)
         {
+            FileStream fileStream = null;
             try
             {
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
-                var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                return ZipArchive.Open(fileStream);
+                fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
+                var archive = ZipArchive.Open(fileStream);
+                fileStream = null; // Archive now owns the stream
+                return archive;
             }
             catch (Exception ex)
             {
+                fileStream?.Dispose(); // Dispose stream if archive creation failed
                 throw new InvalidOperationException($"Failed to open archive '{filePath}': {ex.Message}", ex);
             }
         }
@@ -164,14 +179,18 @@ namespace VPM.Services
         /// </summary>
         public static IArchive OpenForUpdate(string filePath)
         {
+            FileStream fileStream = null;
             try
             {
                 // Open file with explicit seek support (FileAccess.ReadWrite, FileShare.None for exclusive access)
-                var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: false);
-                return ZipArchive.Open(fileStream);
+                fileStream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: false);
+                var archive = ZipArchive.Open(fileStream);
+                fileStream = null; // Archive now owns the stream
+                return archive;
             }
             catch (Exception ex)
             {
+                fileStream?.Dispose(); // Dispose stream if archive creation failed
                 throw new InvalidOperationException($"Failed to open archive for update '{filePath}': {ex.Message}", ex);
             }
         }
