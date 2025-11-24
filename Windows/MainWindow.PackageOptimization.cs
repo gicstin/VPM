@@ -219,25 +219,22 @@ namespace VPM
                     long newPackageSize = 0;
                     int texturesConverted = 0;
                     
-                    await System.Threading.Tasks.Task.Run(() =>
+                    var repackager = new VarRepackager(_imageManager);
+                    var repackageResult = await repackager.RepackageVarWithStatsAsync(packagePath, archivedFolder, conversions, (message, current, total) =>
                     {
-                        var repackager = new VarRepackager(_imageManager);
-                        var result = repackager.RepackageVarWithStats(packagePath, archivedFolder, conversions, (message, current, total) =>
+                        Dispatcher.Invoke(() =>
                         {
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (progressTextBlock != null)
-                                    progressTextBlock.Text = message;
-                                if (progressBar != null && total > 0)
-                                    progressBar.Value = (double)current / total * 100;
-                            });
+                            if (progressTextBlock != null)
+                                progressTextBlock.Text = message;
+                            if (progressBar != null && total > 0)
+                                progressBar.Value = (double)current / total * 100;
                         });
-                        
-                        outputPath = result.outputPath;
-                        originalPackageSize = result.originalSize;
-                        newPackageSize = result.newSize;
-                        texturesConverted = result.texturesConverted;
                     });
+                    
+                    outputPath = repackageResult.outputPath;
+                    originalPackageSize = repackageResult.originalSize;
+                    newPackageSize = repackageResult.newSize;
+                    texturesConverted = repackageResult.texturesConverted;
 
                     progressDialog.Close();
 
@@ -1202,22 +1199,19 @@ namespace VPM
                 int hairsModified = 0;
                 
                 var repackageStartTime = benchmarkStart.ElapsedMilliseconds;
-                await System.Threading.Tasks.Task.Run(() =>
-                {
-                    var repackager = new PackageRepackager(_imageManager);
-                    var optimizationResult = repackager.RepackageVarWithOptimizations(
-                        packagePath, 
-                        archivedFolder, 
-                        config, 
-                        null, // No progress callback
-                        needsBackup); // Pass the backup flag
-                    
-                    outputPath = optimizationResult.OutputPath;
-                    originalPackageSize = optimizationResult.OriginalSize;
-                    newPackageSize = optimizationResult.NewSize;
-                    texturesConverted = optimizationResult.TexturesConverted;
-                    hairsModified = optimizationResult.HairsModified;
-                });
+                var repackager = new PackageRepackager(_imageManager);
+                var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
+                    packagePath, 
+                    archivedFolder, 
+                    config, 
+                    null, // No progress callback
+                    needsBackup); // Pass the backup flag
+                
+                outputPath = optimizationResult.OutputPath;
+                originalPackageSize = optimizationResult.OriginalSize;
+                newPackageSize = optimizationResult.NewSize;
+                texturesConverted = optimizationResult.TexturesConverted;
+                hairsModified = optimizationResult.HairsModified;
                 
                 // Remove disabled dependencies if any
                 if (disabledDependencies.Count > 0)
@@ -2817,20 +2811,17 @@ namespace VPM
 
             // Create repackager and run optimization
             var coreResult = new OptimizationCoreResult();
-            await Task.Run(() =>
-            {
-                var repackager = new PackageRepackager(_imageManager);
-                var optimizationResult = repackager.RepackageVarWithOptimizations(
-                    packagePath,
-                    archivedFolder,
-                    config,
-                    progressCallback, // Pass progress callback for detailed status updates
-                    needsBackup // Pass the backup flag
-                );
-                coreResult.TextureDetails = optimizationResult.TextureDetails ?? new List<string>();
-                coreResult.JsonSizeBeforeMinify = optimizationResult.JsonSizeBeforeMinify;
-                coreResult.JsonSizeAfterMinify = optimizationResult.JsonSizeAfterMinify;
-            });
+            var repackager = new PackageRepackager(_imageManager);
+            var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
+                packagePath,
+                archivedFolder,
+                config,
+                progressCallback, // Pass progress callback for detailed status updates
+                needsBackup // Pass the backup flag
+            );
+            coreResult.TextureDetails = optimizationResult.TextureDetails ?? new List<string>();
+            coreResult.JsonSizeBeforeMinify = optimizationResult.JsonSizeBeforeMinify;
+            coreResult.JsonSizeAfterMinify = optimizationResult.JsonSizeAfterMinify;
 
             // Refresh package in main grid
             await RefreshSinglePackage(packageName);

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
@@ -26,6 +27,17 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Helper method to replace blocking Thread.Sleep with a non-blocking alternative.
+        /// Allows file handles to be released without blocking the thread (async version).
+        /// </summary>
+        private static async Task ReleaseFileHandlesAsync(int delayMs = 100)
+        {
+            // Use async delay to allow OS to release file handles without blocking the thread
+            // This is called after CloseFileHandles to ensure handles are fully released
+            await Task.Delay(delayMs).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Progress callback for reporting conversion status
         /// </summary>
         public delegate void ProgressCallback(string message, int current, int total);
@@ -33,9 +45,9 @@ namespace VPM.Services
         /// <summary>
         /// Repackages a VAR file with converted textures and returns statistics
         /// </summary>
-        public (string outputPath, long originalSize, long newSize, int texturesConverted) RepackageVarWithStats(string sourceVarPath, string archivedFolder, Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)> textureConversions, ProgressCallback progressCallback = null)
+        public async Task<(string outputPath, long originalSize, long newSize, int texturesConverted)> RepackageVarWithStatsAsync(string sourceVarPath, string archivedFolder, Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)> textureConversions, ProgressCallback progressCallback = null)
         {
-            var result = RepackageVarInternal(sourceVarPath, archivedFolder, textureConversions, progressCallback);
+            var result = await RepackageVarInternalAsync(sourceVarPath, archivedFolder, textureConversions, progressCallback);
             return result;
         }
 
@@ -47,7 +59,7 @@ namespace VPM.Services
         /// <param name="textureConversions">Dictionary of texture paths to target resolutions with original dimensions</param>
         /// <param name="progressCallback">Optional progress callback</param>
         /// <returns>Path to the new VAR file</returns>
-        private (string outputPath, long originalSize, long newSize, int texturesConverted) RepackageVarInternal(string sourceVarPath, string archivedFolder, Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)> textureConversions, ProgressCallback progressCallback = null)
+        private async Task<(string outputPath, long originalSize, long newSize, int texturesConverted)> RepackageVarInternalAsync(string sourceVarPath, string archivedFolder, Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)> textureConversions, ProgressCallback progressCallback = null)
         {
             try
             {
@@ -80,7 +92,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, textureConversions.Count);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     // Determine output folder (AddonPackages or AllPackages)
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
@@ -114,7 +126,7 @@ namespace VPM.Services
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
                     _imageManager?.CloseFileHandles(archiveFilePath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
                     finalOutputPath = sourceVarPath; // Write back to loaded folder
@@ -127,7 +139,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Moving original to archive...", 0, textureConversions.Count);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     archivedPath = archiveFilePath;
                     
@@ -147,7 +159,7 @@ namespace VPM.Services
                             lastException = ex;
                             if (attempt < 3)
                             {
-                                System.Threading.Thread.Sleep(1000 * attempt);
+                                await ReleaseFileHandlesAsync(1000 * attempt);
                                 _imageManager?.CloseFileHandles(sourceVarPath);
                             }
                         }
@@ -200,7 +212,7 @@ namespace VPM.Services
                                 using (var stream = entry.OpenEntryStream())
                                 using (var reader = new StreamReader(stream))
                                 {
-                                    originalMetaJson = reader.ReadToEnd();
+                                    originalMetaJson = await reader.ReadToEndAsync();
                                 }
                                 continue;
                             }
@@ -210,7 +222,7 @@ namespace VPM.Services
                                 using (var stream = entry.OpenEntryStream())
                                 using (var ms = new MemoryStream())
                                 {
-                                    stream.CopyTo(ms);
+                                    await stream.CopyToAsync(ms);
                                     conversionInputs.Add((entry.Key, entry.LastModifiedTime ?? DateTimeOffset.Now, ms.ToArray(), conversionInfo));
                                 }
                             }
@@ -273,7 +285,7 @@ namespace VPM.Services
                             }).ToArray();
 
                             // Wait for all texture conversions to complete
-                            System.Threading.Tasks.Task.WaitAll(tasks);
+                            await System.Threading.Tasks.Task.WhenAll(tasks);
                             System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_COMPLETE] All {totalConversions} textures processed");
                         }
 
@@ -307,7 +319,7 @@ namespace VPM.Services
                                     using (var sourceStream = entry.OpenEntryStream())
                                     using (var ms = new MemoryStream())
                                     {
-                                        sourceStream.CopyTo(ms);
+                                        await sourceStream.CopyToAsync(ms);
                                         outputArchive.AddEntry(entry.Key, new MemoryStream(ms.ToArray()));
                                     }
                                 }

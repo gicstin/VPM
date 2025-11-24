@@ -30,17 +30,17 @@ namespace VPM.Services
         private readonly ResiliencyManager _resiliencyManager = new();
         private readonly IPackageMetadataProvider _metadataProvider;
         private readonly ImageDiskCache _diskCache;
-        private readonly ImageLoaderThreadPool _threadPool;
+        private readonly ImageLoaderAsyncPool _asyncPool;
 
         // Image index mapping package names to their VAR file paths and internal image paths
         public Dictionary<string, List<ImageLocation>> ImageIndex { get; private set; } = new Dictionary<string, List<ImageLocation>>(StringComparer.OrdinalIgnoreCase);
         public ConcurrentDictionary<string, List<ImageLocation>> PreviewImageIndex { get; } = new ConcurrentDictionary<string, List<ImageLocation>>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, (long length, long lastWriteTicks)> _imageIndexSignatures = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object _signatureLock = new();
+        private readonly ReaderWriterLockSlim _signatureLock = new ReaderWriterLockSlim();
         
         // Preloading queue for background image loading
         private readonly Queue<string> _preloadQueue = new Queue<string>();
-        private readonly object _preloadLock = new object();
+        private readonly SemaphoreSlim _preloadLock = new SemaphoreSlim(1, 1);
         private Task _preloadTask;
         private CancellationTokenSource _preloadCancellation;
         
@@ -53,10 +53,10 @@ namespace VPM.Services
         private readonly LinkedList<string> _strongCacheLru = new();
         private readonly Dictionary<string, LinkedListNode<string>> _strongCacheLruNodes = new();
         
-        // Note: Texture reference counting is now handled by ImageLoaderThreadPool
+        // Note: Texture reference counting is now handled by ImageLoaderAsyncPool
         // No need for duplicate tracking here
         
-        private readonly object _bitmapCacheLock = new object();
+        private readonly ReaderWriterLockSlim _bitmapCacheLock = new ReaderWriterLockSlim();
         private const int MAX_BITMAP_CACHE_SIZE = 200;
         private const int MAX_STRONG_CACHE_SIZE = 75;
         
@@ -80,7 +80,7 @@ namespace VPM.Services
         private const long CRITICAL_MEMORY_THRESHOLD = 900_000_000; // 900MB
         
         // Live loading from VAR archives
-        private readonly object _varArchiveLock = new object();
+        private readonly ReaderWriterLockSlim _varArchiveLock = new ReaderWriterLockSlim();
 
         // Phase 4: Parallel archive access metrics
         // Used to measure parallel loading efficiency and throughput
@@ -89,7 +89,7 @@ namespace VPM.Services
         private int _parallelBatchesProcessed = 0;
         private int _parallelTasksCreated = 0;
         private long _parallelTotalTime = 0;
-        private readonly object _parallelMetricsLock = new();
+        private readonly ReaderWriterLockSlim _parallelMetricsLock = new ReaderWriterLockSlim();
 
 
         public ImageManager(string cacheFolder, IPackageMetadataProvider metadataProvider)
@@ -98,10 +98,10 @@ namespace VPM.Services
             _metadataProvider = metadataProvider;
             _diskCache = new ImageDiskCache();
             
-            // Initialize dedicated worker thread pool
-            _threadPool = new ImageLoaderThreadPool();
-            _threadPool.ProgressChanged += OnThreadPoolProgressChanged;
-            _threadPool.ImageProcessed += OnThreadPoolImageProcessed;
+            // Initialize async image loader pool
+            _asyncPool = new ImageLoaderAsyncPool();
+            _asyncPool.ProgressChanged += OnThreadPoolProgressChanged;
+            _asyncPool.ImageProcessed += OnThreadPoolImageProcessed;
             
             _preloadCancellation = new CancellationTokenSource();
             StartPreloadingTask();
@@ -197,14 +197,27 @@ namespace VPM.Services
                 {
                     var fileInfo = new FileInfo(varPath);
                     var signature = (fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks);
-                    lock (_signatureLock)
+                    _signatureLock.EnterReadLock();
+                    try
                     {
                         if (_imageIndexSignatures.TryGetValue(packageName, out var existing) && existing == signature && ImageIndex.ContainsKey(packageName))
                         {
                             return true;
                         }
-
+                    }
+                    finally
+                    {
+                        _signatureLock.ExitReadLock();
+                    }
+                    
+                    _signatureLock.EnterWriteLock();
+                    try
+                    {
                         _imageIndexSignatures[packageName] = signature;
+                    }
+                    finally
+                    {
+                        _signatureLock.ExitWriteLock();
                     }
                 }
 
@@ -270,9 +283,14 @@ namespace VPM.Services
 
                 if (imageLocations.Count > 0)
                 {
-                    lock (_varArchiveLock)
+                    _varArchiveLock.EnterWriteLock();
+                    try
                     {
                         ImageIndex[packageName] = imageLocations;
+                    }
+                    finally
+                    {
+                        _varArchiveLock.ExitWriteLock();
                     }
                 }
 
@@ -794,11 +812,11 @@ namespace VPM.Services
                     return results;
 
                 // Phase 4: Parallel loading with archive pool
-                var tasks = uncachedPaths.Select(internalPath => Task.Run(() =>
+                var tasks = uncachedPaths.Select(internalPath => Task.Run(async () =>
                 {
                     try
                     {
-                        var archive = pool.AcquireHandle();
+                        var archive = await pool.AcquireHandleAsync();
                         try
                         {
                             var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
@@ -878,9 +896,14 @@ namespace VPM.Services
                     }
                 })).ToArray();
 
-                lock (_parallelMetricsLock)
+                _parallelMetricsLock.EnterWriteLock();
+                try
                 {
                     _parallelTasksCreated += tasks.Length;
+                }
+                finally
+                {
+                    _parallelMetricsLock.ExitWriteLock();
                 }
 
                 // Wait for all parallel tasks with 30 second timeout to prevent indefinite hangs
@@ -905,10 +928,15 @@ namespace VPM.Services
                     }
                 }
 
-                lock (_parallelMetricsLock)
+                _parallelMetricsLock.EnterWriteLock();
+                try
                 {
                     _parallelBatchesProcessed++;
                     _parallelTotalTime += (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
+                }
+                finally
+                {
+                    _parallelMetricsLock.ExitWriteLock();
                 }
             }
             catch (Exception ex)
@@ -1104,7 +1132,8 @@ namespace VPM.Services
             if (cacheUpdates == null || cacheUpdates.Count == 0)
                 return;
 
-            lock (_bitmapCacheLock)
+            _bitmapCacheLock.EnterWriteLock();
+            try
             {
                 if (_bitmapCache.Count % 50 == 0)
                 {
@@ -1121,6 +1150,10 @@ namespace VPM.Services
                 {
                     EvictOldestWeakReferences();
                 }
+            }
+            finally
+            {
+                _bitmapCacheLock.ExitWriteLock();
             }
         }
 
@@ -1226,9 +1259,14 @@ namespace VPM.Services
                         FileSize = 0
                     }).ToList();
                     
-                    lock (_varArchiveLock)
+                    _varArchiveLock.EnterUpgradeableReadLock();
+                    try
                     {
                         ImageIndex[packageName] = imageLocations;
+                    }
+                    finally
+                    {
+                        _varArchiveLock.ExitUpgradeableReadLock();
                     }
                 }
                 else
@@ -1248,7 +1286,8 @@ namespace VPM.Services
         /// </summary>
         private BitmapImage GetCachedImage(string cacheKey)
         {
-            lock (_bitmapCacheLock)
+            _bitmapCacheLock.EnterReadLock();
+            try
             {
                 if (_strongCache.TryGetValue(cacheKey, out var bitmap))
                 {
@@ -1274,6 +1313,10 @@ namespace VPM.Services
                 
                 _cacheMisses++;
                 return null;
+            }
+            finally
+            {
+                _bitmapCacheLock.ExitReadLock();
             }
         }
         
@@ -1356,7 +1399,8 @@ namespace VPM.Services
 
         public void ClearBitmapCache()
         {
-            lock (_bitmapCacheLock)
+            _bitmapCacheLock.EnterWriteLock();
+            try
             {
                 _strongCache.Clear();
                 _strongCacheLru.Clear();
@@ -1365,6 +1409,10 @@ namespace VPM.Services
                 _cacheAccessTimes.Clear();
                 _cacheHits = 0;
                 _cacheMisses = 0;
+            }
+            finally
+            {
+                _bitmapCacheLock.ExitWriteLock();
             }
             
             // .NET 10 GC handles cleanup automatically
@@ -1376,7 +1424,8 @@ namespace VPM.Services
         /// </summary>
         public void PartialCacheCleanup()
         {
-            lock (_bitmapCacheLock)
+            _bitmapCacheLock.EnterWriteLock();
+            try
             {
                 // Remove half of the strong cache (oldest items) - O(n/2) using LRU LinkedList
                 var itemsToRemove = _strongCache.Count / 2;
@@ -1405,6 +1454,10 @@ namespace VPM.Services
                 // Clean up dead weak references
                 CleanupDeadReferences();
             }
+            finally
+            {
+                _bitmapCacheLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -1412,11 +1465,16 @@ namespace VPM.Services
         /// </summary>
         public (int strongCount, int weakCount, int totalAccess, double hitRate) GetCacheStats()
         {
-            lock (_bitmapCacheLock)
+            _bitmapCacheLock.EnterReadLock();
+            try
             {
                 var totalRequests = _cacheHits + _cacheMisses;
                 var hitRate = totalRequests > 0 ? (_cacheHits * 100.0 / totalRequests) : 0;
                 return (_strongCache.Count, _bitmapCache.Count, totalRequests, hitRate);
+            }
+            finally
+            {
+                _bitmapCacheLock.ExitReadLock();
             }
         }
 
@@ -1466,12 +1524,17 @@ namespace VPM.Services
                     {
                         string packageToPreload = null;
                         
-                        lock (_preloadLock)
+                        await _preloadLock.WaitAsync(_preloadCancellation.Token);
+                        try
                         {
                             if (_preloadQueue.Count > 0)
                             {
                                 packageToPreload = _preloadQueue.Dequeue();
                             }
+                        }
+                        finally
+                        {
+                            _preloadLock.Release();
                         }
                         
                         if (packageToPreload != null)
@@ -1503,13 +1566,18 @@ namespace VPM.Services
         {
             if (string.IsNullOrEmpty(packageName)) return;
             
-            lock (_preloadLock)
+            _preloadLock.Wait();
+            try
             {
                 // Don't add duplicates
                 if (!_preloadQueue.Contains(packageName))
                 {
                     _preloadQueue.Enqueue(packageName);
                 }
+            }
+            finally
+            {
+                _preloadLock.Release();
             }
         }
         
@@ -1550,7 +1618,8 @@ namespace VPM.Services
                         var bitmap = kvp.Value;
                         
                         // Cache the preloaded image
-                        lock (_bitmapCacheLock)
+                        _bitmapCacheLock.EnterWriteLock();
+                        try
                         {
                             _bitmapCache[cacheKey] = new WeakReference<BitmapImage>(bitmap);
                             _cacheAccessTimes[cacheKey] = DateTime.Now;
@@ -1560,6 +1629,10 @@ namespace VPM.Services
                             {
                                 EvictOldestWeakReferences();
                             }
+                        }
+                        finally
+                        {
+                            _bitmapCacheLock.ExitWriteLock();
                         }
                         
                         // Small delay to not overwhelm the system
@@ -1589,7 +1662,8 @@ namespace VPM.Services
             
             if (memoryUsage > CRITICAL_MEMORY_THRESHOLD)
             {
-                lock (_bitmapCacheLock)
+                _bitmapCacheLock.EnterWriteLock();
+                try
                 {
                     var itemsToRemove = _strongCache.Count * 3 / 4;
                     var keysToRemove = new List<string>(itemsToRemove);
@@ -1615,12 +1689,17 @@ namespace VPM.Services
 
                     CleanupDeadReferences();
                 }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
+                }
 
                 GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
             }
             else if (memoryUsage > HIGH_MEMORY_THRESHOLD)
             {
-                lock (_bitmapCacheLock)
+                _bitmapCacheLock.EnterWriteLock();
+                try
                 {
                     var itemsToRemove = _strongCache.Count / 2;
                     var keysToRemove = new List<string>(itemsToRemove);
@@ -1648,6 +1727,10 @@ namespace VPM.Services
                     {
                         CleanupDeadReferences();
                     }
+                }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
                 }
                 
                 GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
@@ -1687,12 +1770,17 @@ namespace VPM.Services
         /// </summary>
         public (int batchesProcessed, int tasksCreated, double averageTimeMs) GetParallelMetrics()
         {
-            lock (_parallelMetricsLock)
+            _parallelMetricsLock.EnterReadLock();
+            try
             {
                 double avgTime = _parallelBatchesProcessed > 0
                     ? _parallelTotalTime / (double)_parallelBatchesProcessed
                     : 0;
                 return (_parallelBatchesProcessed, _parallelTasksCreated, avgTime);
+            }
+            finally
+            {
+                _parallelMetricsLock.ExitReadLock();
             }
         }
 
@@ -1701,11 +1789,16 @@ namespace VPM.Services
         /// </summary>
         public void ResetParallelMetrics()
         {
-            lock (_parallelMetricsLock)
+            _parallelMetricsLock.EnterWriteLock();
+            try
             {
                 _parallelBatchesProcessed = 0;
                 _parallelTasksCreated = 0;
                 _parallelTotalTime = 0;
+            }
+            finally
+            {
+                _parallelMetricsLock.ExitWriteLock();
             }
         }
 
@@ -1718,12 +1811,12 @@ namespace VPM.Services
             _preloadTask?.Wait(1000); // Wait up to 1 second for cleanup
             _preloadCancellation?.Dispose();
             
-            // Unsubscribe from thread pool events to prevent memory leaks
-            if (_threadPool != null)
+            // Unsubscribe from async pool events to prevent memory leaks
+            if (_asyncPool != null)
             {
-                _threadPool.ProgressChanged -= OnThreadPoolProgressChanged;
-                _threadPool.ImageProcessed -= OnThreadPoolImageProcessed;
-                _threadPool.Dispose();
+                _asyncPool.ProgressChanged -= OnThreadPoolProgressChanged;
+                _asyncPool.ImageProcessed -= OnThreadPoolImageProcessed;
+                _asyncPool.Dispose();
             }
             
             // Ensure disk cache is saved before exit
@@ -1799,7 +1892,6 @@ namespace VPM.Services
                         }
                         catch { }
                     }
-                    
                     if (queuedImage.HadError)
                     {
                         tcs.SetException(new Exception(queuedImage.ErrorText ?? "Unknown error"));
@@ -1807,15 +1899,20 @@ namespace VPM.Services
                     else if (queuedImage.Texture != null)
                     {
                         // Cache the loaded image
-                        lock (_bitmapCacheLock)
+                        _bitmapCacheLock.EnterWriteLock();
+                        try
                         {
                             AddToStrongCache(cacheKey, queuedImage.Texture);
                             _bitmapCache[cacheKey] = new WeakReference<BitmapImage>(queuedImage.Texture);
                             // Don't set _textureUseCount here - TrackTexture will do it
                         }
+                        finally
+                        {
+                            _bitmapCacheLock.ExitWriteLock();
+                        }
                         
                         // Track texture for reference counting (sets initial count to 1)
-                        _threadPool.TrackTexture(queuedImage.Texture);
+                        _asyncPool.TrackTexture(queuedImage.Texture);
                         
                         tcs.SetResult(queuedImage.Texture);
                     }
@@ -1829,11 +1926,11 @@ namespace VPM.Services
             // Queue for processing
             if (isThumbnail)
             {
-                _threadPool.QueueThumbnail(qi);
+                _asyncPool.QueueThumbnail(qi);
             }
             else
             {
-                _threadPool.QueueImage(qi);
+                _asyncPool.QueueImage(qi);
             }
             
             return tcs.Task;
@@ -1880,7 +1977,7 @@ namespace VPM.Services
         /// </summary>
         public bool RegisterTextureUse(BitmapImage texture)
         {
-            return _threadPool.RegisterTextureUse(texture);
+            return _asyncPool.RegisterTextureUse(texture);
         }
         
         /// <summary>
@@ -1888,7 +1985,7 @@ namespace VPM.Services
         /// </summary>
         public bool DeregisterTextureUse(BitmapImage texture)
         {
-            return _threadPool.DeregisterTextureUse(texture);
+            return _asyncPool.DeregisterTextureUse(texture);
         }
         
         /// <summary>
@@ -1896,8 +1993,8 @@ namespace VPM.Services
         /// </summary>
         public (int thumbnailQueue, int imageQueue, int totalQueue, int currentProgress, int maxProgress) GetThreadPoolStats()
         {
-            var (thumbnails, images, total) = _threadPool.GetQueueSizes();
-            var (current, max) = _threadPool.GetProgress();
+            var (thumbnails, images, total) = _asyncPool.GetQueueSizes();
+            var (current, max) = _asyncPool.GetProgress();
             return (thumbnails, images, total, current, max);
         }
         
@@ -1906,7 +2003,7 @@ namespace VPM.Services
         /// </summary>
         public void ClearThreadPoolQueues()
         {
-            _threadPool.ClearQueues();
+            _asyncPool.ClearQueues();
         }
 
         /// <summary>
@@ -1923,7 +2020,8 @@ namespace VPM.Services
                 
                 // CRITICAL: Clear bitmap cache entries for this package to release memory references
                 // This must happen BEFORE the file operation to prevent "file in use" errors
-                lock (_bitmapCacheLock)
+                _bitmapCacheLock.EnterWriteLock();
+                try
                 {
                     // Find all cache keys that reference this package
                     // Match both by package name prefix and by VAR file path
@@ -1956,15 +2054,24 @@ namespace VPM.Services
                         _strongCache.Remove(key);
                     }
                 }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
+                }
                 
                 // Clear from preview image index as well
                 PreviewImageIndex.TryRemove(packageName, out _);
                 
                 // Clear from main image index
-                lock (_varArchiveLock)
+                _varArchiveLock.EnterWriteLock();
+                try
                 {
                     ImageIndex.Remove(packageName);
                     _imageIndexSignatures.Remove(packageName);
+                }
+                finally
+                {
+                    _varArchiveLock.ExitWriteLock();
                 }
                 
                 // Force garbage collection to ensure all references are released
@@ -1987,7 +2094,8 @@ namespace VPM.Services
             
             try
             {
-                lock (_bitmapCacheLock)
+                _bitmapCacheLock.EnterWriteLock();
+                try
                 {
                     // Remove all bitmap cache entries for this package
                     var keysToRemove = _bitmapCache.Keys
@@ -2015,14 +2123,23 @@ namespace VPM.Services
                         _strongCache.Remove(key);
                     }
                 }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
+                }
                 
                 // Clear from indices
                 PreviewImageIndex.TryRemove(packageName, out _);
                 
-                lock (_varArchiveLock)
+                _varArchiveLock.EnterWriteLock();
+                try
                 {
                     ImageIndex.Remove(packageName);
                     _imageIndexSignatures.Remove(packageName);
+                }
+                finally
+                {
+                    _varArchiveLock.ExitWriteLock();
                 }
             }
             catch (Exception ex)

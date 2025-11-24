@@ -62,7 +62,8 @@ namespace VPM.Services
         private readonly Process _currentProcess;
         private int _currentConcurrency;
         private DateTime _lastAdjustmentTime;
-        private readonly object _lock = new object();
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private PerformanceCounter _cpuCounter;
 
         public AdaptiveOptimizer(AdaptiveConfig config = null)
         {
@@ -70,6 +71,17 @@ namespace VPM.Services
             _currentProcess = Process.GetCurrentProcess();
             _currentConcurrency = _config.TargetConcurrency;
             _lastAdjustmentTime = DateTime.UtcNow;
+            
+            try
+            {
+                // Initialize CPU counter once
+                _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
+                _cpuCounter.NextValue(); // First call returns 0
+            }
+            catch
+            {
+                // Ignore if performance counters are not available
+            }
         }
 
         /// <summary>
@@ -134,18 +146,15 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Gets estimated CPU usage percentage.
+        /// Gets estimated CPU usage percentage (synchronous version).
         /// </summary>
         private double GetCPUUsage()
         {
+            if (_cpuCounter == null) return 50; // Default to moderate if unable to read
+            
             try
             {
-                // Simplified CPU usage calculation
-                // In production, use PerformanceCounter for accurate readings
-                var cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
-                cpuCounter.NextValue(); // First call returns 0
-                System.Threading.Thread.Sleep(100);
-                return cpuCounter.NextValue();
+                return _cpuCounter.NextValue();
             }
             catch
             {
@@ -154,13 +163,26 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Gets estimated CPU usage percentage (async version).
+        /// </summary>
+        private Task<double> GetCPUUsageAsync()
+        {
+            return Task.FromResult(GetCPUUsage());
+        }
+
+        /// <summary>
         /// Gets current adaptive concurrency level.
         /// </summary>
         public int GetCurrentConcurrency()
         {
-            lock (_lock)
+            _lock.EnterReadLock();
+            try
             {
                 return _currentConcurrency;
+            }
+            finally
+            {
+                _lock.ExitReadLock();
             }
         }
 
@@ -176,7 +198,8 @@ namespace VPM.Services
             if ((DateTime.UtcNow - _lastAdjustmentTime).TotalMilliseconds < _config.AdjustmentIntervalMs)
                 return _currentConcurrency;
 
-            lock (_lock)
+            _lock.EnterWriteLock();
+            try
             {
                 var resourceState = GetResourceState();
                 int newConcurrency = _currentConcurrency;
@@ -218,13 +241,17 @@ namespace VPM.Services
                 _lastAdjustmentTime = DateTime.UtcNow;
                 return _currentConcurrency;
             }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
         }
 
         /// <summary>
         /// Waits for resources to become available if under pressure.
         /// Implements backpressure handling.
         /// </summary>
-        public void WaitForResourcesIfNeeded()
+        public async Task WaitForResourcesIfNeededAsync()
         {
             var resourceState = GetResourceState();
 
@@ -232,12 +259,12 @@ namespace VPM.Services
             {
                 case ResourcePressure.High:
                     // Wait 100ms if high pressure
-                    Thread.Sleep(100);
+                    await Task.Delay(100).ConfigureAwait(false);
                     break;
 
                 case ResourcePressure.Critical:
                     // Wait 500ms if critical pressure
-                    Thread.Sleep(500);
+                    await Task.Delay(500).ConfigureAwait(false);
                     break;
             }
         }
@@ -314,10 +341,15 @@ namespace VPM.Services
         /// </summary>
         public void Reset()
         {
-            lock (_lock)
+            _lock.EnterWriteLock();
+            try
             {
                 _currentConcurrency = _config.TargetConcurrency;
                 _lastAdjustmentTime = DateTime.UtcNow;
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
@@ -326,7 +358,7 @@ namespace VPM.Services
         /// Lazily initialized on first use.
         /// </summary>
         private ParallelOptimizerFacade _parallelOptimizer;
-        private readonly object _parallelLock = new object();
+        private readonly SemaphoreSlim _parallelLock = new SemaphoreSlim(1, 1);
 
         /// <summary>
         /// Gets or creates the parallel optimizer facade.
@@ -339,7 +371,8 @@ namespace VPM.Services
                 return _parallelOptimizer;
             }
 
-            lock (_parallelLock)
+            _parallelLock.Wait();
+            try
             {
                 if (_parallelOptimizer != null)
                     return _parallelOptimizer;
@@ -384,6 +417,10 @@ namespace VPM.Services
 
                 return _parallelOptimizer;
             }
+            finally
+            {
+                _parallelLock.Release();
+            }
         }
 
         /// <summary>
@@ -406,7 +443,8 @@ namespace VPM.Services
             if (_parallelOptimizer == null)
                 return;
 
-            lock (_parallelLock)
+            await _parallelLock.WaitAsync();
+            try
             {
                 if (_parallelOptimizer == null)
                     return;
@@ -420,6 +458,10 @@ namespace VPM.Services
                     optimizer.Dispose();
                 });
             }
+            finally
+            {
+                _parallelLock.Release();
+            }
         }
 
         /// <summary>
@@ -429,6 +471,7 @@ namespace VPM.Services
         {
             StopParallelOptimizerAsync().Wait(5000);
             _parallelOptimizer?.Dispose();
+            _cpuCounter?.Dispose();
         }
     }
 
@@ -451,18 +494,18 @@ namespace VPM.Services
         /// <summary>
         /// Waits for a slot, adjusting based on resource pressure.
         /// </summary>
-        public void Wait()
+        public async Task WaitAsync()
         {
-            _optimizer.WaitForResourcesIfNeeded();
+            await _optimizer.WaitForResourcesIfNeededAsync().ConfigureAwait(false);
             _semaphore.WaitOne();
         }
 
         /// <summary>
         /// Waits with timeout.
         /// </summary>
-        public bool Wait(int timeoutMs)
+        public async Task<bool> WaitAsync(int timeoutMs)
         {
-            _optimizer.WaitForResourcesIfNeeded();
+            await _optimizer.WaitForResourcesIfNeededAsync().ConfigureAwait(false);
             return _semaphore.WaitOne(timeoutMs);
         }
 

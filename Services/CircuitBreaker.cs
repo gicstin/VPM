@@ -94,7 +94,7 @@ namespace VPM.Services
         private int _openCount = 0;
         private long _totalRequests = 0;
         private long _totalFailures = 0;
-        private readonly object _lock = new object();
+        private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
 
         public CircuitBreaker(CircuitBreakerConfig config = null)
         {
@@ -110,14 +110,29 @@ namespace VPM.Services
         {
             get
             {
-                lock (_lock)
+                _lock.EnterReadLock();
+                try
                 {
                     // Check if timeout has elapsed and transition to HalfOpen
                     if (_state == CircuitState.Open && DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
                     {
-                        TransitionToHalfOpen();
+                        _lock.ExitReadLock();
+                        _lock.EnterWriteLock();
+                        try
+                        {
+                            TransitionToHalfOpen();
+                        }
+                        finally
+                        {
+                            _lock.ExitWriteLock();
+                        }
+                        _lock.EnterReadLock();
                     }
                     return _state;
+                }
+                finally
+                {
+                    _lock.ExitReadLock();
                 }
             }
         }
@@ -129,7 +144,8 @@ namespace VPM.Services
         {
             get
             {
-                lock (_lock)
+                _lock.EnterReadLock();
+                try
                 {
                     if (_state == CircuitState.Closed)
                         return false;
@@ -140,11 +156,24 @@ namespace VPM.Services
                     // Check if timeout has elapsed
                     if (DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
                     {
-                        TransitionToHalfOpen();
+                        _lock.ExitReadLock();
+                        _lock.EnterWriteLock();
+                        try
+                        {
+                            TransitionToHalfOpen();
+                        }
+                        finally
+                        {
+                            _lock.ExitWriteLock();
+                        }
                         return false;
                     }
 
                     return true;
+                }
+                finally
+                {
+                    _lock.ExitReadLock();
                 }
             }
         }
@@ -154,7 +183,8 @@ namespace VPM.Services
         /// </summary>
         public void RecordSuccess()
         {
-            lock (_lock)
+            _lock.EnterWriteLock();
+            try
             {
                 Interlocked.Increment(ref _totalRequests);
                 _lastSuccessTime = DateTime.UtcNow;
@@ -174,6 +204,10 @@ namespace VPM.Services
                     }
                 }
             }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -181,7 +215,8 @@ namespace VPM.Services
         /// </summary>
         public void RecordFailure()
         {
-            lock (_lock)
+            _lock.EnterWriteLock();
+            try
             {
                 Interlocked.Increment(ref _totalRequests);
                 Interlocked.Increment(ref _totalFailures);
@@ -200,6 +235,10 @@ namespace VPM.Services
                 {
                     TransitionToOpen();
                 }
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
@@ -251,9 +290,14 @@ namespace VPM.Services
         /// </summary>
         public void Reset()
         {
-            lock (_lock)
+            _lock.EnterWriteLock();
+            try
             {
                 TransitionToClosed();
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
             }
         }
 
@@ -262,7 +306,8 @@ namespace VPM.Services
         /// </summary>
         public CircuitBreakerMetrics GetMetrics()
         {
-            lock (_lock)
+            _lock.EnterReadLock();
+            try
             {
                 return new CircuitBreakerMetrics
                 {
@@ -276,6 +321,10 @@ namespace VPM.Services
                     StateChangeTime = _stateChangeTime
                 };
             }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
         }
 
         /// <summary>
@@ -283,7 +332,8 @@ namespace VPM.Services
         /// </summary>
         public TimeSpan GetTimeUntilRecovery()
         {
-            lock (_lock)
+            _lock.EnterReadLock();
+            try
             {
                 if (_state != CircuitState.Open)
                     return TimeSpan.Zero;
@@ -292,6 +342,10 @@ namespace VPM.Services
                 var timeUntilRecovery = TimeSpan.FromMilliseconds(_currentTimeoutMs) - timeElapsed;
 
                 return timeUntilRecovery > TimeSpan.Zero ? timeUntilRecovery : TimeSpan.Zero;
+            }
+            finally
+            {
+                _lock.ExitReadLock();
             }
         }
     }

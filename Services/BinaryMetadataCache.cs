@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using VPM.Models;
 
@@ -18,7 +19,7 @@ namespace VPM.Services
         private readonly string _cacheFilePath;
         private readonly string _cacheDirectory;
         private readonly Dictionary<string, CachedMetadata> _cache = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object _cacheLock = new();
+        private readonly ReaderWriterLockSlim _cacheLock = new ReaderWriterLockSlim();
         
         // Statistics
         private int _cacheHits = 0;
@@ -85,7 +86,8 @@ namespace VPM.Services
                     return false;
                 }
 
-                lock (_cacheLock)
+                _cacheLock.EnterWriteLock();
+                try
                 {
                     _cache.Clear();
 
@@ -99,6 +101,10 @@ namespace VPM.Services
                         }
                         catch { }
                     }
+                }
+                finally
+                {
+                    _cacheLock.ExitWriteLock();
                 }
 
                 return true;
@@ -124,7 +130,8 @@ namespace VPM.Services
                     // Write version
                     writer.Write(CACHE_VERSION);
 
-                    lock (_cacheLock)
+                    _cacheLock.EnterReadLock();
+                    try
                     {
                         // Write entry count
                         writer.Write(_cache.Count);
@@ -134,6 +141,10 @@ namespace VPM.Services
                             writer.Write(kvp.Key);
                             WriteCachedMetadata(writer, kvp.Value);
                         }
+                    }
+                    finally
+                    {
+                        _cacheLock.ExitReadLock();
                     }
 
                     writer.Flush();
@@ -170,7 +181,8 @@ namespace VPM.Services
         /// </summary>
         public VarMetadata TryGetCached(string packageNameOrFilename, long fileSize, long lastWriteTicks)
         {
-            lock (_cacheLock)
+            _cacheLock.EnterReadLock();
+            try
             {
                 if (_cache.TryGetValue(packageNameOrFilename, out var cached))
                 {
@@ -184,6 +196,10 @@ namespace VPM.Services
                 
                 _cacheMisses++;
             }
+            finally
+            {
+                _cacheLock.ExitReadLock();
+            }
 
             return null;
         }
@@ -196,7 +212,8 @@ namespace VPM.Services
         {
             if (metadata == null) return;
 
-            lock (_cacheLock)
+            _cacheLock.EnterWriteLock();
+            try
             {
                 _cache[packageNameOrFilename] = new CachedMetadata
                 {
@@ -205,6 +222,10 @@ namespace VPM.Services
                     LastWriteTicks = lastWriteTicks
                 };
             }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
+            }
         }
 
         /// <summary>
@@ -212,9 +233,14 @@ namespace VPM.Services
         /// </summary>
         public void Remove(string packageName)
         {
-            lock (_cacheLock)
+            _cacheLock.EnterWriteLock();
+            try
             {
                 _cache.Remove(packageName);
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
             }
         }
 
@@ -225,9 +251,14 @@ namespace VPM.Services
         {
             get
             {
-                lock (_cacheLock)
+                _cacheLock.EnterReadLock();
+                try
                 {
                     return _cache.Count;
+                }
+                finally
+                {
+                    _cacheLock.ExitReadLock();
                 }
             }
         }
@@ -237,9 +268,14 @@ namespace VPM.Services
         /// </summary>
         public void Clear()
         {
-            lock (_cacheLock)
+            _cacheLock.EnterWriteLock();
+            try
             {
                 _cache.Clear();
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
             }
         }
         
@@ -248,11 +284,16 @@ namespace VPM.Services
         /// </summary>
         public (int hits, int misses, double hitRate) GetStatistics()
         {
-            lock (_cacheLock)
+            _cacheLock.EnterReadLock();
+            try
             {
                 var total = _cacheHits + _cacheMisses;
                 var hitRate = total > 0 ? (_cacheHits * 100.0 / total) : 0;
                 return (_cacheHits, _cacheMisses, hitRate);
+            }
+            finally
+            {
+                _cacheLock.ExitReadLock();
             }
         }
         
@@ -263,7 +304,8 @@ namespace VPM.Services
             int looksCount = 0, int posesCount = 0, int assetsCount = 0, int scriptsCount = 0, 
             int pluginsCount = 0, int subScenesCount = 0, int skinsCount = 0)
         {
-            lock (_cacheLock)
+            _cacheLock.EnterWriteLock();
+            try
             {
                 if (_cache.TryGetValue(packageName, out var cached))
                 {
@@ -280,6 +322,10 @@ namespace VPM.Services
                     cached.Metadata.SkinsCount = skinsCount;
                 }
             }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
+            }
         }
         
         /// <summary>
@@ -287,10 +333,15 @@ namespace VPM.Services
         /// </summary>
         public void ResetStatistics()
         {
-            lock (_cacheLock)
+            _cacheLock.EnterWriteLock();
+            try
             {
                 _cacheHits = 0;
                 _cacheMisses = 0;
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
             }
         }
         
@@ -311,11 +362,16 @@ namespace VPM.Services
         {
             try
             {
-                lock (_cacheLock)
+                _cacheLock.EnterWriteLock();
+                try
                 {
                     _cache.Clear();
                     _cacheHits = 0;
                     _cacheMisses = 0;
+                }
+                finally
+                {
+                    _cacheLock.ExitWriteLock();
                 }
                 
                 if (File.Exists(_cacheFilePath))

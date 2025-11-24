@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace VPM.Services
 {
@@ -41,14 +42,15 @@ namespace VPM.Services
         }
 
         private static PoolStatistics _statistics = new PoolStatistics();
-        private static readonly object _statsLock = new object();
+        private static readonly SemaphoreSlim _statsLock = new SemaphoreSlim(1, 1);
 
         /// <summary>
-        /// Gets current pool statistics.
+        /// Gets current pool statistics (async version).
         /// </summary>
-        public static PoolStatistics GetStatistics()
+        public static async Task<PoolStatistics> GetStatisticsAsync()
         {
-            lock (_statsLock)
+            await _statsLock.WaitAsync().ConfigureAwait(false);
+            try
             {
                 return new PoolStatistics
                 {
@@ -64,16 +66,69 @@ namespace VPM.Services
                     RentsForOther = _statistics.RentsForOther
                 };
             }
+            finally
+            {
+                _statsLock.Release();
+            }
         }
 
         /// <summary>
-        /// Resets pool statistics.
+        /// Gets current pool statistics (synchronous version - for backward compatibility).
+        /// </summary>
+        public static PoolStatistics GetStatistics()
+        {
+            _statsLock.Wait();
+            try
+            {
+                return new PoolStatistics
+                {
+                    TotalRents = _statistics.TotalRents,
+                    TotalReturns = _statistics.TotalReturns,
+                    TotalBytesRented = _statistics.TotalBytesRented,
+                    PeakConcurrentBytes = _statistics.PeakConcurrentBytes,
+                    CurrentConcurrentBytes = _statistics.CurrentConcurrentBytes,
+                    RentsFor8KB = _statistics.RentsFor8KB,
+                    RentsFor64KB = _statistics.RentsFor64KB,
+                    RentsFor256KB = _statistics.RentsFor256KB,
+                    RentsFor1MB = _statistics.RentsFor1MB,
+                    RentsForOther = _statistics.RentsForOther
+                };
+            }
+            finally
+            {
+                _statsLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Resets pool statistics (async version).
+        /// </summary>
+        public static async Task ResetStatisticsAsync()
+        {
+            await _statsLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _statistics = new PoolStatistics();
+            }
+            finally
+            {
+                _statsLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Resets pool statistics (synchronous version - for backward compatibility).
         /// </summary>
         public static void ResetStatistics()
         {
-            lock (_statsLock)
+            _statsLock.Wait();
+            try
             {
                 _statistics = new PoolStatistics();
+            }
+            finally
+            {
+                _statsLock.Release();
             }
         }
 
@@ -106,7 +161,8 @@ namespace VPM.Services
             int optimalSize = SelectOptimalSize(minimumLength);
             byte[] buffer = ArrayPool<byte>.Shared.Rent(optimalSize);
 
-            lock (_statsLock)
+            _statsLock.Wait();
+            try
             {
                 _statistics.TotalRents++;
                 _statistics.TotalBytesRented += buffer.Length;
@@ -136,6 +192,10 @@ namespace VPM.Services
                         break;
                 }
             }
+            finally
+            {
+                _statsLock.Release();
+            }
 
             return buffer;
         }
@@ -149,10 +209,15 @@ namespace VPM.Services
             {
                 ArrayPool<byte>.Shared.Return(buffer, clearBuffer);
 
-                lock (_statsLock)
+                _statsLock.Wait();
+                try
                 {
                     _statistics.TotalReturns++;
                     _statistics.CurrentConcurrentBytes -= buffer.Length;
+                }
+                finally
+                {
+                    _statsLock.Release();
                 }
             }
         }

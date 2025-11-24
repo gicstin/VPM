@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
 using SharpCompress.Common;
@@ -74,6 +75,60 @@ namespace VPM.Services
                     throw new ObjectDisposedException("ArchiveHandlePool");
                 
                 System.Threading.Thread.Sleep(10);
+                waitAttempts++;
+                
+                if (waitAttempts > 1000) // 10 second timeout
+                    throw new TimeoutException("Archive handle pool timeout");
+            }
+
+            return handle;
+        }
+
+        /// <summary>
+        /// Gets an archive handle from the pool or creates a new one if available (async version)
+        /// </summary>
+        public async Task<IArchive> AcquireHandleAsync()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException("ArchiveHandlePool");
+
+            if (_availableHandles.TryTake(out var handle))
+                return handle;
+
+            lock (_creationLock)
+            {
+                if (_totalCreated < _maxHandles)
+                {
+                    _totalCreated++;
+                    // Check if file exists before attempting to open
+                    if (!File.Exists(_archivePath))
+                        throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
+                    
+                    // Open file with explicit seek support
+                    FileStream fileStream = null;
+                    try
+                    {
+                        fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
+                        var archive = ZipArchive.Open(fileStream);
+                        fileStream = null; // Archive now owns the stream
+                        return archive;
+                    }
+                    catch
+                    {
+                        fileStream?.Dispose(); // Dispose stream if archive creation failed
+                        throw;
+                    }
+                }
+            }
+
+            // Wait for an available handle
+            int waitAttempts = 0;
+            while (!_availableHandles.TryTake(out handle))
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException("ArchiveHandlePool");
+                
+                await Task.Delay(10).ConfigureAwait(false);
                 waitAttempts++;
                 
                 if (waitAttempts > 1000) // 10 second timeout

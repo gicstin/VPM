@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using VPM.Models;
 
 namespace VPM.Services
@@ -54,6 +55,12 @@ namespace VPM.Services
 
         private void OnAutoInstallFileChanged(object sender, FileSystemEventArgs e)
         {
+            // Fire and forget async operation to avoid blocking file watcher
+            _ = OnAutoInstallFileChangedAsync();
+        }
+
+        private async Task OnAutoInstallFileChangedAsync()
+        {
             try
             {
                 var currentWriteTime = File.GetLastWriteTime(_autoInstallFilePath);
@@ -62,7 +69,7 @@ namespace VPM.Services
 
                 _lastMainFileWriteTime = currentWriteTime;
 
-                System.Threading.Thread.Sleep(100);
+                await Task.Delay(100).ConfigureAwait(false);
 
                 ReloadAutoInstall();
 

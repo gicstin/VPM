@@ -30,6 +30,17 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Helper method to replace blocking Thread.Sleep with a non-blocking alternative.
+        /// Allows file handles to be released without blocking the thread (async version).
+        /// </summary>
+        private static async Task ReleaseFileHandlesAsync(int delayMs = 100)
+        {
+            // Use async delay to allow OS to release file handles without blocking the thread
+            // This is called after CloseFileHandles to ensure handles are fully released
+            await Task.Delay(delayMs).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Progress callback for reporting conversion status
         /// </summary>
         public delegate void ProgressCallback(string message, int current, int total);
@@ -79,7 +90,7 @@ namespace VPM.Services
         /// <summary>
         /// Repackages a VAR file with optimizations and returns statistics
         /// </summary>
-        public RepackageResult RepackageVarWithOptimizations(
+        public async Task<RepackageResult> RepackageVarWithOptimizationsAsync(
             string sourceVarPath, 
             string archivedFolder, 
             OptimizationConfig config, 
@@ -127,7 +138,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Backing up old version and optimizing...", 0, totalOperations);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     // Create backup of old version with #archived suffix
                     string backupFilename = Path.GetFileNameWithoutExtension(filename) + "#archived" + Path.GetExtension(filename);
@@ -176,7 +187,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, totalOperations);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     // Determine output folder (AddonPackages or AllPackages)
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
@@ -210,7 +221,7 @@ namespace VPM.Services
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
                     _imageManager?.CloseFileHandles(archiveFilePath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
                     finalOutputPath = sourceVarPath; // Write back to loaded folder
@@ -224,7 +235,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Applying metadata optimizations...", 0, totalOperations);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = sourceVarPath; // Modify current file
                     finalOutputPath = sourceVarPath; // Same file (in-place modification)
@@ -237,7 +248,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Moving original to archive...", 0, totalOperations);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     archivedPath = archiveFilePath;
                     
@@ -257,7 +268,7 @@ namespace VPM.Services
                             lastException = ex;
                             if (attempt < 3)
                             {
-                                System.Threading.Thread.Sleep(1000 * attempt);
+                                await ReleaseFileHandlesAsync(1000 * attempt);
                                 _imageManager?.CloseFileHandles(sourceVarPath);
                             }
                         }
@@ -282,7 +293,7 @@ namespace VPM.Services
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
                     _imageManager?.CloseFileHandles(archiveFilePath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
                     finalOutputPath = sourceVarPath; // Write back to current location
@@ -296,7 +307,7 @@ namespace VPM.Services
                     progressCallback?.Invoke("Re-optimizing from current version (archive not found)...", 0, totalOperations);
                     
                     _imageManager?.CloseFileHandles(sourceVarPath);
-                    System.Threading.Thread.Sleep(100);
+                    await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = sourceVarPath;
                     finalOutputPath = sourceVarPath;
@@ -344,7 +355,7 @@ namespace VPM.Services
                         {
                             _imageManager?.CloseFileHandles(sourcePathForProcessing);
                             _imageManager?.CloseFileHandles(finalOutputPath);
-                            System.Threading.Thread.Sleep(100);
+                            await ReleaseFileHandlesAsync(100);
                             
                             // Copy archive to final output location
                             if (File.Exists(finalOutputPath))
@@ -356,7 +367,7 @@ namespace VPM.Services
                         }
                         
                         _imageManager?.CloseFileHandles(fileToModify);
-                        System.Threading.Thread.Sleep(100);
+                        await ReleaseFileHandlesAsync(100);
                         
                         // Use SharpCompress to read and re-write the archive with metadata updates
                         using (var archive = SharpCompressHelper.OpenForRead(fileToModify))
@@ -371,7 +382,7 @@ namespace VPM.Services
                                 using (var stream = metaEntry.OpenEntryStream())
                                 using (var reader = new StreamReader(stream))
                                 {
-                                    originalMetaJson = reader.ReadToEnd();
+                                    originalMetaJson = await reader.ReadToEndAsync();
                                 }
                                 originalMetaJsonDate = metaEntry.LastModifiedTime ?? DateTime.Now;
                             }
@@ -652,7 +663,7 @@ namespace VPM.Services
                             }).ToArray();
 
                             // Wait for all texture conversions to complete
-                            System.Threading.Tasks.Task.WaitAll(tasks);
+                            await System.Threading.Tasks.Task.WhenAll(tasks);
                         }
                         _performanceTimer.Stop("Texture Conversion (All)");
 
@@ -679,7 +690,7 @@ namespace VPM.Services
                         // Get the maximum target density from all hair conversions
                         int maxTargetDensity = config.HairConversions.Values.Any() ? config.HairConversions.Values.Max(h => h.targetDensity) : 30;
 
-                        Parallel.ForEach(sceneEntries, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, item =>
+                        await Parallel.ForEachAsync(sceneEntries, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, async (item, ct) =>
                         {
                             var (entry, _, needsHairModification, needsSceneModification) = item;
                             if (!needsSceneModification)
@@ -742,7 +753,7 @@ namespace VPM.Services
                                 // Log to file for debugging
                                 try
                                 {
-                                    File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] UNSUPPORTED COMPRESSION (scene): {entry.Key}\n");
+                                    await File.AppendAllTextAsync(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] UNSUPPORTED COMPRESSION (scene): {entry.Key}\n");
                                 }
                                 catch { }
                             }
@@ -755,7 +766,7 @@ namespace VPM.Services
                                 // Log to file for debugging
                                 try
                                 {
-                                    File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ERROR processing {entry.Key}: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}\n\n");
+                                    await File.AppendAllTextAsync(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] ERROR processing {entry.Key}: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}\n\n");
                                 }
                                 catch { }
                             }

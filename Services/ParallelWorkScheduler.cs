@@ -33,7 +33,7 @@ namespace VPM.Services
         private readonly ConcurrentDictionary<string, WorkTask> _allTasks;
         private readonly ConcurrentDictionary<string, WorkTask> _activeTasks;
         private readonly List<Task> _workerTasks;
-        private readonly object _workerLock = new object();
+        private readonly SemaphoreSlim _workerLock = new SemaphoreSlim(1, 1);
         private CancellationTokenSource _schedulerCts;
         private volatile bool _isRunning = false;
         private volatile int _currentWorkerCount = 0;
@@ -115,13 +115,18 @@ namespace VPM.Services
             _isRunning = true;
             _schedulerCts = new CancellationTokenSource();
 
-            lock (_workerLock)
+            _workerLock.Wait();
+            try
             {
                 // Start initial workers
                 for (int i = 0; i < _targetWorkerCount; i++)
                 {
                     SpawnWorker();
                 }
+            }
+            finally
+            {
+                _workerLock.Release();
             }
 
             // Start resource monitoring task
@@ -328,7 +333,8 @@ namespace VPM.Services
                         int oldTarget = _targetWorkerCount;
                         _targetWorkerCount = newTargetWorkers;
 
-                        lock (_workerLock)
+                        await _workerLock.WaitAsync(cancellationToken);
+                        try
                         {
                             if (newTargetWorkers > _currentWorkerCount)
                             {
@@ -338,6 +344,10 @@ namespace VPM.Services
                                     SpawnWorker();
                                 }
                             }
+                        }
+                        finally
+                        {
+                            _workerLock.Release();
                         }
 
                         WorkerCountChanged?.Invoke(this, new WorkerCountChangedEventArgs(oldTarget, newTargetWorkers));
@@ -360,22 +370,15 @@ namespace VPM.Services
             switch (resourceState.Pressure)
             {
                 case AdaptiveOptimizer.ResourcePressure.Low:
-                    // Can scale up
                     target = Math.Min(_maxWorkers, _targetWorkerCount + 1);
                     break;
-
                 case AdaptiveOptimizer.ResourcePressure.Moderate:
-                    // Maintain current level
                     target = _targetWorkerCount;
                     break;
-
                 case AdaptiveOptimizer.ResourcePressure.High:
-                    // Scale down slightly
                     target = Math.Max(_minWorkers, _targetWorkerCount - 1);
                     break;
-
                 case AdaptiveOptimizer.ResourcePressure.Critical:
-                    // Scale down significantly
                     target = _minWorkers;
                     break;
             }

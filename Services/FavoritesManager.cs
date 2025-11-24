@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using VPM.Models;
 
 namespace VPM.Services
@@ -54,6 +55,12 @@ namespace VPM.Services
 
         private void OnFavoritesFileChanged(object sender, FileSystemEventArgs e)
         {
+            // Fire and forget async operation to avoid blocking file watcher
+            _ = OnFavoritesFileChangedAsync();
+        }
+
+        private async Task OnFavoritesFileChangedAsync()
+        {
             try
             {
                 // Debounce multiple events
@@ -64,7 +71,7 @@ namespace VPM.Services
                 _lastMainFileWriteTime = currentWriteTime;
 
                 // Small delay to ensure file is fully written
-                System.Threading.Thread.Sleep(100);
+                await Task.Delay(100).ConfigureAwait(false);
 
                 // Reload favorites
                 ReloadFavorites();

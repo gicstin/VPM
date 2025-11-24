@@ -201,7 +201,7 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Execute action with retry logic (non-async)
+        /// Execute action with retry logic (synchronous version - for backward compatibility)
         /// </summary>
         public RetryResult Execute(Action action)
         {
@@ -266,6 +266,85 @@ namespace VPM.Services
                     if (attempt <= _config.MaxRetries)
                     {
                         Thread.Sleep(delayMs);
+                    }
+                    else
+                    {
+                        // Ensure we account for the delay time even if we don't sleep
+                    }
+                }
+            }
+
+            stopwatch.Stop();
+            result.TotalDuration = stopwatch.Elapsed;
+            return result;
+        }
+
+        /// <summary>
+        /// Execute action with retry logic (async)
+        /// </summary>
+        public async Task<RetryResult> ExecuteAsync(Func<Task> action)
+        {
+            var result = new RetryResult();
+            var stopwatch = Stopwatch.StartNew();
+
+            for (int attempt = 1; attempt <= _config.MaxRetries + 1; attempt++)
+            {
+                var attemptStart = DateTime.UtcNow;
+                var attemptStopwatch = Stopwatch.StartNew();
+
+                try
+                {
+                    await action().ConfigureAwait(false);
+
+                    attemptStopwatch.Stop();
+                    result.Attempts.Add(new RetryAttempt
+                    {
+                        AttemptNumber = attempt,
+                        StartTime = attemptStart,
+                        Duration = attemptStopwatch.Elapsed,
+                        Success = true
+                    });
+
+                    result.Success = true;
+                    result.AttemptCount = attempt;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    attemptStopwatch.Stop();
+                    result.LastException = ex;
+
+                    if (!ShouldRetry(ex, attempt))
+                    {
+                        result.Attempts.Add(new RetryAttempt
+                        {
+                            AttemptNumber = attempt,
+                            StartTime = attemptStart,
+                            Duration = attemptStopwatch.Elapsed,
+                            Success = false,
+                            Exception = ex
+                        });
+
+                        result.Success = false;
+                        result.AttemptCount = attempt;
+                        break;
+                    }
+
+                    int delayMs = CalculateDelay(attempt);
+
+                    result.Attempts.Add(new RetryAttempt
+                    {
+                        AttemptNumber = attempt,
+                        StartTime = attemptStart,
+                        Duration = attemptStopwatch.Elapsed,
+                        Success = false,
+                        Exception = ex,
+                        DelayBeforeNextMs = delayMs
+                    });
+
+                    if (attempt <= _config.MaxRetries)
+                    {
+                        await Task.Delay(delayMs).ConfigureAwait(false);
                     }
                     else
                     {

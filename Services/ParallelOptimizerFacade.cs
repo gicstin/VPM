@@ -171,13 +171,10 @@ namespace VPM.Services
                 throw new InvalidOperationException("Failed to enqueue task");
 
             // Wait for task to complete
-            await Task.Run(() =>
+            while (task.State == TaskState.Pending || task.State == TaskState.Running)
             {
-                while (task.State == TaskState.Pending || task.State == TaskState.Running)
-                {
-                    System.Threading.Thread.Sleep(50);
-                }
-            }).ConfigureAwait(false);
+                await Task.Delay(50).ConfigureAwait(false);
+            }
         }
 
         /// <summary>

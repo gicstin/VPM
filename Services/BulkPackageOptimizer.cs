@@ -15,15 +15,22 @@ namespace VPM.Services
     /// - Package queue: Holds packages to process
     /// - Worker pool: Processes packages in parallel with semaphore control
     /// - Result collection: Thread-safe result aggregation
+    /// - Sequential mode: Optional single-threaded processing for debugging
     /// 
     /// Benefits:
     /// - 3-4x faster bulk optimization
     /// - Full system utilization for multi-package operations
     /// - Adaptive concurrency based on system resources
     /// - Graceful error handling and recovery
+    /// - Sequential mode for debugging and testing
     /// </summary>
     public class BulkPackageOptimizer
     {
+        /// <summary>
+        /// Global flag to disable multithreading for debugging/testing.
+        /// When true, all operations run sequentially on the calling thread.
+        /// </summary>
+        public static bool DisableMultithreading { get; set; } = false;
         /// <summary>
         /// Result of a single package optimization
         /// </summary>
@@ -172,6 +179,111 @@ namespace VPM.Services
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error in bulk package optimization: {ex.Message}");
+                throw;
+            }
+
+            return results;
+        }
+
+        /// <summary>
+        /// Optimizes packages sequentially (single-threaded) for debugging and testing.
+        /// Useful for identifying issues that only occur in sequential execution.
+        /// 
+        /// Benefit: Easier debugging, predictable execution order, no concurrency issues
+        /// </summary>
+        /// <param name="packagePaths">List of package paths to optimize</param>
+        /// <param name="optimizer">Async function to optimize a single package</param>
+        /// <param name="progressCallback">Optional progress callback</param>
+        /// <returns>Bulk optimization results with statistics</returns>
+        public static async Task<BulkOptimizationResults> OptimizePackagesSequentialAsync(
+            List<string> packagePaths,
+            Func<string, Task<(bool success, long originalSize, long optimizedSize, int texturesConverted, int hairsModified, TimeSpan processingTime, string errorMessage)>> optimizer,
+            Action<string, int, int> progressCallback = null)
+        {
+            if (packagePaths == null || packagePaths.Count == 0)
+                return new BulkOptimizationResults();
+
+            var results = new BulkOptimizationResults();
+            var resultsList = new List<PackageOptimizationResult>();
+            var startTime = DateTime.UtcNow;
+
+            try
+            {
+                for (int index = 0; index < packagePaths.Count; index++)
+                {
+                    var packagePath = packagePaths[index];
+                    string packageName = System.IO.Path.GetFileNameWithoutExtension(packagePath);
+                    progressCallback?.Invoke($"Processing: {packageName}...", index + 1, packagePaths.Count);
+
+                    var packageStartTime = DateTime.UtcNow;
+
+                    try
+                    {
+                        var (success, originalSize, optimizedSize, texturesConverted, hairsModified, processingTime, errorMessage) = 
+                            await optimizer(packagePath);
+
+                        var result = new PackageOptimizationResult
+                        {
+                            PackagePath = packagePath,
+                            PackageName = packageName,
+                            Success = success,
+                            ErrorMessage = errorMessage,
+                            OriginalSize = originalSize,
+                            OptimizedSize = optimizedSize,
+                            TexturesConverted = texturesConverted,
+                            HairsModified = hairsModified,
+                            ProcessingTime = processingTime
+                        };
+
+                        resultsList.Add(result);
+
+                        if (success)
+                        {
+                            double reduction = result.SizeReductionPercent;
+                            progressCallback?.Invoke(
+                                $"✅ {packageName}: {reduction:F1}% reduction ({result.SizeReduction / 1024 / 1024}MB saved)",
+                                index + 1,
+                                packagePaths.Count);
+                        }
+                        else
+                        {
+                            progressCallback?.Invoke(
+                                $"❌ {packageName}: {errorMessage}",
+                                index + 1,
+                                packagePaths.Count);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        var result = new PackageOptimizationResult
+                        {
+                            PackagePath = packagePath,
+                            PackageName = packageName,
+                            Success = false,
+                            ErrorMessage = ex.Message,
+                            ProcessingTime = DateTime.UtcNow - packageStartTime
+                        };
+
+                        resultsList.Add(result);
+                        progressCallback?.Invoke(
+                            $"❌ {packageName}: Exception - {ex.Message}",
+                            index + 1,
+                            packagePaths.Count);
+                    }
+                }
+
+                results.Results = resultsList;
+                results.TotalProcessingTime = DateTime.UtcNow - startTime;
+
+                // Summary
+                progressCallback?.Invoke(
+                    $"\n📊 Bulk Optimization Complete: {results.SuccessCount} succeeded, {results.FailureCount} failed, {results.TotalSizeReductionPercent:F1}% total reduction",
+                    packagePaths.Count,
+                    packagePaths.Count);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in sequential bulk package optimization: {ex.Message}");
                 throw;
             }
 
