@@ -415,17 +415,19 @@ namespace VPM
                 // Get cached images for this package
                 var packageBase = Path.GetFileNameWithoutExtension(packageMetadata.Filename);
                 
-                // Check if package has images
-                var totalAvailableImages = _imageManager.GetCachedImageCount(packageBase);
-                if (totalAvailableImages == 0)
+                // Get image locations directly from index instead of loading all images
+                if (!_imageManager.ImageIndex.TryGetValue(packageBase, out var imageLocations) || imageLocations.Count == 0)
+                {
+                    // Try to index if not found
+                    await _imageManager.BuildImageIndexFromVarsAsync(new[] { packageMetadata.FilePath });
+                    _imageManager.ImageIndex.TryGetValue(packageBase, out imageLocations);
+                }
+                
+                if (imageLocations == null || imageLocations.Count == 0)
                     return null;
                 
-                // Queue for preloading and load ALL available images (virtualization ensures only visible ones load)
+                // Queue for preloading (background task will handle cache warming)
                 _imageManager.QueueForPreloading(packageBase);
-                var images = await _imageManager.LoadImagesFromCacheAsync(packageBase, int.MaxValue);
-                
-                if (images.Count == 0)
-                    return null;
                 
                 // Create image tiles list early for reference in button handlers
                 var packageImageTiles = new List<LazyLoadImage>();
@@ -787,40 +789,34 @@ namespace VPM
                 // Create image tiles for this package using lazy loading
                 // var packageImageTiles = new List<LazyLoadImage>(); // Variable already declared at function start
                 
-                // Get image locations for extraction feature
-                var imageLocations = new List<ImageLocation>();
-                if (_imageManager?.ImageIndex != null && _imageManager.ImageIndex.TryGetValue(packageBase, out var locations))
-                {
-                    imageLocations = locations;
-                }
-                
-                for (int i = 0; i < images.Count; i++)
+                for (int i = 0; i < imageLocations.Count; i++)
                 {
                     try
                     {
-                        var image = images[i];
+                        var location = imageLocations[i];
                         
                         // Create lazy load image tile
                         var lazyImageTile = new LazyLoadImage
                         {
-                            ImageSource = image,
                             PackageKey = packageKey,
                             ImageIndex = i,
-                            ImageWidth = image.PixelWidth,
-                            ImageHeight = image.PixelHeight,
+                            ImageWidth = location.Width,
+                            ImageHeight = location.Height,
                             CornerRadius = new CornerRadius(UI_CORNER_RADIUS),
                             Margin = new Thickness(3),
-                            ToolTip = $"{packageItem.Name}\nDouble-click to open in image viewer"
+                            ToolTip = $"{packageItem.Name}\nDouble-click to open in image viewer",
+                            
+                            // Set callback for lazy loading
+                            LoadImageCallback = async () => 
+                            {
+                                return await _imageManager.LoadImageAsync(location.VarFilePath, location.InternalPath);
+                            },
+                            
+                            // Set extraction data
+                            VarFilePath = location.VarFilePath,
+                            InternalImagePath = location.InternalPath,
+                            GameFolder = _settingsManager?.Settings?.SelectedFolder
                         };
-                        
-                        // Set extraction data if available
-                        if (i < imageLocations.Count)
-                        {
-                            var location = imageLocations[i];
-                            lazyImageTile.VarFilePath = location.VarFilePath;
-                            lazyImageTile.InternalImagePath = location.InternalPath;
-                            lazyImageTile.GameFolder = _settingsManager?.Settings?.SelectedFolder;
-                        }
                         
                         // Apply clip geometry that updates with size changes
                         void ApplyClipGeometry(LazyLoadImage border)
@@ -845,9 +841,19 @@ namespace VPM
                             if (e.ClickCount == 2)
                             {
                                 var tile = s as LazyLoadImage;
-                                if (tile?.ImageSource != null)
+                                if (tile != null)
                                 {
-                                    await OpenImageInViewer(tile.PackageKey, tile.ImageSource);
+                                    var source = tile.ImageSource;
+                                    if (source == null)
+                                    {
+                                        await tile.LoadImageAsync();
+                                        source = tile.ImageSource;
+                                    }
+                                    
+                                    if (source != null)
+                                    {
+                                        await OpenImageInViewer(tile.PackageKey, source);
+                                    }
                                 }
                                 e.Handled = true;
                             }

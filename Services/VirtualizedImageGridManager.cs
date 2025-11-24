@@ -91,8 +91,7 @@ namespace VPM.Services
         
         /// <summary>
         /// Processes all registered images and loads visible ones (one-way - never unloads)
-        /// Images are sorted by vertical position to ensure top-to-bottom loading order
-        /// Returns the number of images loaded in this cycle
+        /// Uses binary search to efficiently find the visible range in the sorted list of images
         /// </summary>
         public async Task<int> ProcessImagesAsync()
         {
@@ -103,39 +102,49 @@ namespace VPM.Services
             try
             {
                 var viewportTop = _scrollViewer.VerticalOffset;
-                var viewportBottom = viewportTop + _scrollViewer.ViewportHeight;
-                var viewportCenter = (viewportTop + viewportBottom) / 2;
+                var viewportHeight = _scrollViewer.ViewportHeight;
+                var viewportBottom = viewportTop + viewportHeight;
+                
                 var loadTop = viewportTop - LoadBufferSize;
                 var loadBottom = viewportBottom + LoadBufferSize;
                 
-                // Get unloaded images that are in the visual tree
-                var unloadedImages = _lazyImages
-                    .Where(img => !img.IsImageLoaded && img.IsLoaded)
-                    .Select(img => new { Image = img, Position = GetVerticalPosition(img) })
-                    .Where(x => x.Position >= 0)  // Only images in visual tree
-                    .ToList();                
-                // Filter to ONLY images in the load zone, then sort by distance from viewport center
-                var imagesToLoad = unloadedImages
-                    .Where(x => x.Position <= loadBottom && (x.Position + 200) >= loadTop)  // In load zone
-                    .OrderBy(x => Math.Abs(x.Position - viewportCenter))  // Closest to center first
-                    .Select(x => x.Image)
-                    .ToList();
+                // Optimization: Use binary search to find the start index
+                // This assumes images are roughly sorted by vertical position (which they are in a grid)
+                int startIndex = FindFirstVisibleIndex(loadTop);
+                if (startIndex < 0) startIndex = 0;
                 
-                // Load images in priority order (closest to viewport center first)
                 int loadedCount = 0;
-                foreach (var image in imagesToLoad)
+                
+                // Iterate from start index until we go past the load bottom
+                for (int i = startIndex; i < _lazyImages.Count; i++)
                 {
-                    try
+                    var image = _lazyImages[i];
+                    
+                    // Skip if already loaded
+                    if (image.IsImageLoaded) continue;
+                    
+                    // Check position
+                    double top = GetVerticalPosition(image);
+                    
+                    // If not in visual tree yet, skip but continue (might be further down?)
+                    // Actually if it returns -1, it's not connected.
+                    if (top < 0) continue;
+                    
+                    // If we've gone past the bottom, stop processing
+                    // Add a small buffer (e.g. one row height ~300px) to handle grid irregularities
+                    if (top > loadBottom + 300) 
                     {
-                        // Check if image is visible and load if needed
-                        var wasLoaded = await image.CheckAndLoadIfVisibleAsync(_scrollViewer, LoadBufferSize);
-                        if (wasLoaded)
-                        {
-                            loadedCount++;
-                        }
+                        break;
                     }
-                    catch (Exception)
+                    
+                    // Check if in range (top is within load zone, or bottom is within load zone)
+                    double height = image.ActualHeight > 0 ? image.ActualHeight : (image.Height > 0 ? image.Height : 200);
+                    double bottom = top + height;
+                    
+                    if (bottom >= loadTop && top <= loadBottom)
                     {
+                        await image.LoadImageAsync();
+                        loadedCount++;
                     }
                 }
                 
@@ -145,6 +154,54 @@ namespace VPM.Services
             {
                 _isProcessing = false;
             }
+        }
+        
+        /// <summary>
+        /// Binary search to find the first image that might be visible
+        /// </summary>
+        private int FindFirstVisibleIndex(double targetTop)
+        {
+            int left = 0;
+            int right = _lazyImages.Count - 1;
+            int result = 0;
+            
+            while (left <= right)
+            {
+                int mid = left + (right - left) / 2;
+                var image = _lazyImages[mid];
+                double top = GetVerticalPosition(image);
+                
+                if (top < 0)
+                {
+                    // Item not in visual tree, treat as "before" or "after"?
+                    // This is tricky. If items are virtualized out, they might return -1.
+                    // But we assume no UI virtualization.
+                    // If -1, we can't rely on it. Linearly search?
+                    // For now, assume 0 to be safe if we hit this edge case.
+                    // Or just check neighbors?
+                    // Let's just fallback to linear scan if we hit -1, or skip.
+                    // But usually -1 means not loaded.
+                    
+                    // Fallback: just return 0 to be safe
+                    return 0;
+                }
+                
+                double height = image.ActualHeight > 0 ? image.ActualHeight : (image.Height > 0 ? image.Height : 200);
+                
+                if (top + height < targetTop)
+                {
+                    // Too high up, look down
+                    left = mid + 1;
+                }
+                else
+                {
+                    // This one is visible or below, but there might be one before it
+                    result = mid;
+                    right = mid - 1;
+                }
+            }
+            
+            return result;
         }
         
         /// <summary>

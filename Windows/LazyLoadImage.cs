@@ -207,6 +207,12 @@ namespace VPM.Windows
                 
                 if (image != null)
                 {
+                    // Update property if it was loaded via callback so it can be accessed later
+                    if (ImageSource == null)
+                    {
+                        ImageSource = image;
+                    }
+
                     // Set the Source and show immediately
                     await Dispatcher.InvokeAsync(() =>
                     {

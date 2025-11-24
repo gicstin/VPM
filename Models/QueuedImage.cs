@@ -15,10 +15,15 @@ namespace VPM.Models
         public int DecodeHeight { get; set; }
         public Action<QueuedImage> Callback { get; set; }
         public byte[] RawData { get; set; }
+        public System.IO.Stream RawDataStream { get; set; }
         public BitmapImage Texture { get; set; }
         public bool Processed { get; set; }
         public bool Finished { get; set; }
         public bool HadError { get; set; }
         public string ErrorText { get; set; }
+        
+        // Cache validation properties
+        public long FileSize { get; set; }
+        public long LastWriteTicks { get; set; }
     }
 }

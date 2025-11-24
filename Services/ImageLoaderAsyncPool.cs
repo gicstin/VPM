@@ -48,12 +48,14 @@ namespace VPM.Services
         public event Action<QueuedImage> ImageProcessed;
         
         private readonly Dispatcher _dispatcher;
+        private readonly ImageDiskCache _diskCache;
         private bool _disposed = false;
         private CancellationTokenSource _cancellationTokenSource;
         private Task _processingTask;
         
-        public ImageLoaderAsyncPool(int maxConcurrentLoads = 0)
+        public ImageLoaderAsyncPool(ImageDiskCache diskCache = null, int maxConcurrentLoads = 0)
         {
+            _diskCache = diskCache;
             if (maxConcurrentLoads <= 0)
             {
                 maxConcurrentLoads = Math.Max(1, Environment.ProcessorCount / 2);
@@ -208,6 +210,31 @@ namespace VPM.Services
                 // Load image from VAR archive
                 if (!string.IsNullOrEmpty(qi.VarPath) && !string.IsNullOrEmpty(qi.InternalPath))
                 {
+                    // Get file info for cache validation
+                    try
+                    {
+                        var fileInfo = new FileInfo(qi.VarPath);
+                        qi.FileSize = fileInfo.Length;
+                        qi.LastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
+                        
+                        // Try disk cache first
+                        if (_diskCache != null)
+                        {
+                            var cachedBitmap = _diskCache.TryGetCached(qi.VarPath, qi.InternalPath, qi.FileSize, qi.LastWriteTicks);
+                            if (cachedBitmap != null)
+                            {
+                                qi.Texture = cachedBitmap;
+                                qi.Finished = true;
+                                qi.Processed = true;
+                                return;
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore file info errors, proceed to load from VAR
+                    }
+
                     using var archive = SharpCompressHelper.OpenForRead(qi.VarPath);
                     
                     var entry = SharpCompressHelper.FindEntryByPath(archive, qi.InternalPath);
@@ -236,8 +263,8 @@ namespace VPM.Services
                     }
                     
                     using var entryStream = entry.OpenEntryStream();
-                    // Use non-pooled MemoryStream to avoid .NET 10 disposal issues with pooled streams
-                    using var memoryStream = new MemoryStream();
+                    // Use pooled MemoryStream to avoid allocation and fragmentation
+                    var memoryStream = MemoryStreamPool.Manager.GetStream();
                     
                     entryStream.CopyTo(memoryStream);
                     memoryStream.Position = 0;
@@ -245,6 +272,7 @@ namespace VPM.Services
                     // Validate image stream (redundant but provides additional safety)
                     if (!IsValidImageStream(memoryStream))
                     {
+                        memoryStream.Dispose();
                         qi.HadError = true;
                         qi.ErrorText = "Invalid image stream";
                         return;
@@ -252,14 +280,20 @@ namespace VPM.Services
                     
                     memoryStream.Position = 0;
                     
-                    // Store raw data for UI thread processing
-                    qi.RawData = memoryStream.ToArray();
+                    // Store raw data stream for UI thread processing
+                    qi.RawDataStream = memoryStream;
                 }
             }
             catch (Exception ex)
             {
                 qi.HadError = true;
                 qi.ErrorText = ex.Message;
+                // Ensure stream is disposed if we created it but failed
+                if (qi.RawDataStream != null)
+                {
+                    qi.RawDataStream.Dispose();
+                    qi.RawDataStream = null;
+                }
             }
             finally
             {
@@ -272,12 +306,19 @@ namespace VPM.Services
         /// </summary>
         private void FinishImage(QueuedImage qi)
         {
-            if (qi.HadError || qi.Finished || qi.RawData == null) return;
+            if (qi.HadError || qi.Finished || (qi.RawData == null && qi.RawDataStream == null)) return;
             
-            MemoryStream memoryStream = null;
+            Stream memoryStream = null;
             try
             {
-                memoryStream = new MemoryStream(qi.RawData);
+                if (qi.RawDataStream != null)
+                {
+                    memoryStream = qi.RawDataStream;
+                }
+                else
+                {
+                    memoryStream = new MemoryStream(qi.RawData);
+                }
                 
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
@@ -298,14 +339,24 @@ namespace VPM.Services
                 bitmap.Freeze();
                 
                 qi.Texture = bitmap;
+                
+                // Save to disk cache if available
+                if (_diskCache != null && qi.FileSize > 0 && qi.LastWriteTicks > 0)
+                {
+                    _diskCache.TrySaveToCache(qi.VarPath, qi.InternalPath, qi.FileSize, qi.LastWriteTicks, bitmap);
+                }
+                
                 qi.Finished = true;
                 
+                // Dispose stream after loading
                 memoryStream.Dispose();
                 memoryStream = null;
+                qi.RawDataStream = null;
             }
             catch (Exception ex)
             {
                 memoryStream?.Dispose();
+                qi.RawDataStream = null;
                 qi.HadError = true;
                 qi.ErrorText = ex.Message;
             }

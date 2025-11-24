@@ -99,7 +99,7 @@ namespace VPM.Services
             _diskCache = new ImageDiskCache();
             
             // Initialize async image loader pool
-            _asyncPool = new ImageLoaderAsyncPool();
+            _asyncPool = new ImageLoaderAsyncPool(_diskCache);
             _asyncPool.ProgressChanged += OnThreadPoolProgressChanged;
             _asyncPool.ImageProcessed += OnThreadPoolImageProcessed;
             
@@ -946,6 +946,60 @@ namespace VPM.Services
             }
 
             return results;
+        }
+
+        /// <summary>
+        /// Loads a single image asynchronously, checking cache first
+        /// </summary>
+        public async Task<BitmapImage> LoadImageAsync(string varPath, string internalPath)
+        {
+            if (string.IsNullOrEmpty(varPath) || string.IsNullOrEmpty(internalPath))
+                return null;
+
+            var cacheKey = $"{varPath}::{internalPath}";
+            var cachedBitmap = GetCachedImage(cacheKey);
+            if (cachedBitmap != null)
+            {
+                return cachedBitmap;
+            }
+
+            var tcs = new TaskCompletionSource<BitmapImage>();
+            
+            var qi = new QueuedImage
+            {
+                VarPath = varPath,
+                InternalPath = internalPath,
+                Callback = (q) =>
+                {
+                    if (q.HadError)
+                    {
+                        // Return null on error instead of throwing to avoid crashing UI
+                        tcs.TrySetResult(null);
+                    }
+                    else
+                    {
+                        // Cache it
+                        if (q.Texture != null)
+                        {
+                            _bitmapCacheLock.EnterWriteLock();
+                            try
+                            {
+                                AddToStrongCache(cacheKey, q.Texture);
+                                _bitmapCache[cacheKey] = new WeakReference<BitmapImage>(q.Texture);
+                            }
+                            finally
+                            {
+                                _bitmapCacheLock.ExitWriteLock();
+                            }
+                        }
+                        tcs.TrySetResult(q.Texture);
+                    }
+                }
+            };
+            
+            _asyncPool.QueueImage(qi);
+            
+            return await tcs.Task;
         }
 
         public async Task<List<BitmapImage>> LoadImagesFromCacheAsync(string packageName, int maxImages = 50)
