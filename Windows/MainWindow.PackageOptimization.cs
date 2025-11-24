@@ -219,7 +219,7 @@ namespace VPM
                     long newPackageSize = 0;
                     int texturesConverted = 0;
                     
-                    var repackager = new VarRepackager(_imageManager);
+                    var repackager = new VarRepackager(_imageManager, _settingsManager);
                     var repackageResult = await repackager.RepackageVarWithStatsAsync(packagePath, archivedFolder, conversions, (message, current, total) =>
                     {
                         Dispatcher.Invoke(() =>
@@ -1199,7 +1199,7 @@ namespace VPM
                 int hairsModified = 0;
                 
                 var repackageStartTime = benchmarkStart.ElapsedMilliseconds;
-                var repackager = new PackageRepackager(_imageManager);
+                var repackager = new PackageRepackager(_imageManager, _settingsManager);
                 var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
                     packagePath, 
                     archivedFolder, 
@@ -2299,7 +2299,9 @@ namespace VPM
                 optimizeButton.Content = $"Optimizing 0/{packagesToOptimize.Count}...";
 
                 int completed = 0;
+                int failedPackageCount = 0;
                 var errors = new List<string>();
+                var detailedErrors = new List<string>();
                 long totalOriginalSize = 0;
                 long totalNewSize = 0;
                 var packageDetails = new Dictionary<string, OptimizationDetails>();
@@ -2378,6 +2380,31 @@ namespace VPM
                         
                         // Call the core optimization logic directly without UI manipulation
                         var optimizationCoreResult = await OptimizeSinglePackageCore(packageName, pkgTextureResult, pkgHairResult, pkgDisabledDeps, pkgLatestDeps, minifyJson, progressCallback);
+
+                        bool packageFailed = false;
+
+                        // Collect errors from optimization result
+                        if (optimizationCoreResult.Errors != null && optimizationCoreResult.Errors.Count > 0)
+                        {
+                            foreach (var error in optimizationCoreResult.Errors)
+                            {
+                                detailedErrors.Add($"Package: {packageName}\nError: {error}");
+                                // Also add to main errors list if it's critical
+                                if (error.Contains("CRITICAL") || error.Contains("Exception"))
+                                {
+                                    errors.Add($"{packageName}: {error}");
+                                    packageFailed = true;
+                                }
+                            }
+                            
+                            // If we have errors but no critical ones, add a summary
+                            if (!errors.Any(e => e.StartsWith($"{packageName}:")))
+                            {
+                                errors.Add($"{packageName}: Completed with {optimizationCoreResult.Errors.Count} warnings/errors (see report)");
+                            }
+                        }
+
+                        if (packageFailed) failedPackageCount++;
 
                         // Get new size
                         long newSize = 0;
@@ -2508,8 +2535,20 @@ namespace VPM
                     }
                     catch (Exception ex)
                     {
+                        failedPackageCount++;
                         string errorMsg = $"{packageName}: {ex.Message}";
                         errors.Add(errorMsg);
+                        
+                        // Add to detailed errors list for report
+                        string detailedError = $"Package: {packageName}\n" +
+                                             $"Error: {ex.Message}\n" +
+                                             $"Type: {ex.GetType().Name}\n" +
+                                             $"Stack Trace:\n{ex.StackTrace}";
+                        if (ex.InnerException != null)
+                        {
+                            detailedError += $"\nInner Exception: {ex.InnerException.Message}";
+                        }
+                        detailedErrors.Add(detailedError);
                         
                         // Log full exception details to file
                         try
@@ -2598,7 +2637,7 @@ namespace VPM
                     summaryWindow.ShowInTaskbar = true;
                     summaryWindow.SetSummaryData(
                         completed,
-                        errors.Count,
+                        failedPackageCount,
                         spaceSaved,
                         percentSaved,
                         sizeIncreased,
@@ -2609,7 +2648,8 @@ namespace VPM
                         backupFolderPath,
                         elapsedTime,
                         packagesSkipped,
-                        totalSelected);
+                        totalSelected,
+                        detailedErrors);
                     
                     summaryWindow.Show();
                     
@@ -2652,6 +2692,7 @@ namespace VPM
         private class OptimizationCoreResult
         {
             public List<string> TextureDetails { get; set; } = new List<string>();
+            public List<string> Errors { get; set; } = new List<string>();
             public long JsonSizeBeforeMinify { get; set; } = 0;
             public long JsonSizeAfterMinify { get; set; } = 0;
         }
@@ -2811,7 +2852,7 @@ namespace VPM
 
             // Create repackager and run optimization
             var coreResult = new OptimizationCoreResult();
-            var repackager = new PackageRepackager(_imageManager);
+            var repackager = new PackageRepackager(_imageManager, _settingsManager);
             var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
                 packagePath,
                 archivedFolder,
@@ -2820,6 +2861,7 @@ namespace VPM
                 needsBackup // Pass the backup flag
             );
             coreResult.TextureDetails = optimizationResult.TextureDetails ?? new List<string>();
+            coreResult.Errors = optimizationResult.Errors ?? new List<string>();
             coreResult.JsonSizeBeforeMinify = optimizationResult.JsonSizeBeforeMinify;
             coreResult.JsonSizeAfterMinify = optimizationResult.JsonSizeAfterMinify;
 
@@ -4135,6 +4177,7 @@ namespace VPM
 
                 int optimized = 0;
                 var errors = new List<string>();
+                var detailedErrors = new List<string>();
                 var sceneDetails = new Dictionary<string, OptimizationDetails>();
                 long totalOriginalSize = 0;
                 long totalNewSize = 0;
@@ -4219,6 +4262,18 @@ namespace VPM
                     catch (Exception ex)
                     {
                         errors.Add($"{scene.DisplayName}: {ex.Message}");
+                        
+                        // Add to detailed errors list
+                        string detailedError = $"Scene: {scene.DisplayName}\n" +
+                                             $"Error: {ex.Message}\n" +
+                                             $"Type: {ex.GetType().Name}\n" +
+                                             $"Stack Trace:\n{ex.StackTrace}";
+                        if (ex.InnerException != null)
+                        {
+                            detailedError += $"\nInner Exception: {ex.InnerException.Message}";
+                        }
+                        detailedErrors.Add(detailedError);
+
                         details.Error = ex.Message;
                         sceneDetails[scene.DisplayName] = details;
                     }
@@ -4255,7 +4310,8 @@ namespace VPM
                     archiveFolder,
                     elapsedTime,
                     0, // scenes don't have skipped count (all are processed)
-                    totalSelected);
+                    totalSelected,
+                    detailedErrors);
                 
                 summaryWindow.Show();
 

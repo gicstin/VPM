@@ -20,12 +20,20 @@ namespace VPM.Services
     {
         private readonly TextureConverter _textureConverter;
         private readonly ImageManager _imageManager;
+        private readonly ISettingsManager _settingsManager;
         private OptimizationTimer _performanceTimer;
 
-        public PackageRepackager(ImageManager imageManager = null)
+        public PackageRepackager(ImageManager imageManager = null, ISettingsManager settingsManager = null)
         {
             _textureConverter = new TextureConverter();
             _imageManager = imageManager;
+            _settingsManager = settingsManager;
+            
+            if (_settingsManager != null)
+            {
+                _textureConverter.CompressionQuality = _settingsManager.Settings.TextureCompressionQuality;
+            }
+            
             _performanceTimer = new OptimizationTimer();
         }
 
@@ -83,6 +91,7 @@ namespace VPM.Services
             public int TexturesConverted { get; set; }
             public int HairsModified { get; set; }
             public List<string> TextureDetails { get; set; } = new List<string>();
+            public List<string> Errors { get; set; } = new List<string>();
             public long JsonSizeBeforeMinify { get; set; } = 0;
             public long JsonSizeAfterMinify { get; set; } = 0;
         }
@@ -331,6 +340,7 @@ namespace VPM.Services
                     long originalTotalSize = 0;
                     long newTotalSize = 0;
                     var textureConversionDetails = new ConcurrentBag<string>();
+                    var errors = new ConcurrentBag<string>();
                     var hairConversionDetails = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     var lightConversionDetails = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -535,7 +545,7 @@ namespace VPM.Services
                         
                         if (textureEntries.Count > 0)
                         {
-                            progressCallback?.Invoke($"🖼️  Converting {textureEntries.Count} texture(s)...", 0, totalOperations);
+                            progressCallback?.Invoke($"⚡ Starting texture conversion...", 0, totalOperations);
                         }
 
                         // Use adaptive memory-aware parallelism with proper async I/O
@@ -553,6 +563,10 @@ namespace VPM.Services
                                 try
                                 {
                                     var (entry, _, _, _) = item;
+                                    
+                                    // Update progress with current texture name
+                                    // progressCallback?.Invoke($"⚡ Converting: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+
                                     var conversionInfo = config.TextureConversions[entry.Key];
 
                                     try
@@ -595,16 +609,16 @@ namespace VPM.Services
                                             
                                             string textureName = Path.GetFileName(entry.Key);
                                             string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
-                                            string detail = $"  • {textureName}: {originalRes} → {conversionInfo.targetResolution} ({FormatBytes(sourceData.Length)} → {FormatBytes(convertedData.Length)})";
+                                            string detail = $"  • {textureName}: {originalRes} -> {conversionInfo.targetResolution} ({FormatBytes(sourceData.Length)} -> {FormatBytes(convertedData.Length)})";
                                             textureConversionDetails.Add(detail);
                                             
                                             convertedTextures[entry.Key] = (convertedData, entry.LastModifiedTime ?? DateTimeOffset.Now);
-                                            progressCallback?.Invoke($"🖼️  [{currentProcessed}/{totalOperations}] ✓ Converted: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                            progressCallback?.Invoke($"⚡ [{currentProcessed}/{totalOperations}] ✓ Converted: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         }
                                         else
                                         {
                                             Interlocked.Add(ref newTotalSize, sourceData.Length);
-                                            progressCallback?.Invoke($"🖼️  [{currentProcessed}/{totalOperations}] ⊘ Skipped: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                            progressCallback?.Invoke($"⚡ [{currentProcessed}/{totalOperations}] ⊘ Skipped: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         }
                                         
                                         // Explicitly clear sourceData to help GC
@@ -620,6 +634,7 @@ namespace VPM.Services
                                         }
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
                                         progressCallback?.Invoke($"⚠️  [{currentProcessed}/{totalOperations}] Skipping (unsupported compression): {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                        errors.Add($"Unsupported compression: {Path.GetFileName(entry.Key)}");
                                         
                                         // Log to file for debugging
                                         try
@@ -634,6 +649,7 @@ namespace VPM.Services
                                         failedTextures[entry.Key] = (null, entry.LastModifiedTime ?? DateTimeOffset.Now, "Corrupted file header - copied as-is");
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
                                         progressCallback?.Invoke($"⚠️  [{currentProcessed}/{totalOperations}] Texture unreadable, copying as-is: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                        errors.Add($"Corrupted file header (copied as-is): {Path.GetFileName(entry.Key)}");
                                         
                                         // Log to file for debugging
                                         try
@@ -647,6 +663,7 @@ namespace VPM.Services
                                         // Log other errors but continue processing
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
                                         progressCallback?.Invoke($"❌ [{currentProcessed}/{totalOperations}] Error converting {Path.GetFileName(entry.Key)}: {ex.Message}", currentProcessed, totalOperations);
+                                        errors.Add($"Error converting {Path.GetFileName(entry.Key)}: {ex.Message}");
                                         
                                         // Log to file for debugging
                                         try
@@ -749,6 +766,7 @@ namespace VPM.Services
                                 // Skip entries with unsupported compression methods
                                 int currentProcessed = Interlocked.Increment(ref processedCount);
                                 progressCallback?.Invoke($"⚠️  [{currentProcessed}/{totalOperations}] Skipping (unsupported compression): {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                errors.Add($"Unsupported compression (scene): {Path.GetFileName(entry.Key)}");
                                 
                                 // Log to file for debugging
                                 try
@@ -762,6 +780,7 @@ namespace VPM.Services
                                 // Log other errors but continue processing
                                 int currentProcessed = Interlocked.Increment(ref processedCount);
                                 progressCallback?.Invoke($"❌ [{currentProcessed}/{totalOperations}] Error processing {Path.GetFileName(entry.Key)}: {ex.Message}", currentProcessed, totalOperations);
+                                errors.Add($"Error processing {Path.GetFileName(entry.Key)}: {ex.Message}");
                                 
                                 // Log to file for debugging
                                 try
@@ -888,9 +907,10 @@ namespace VPM.Services
                             catch (SharpCompress.Compressors.Deflate.ZlibException zlibEx)
                             {
                                 // CRITICAL FIX: Never skip textures - copy as-is even if decompression fails
-                                System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Decompression error on entry (copying as-is): {entry.Key}");
-                                System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ZlibException: {zlibEx.Message}");
+                                // System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Decompression error on entry (copying as-is): {entry.Key}");
+                                // System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ZlibException: {zlibEx.Message}");
                                 progressCallback?.Invoke($"⚠️  Decompression issue, copying as-is: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                errors.Add($"Decompression issue (copied as-is): {Path.GetFileName(entry.Key)}");
                                 
                                 // Copy the entry as-is from source to destination
                                 try
@@ -902,11 +922,12 @@ namespace VPM.Services
                                 {
                                     System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ✗ CRITICAL: Could not copy entry as-is: {entry.Key}");
                                     System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] Copy error: {copyEx.Message}");
-                                    progressCallback?.Invoke($"❌ CRITICAL: Could not include texture: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                    progressCallback?.Invoke($"❌ CRITICAL: Could not include texture: {SanitizeEntryName(Path.GetFileName(entry.Key))}", processedCount, totalOperations);
+                                    errors.Add($"CRITICAL: Could not include texture: {SanitizeEntryName(Path.GetFileName(entry.Key))} - {copyEx.Message}");
                                     // This is a true failure - log it
                                     try
                                     {
-                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] CRITICAL: Could not copy entry {entry.Key}: {copyEx.Message}\n");
+                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] CRITICAL: Could not copy entry {SanitizeEntryName(entry.Key)}: {copyEx.Message}\n");
                                     }
                                     catch { }
                                 }
@@ -915,12 +936,13 @@ namespace VPM.Services
                             {
                                 // Entry is corrupted - skip it gracefully
                                 System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Skipping corrupted entry: {entry.Key}");
-                                progressCallback?.Invoke($"⚠️  Skipping corrupted entry: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                progressCallback?.Invoke($"⚠️  Skipping corrupted entry: {SanitizeEntryName(Path.GetFileName(entry.Key))}", processedCount, totalOperations);
+                                errors.Add($"Skipping corrupted entry: {SanitizeEntryName(Path.GetFileName(entry.Key))}");
                                 writeIndex++;
                                 // Log but continue
                                 try
                                 {
-                                    File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] SKIPPED (corrupted): {entry.Key}\n");
+                                    File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] SKIPPED (corrupted): {SanitizeEntryName(entry.Key)}\n");
                                 }
                                 catch { }
                             }
@@ -930,7 +952,8 @@ namespace VPM.Services
                                 System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Write error on entry (attempting to copy as-is): {entry.Key}");
                                 System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] Exception Type: {writeEx.GetType().Name}");
                                 System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] Exception Message: {writeEx.Message}");
-                                progressCallback?.Invoke($"⚠️  Write error, attempting to copy as-is: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                progressCallback?.Invoke($"⚠️  Write error, attempting to copy as-is: {SanitizeEntryName(Path.GetFileName(entry.Key))}", processedCount, totalOperations);
+                                errors.Add($"Write error (attempting to copy as-is): {SanitizeEntryName(Path.GetFileName(entry.Key))} - {writeEx.Message}");
                                 
                                 // Try to copy the entry as-is
                                 try
@@ -942,11 +965,12 @@ namespace VPM.Services
                                 {
                                     // Entry is corrupted - skip it
                                     System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Skipping corrupted entry (copy failed): {entry.Key}");
-                                    progressCallback?.Invoke($"⚠️  Skipping corrupted entry: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                    progressCallback?.Invoke($"⚠️  Skipping corrupted entry: {SanitizeEntryName(Path.GetFileName(entry.Key))}", processedCount, totalOperations);
+                                    errors.Add($"Skipping corrupted entry (copy failed): {SanitizeEntryName(Path.GetFileName(entry.Key))}");
                                     writeIndex++;
                                     try
                                     {
-                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] SKIPPED (corrupted, copy failed): {entry.Key}\n");
+                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] SKIPPED (corrupted, copy failed): {SanitizeEntryName(entry.Key)}\n");
                                     }
                                     catch { }
                                 }
@@ -954,11 +978,12 @@ namespace VPM.Services
                                 {
                                     System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ✗ CRITICAL: Could not copy entry as-is: {entry.Key}");
                                     System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] Copy error: {copyEx.Message}");
-                                    progressCallback?.Invoke($"❌ CRITICAL: Could not include texture: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                    progressCallback?.Invoke($"❌ CRITICAL: Could not include texture: {SanitizeEntryName(Path.GetFileName(entry.Key))}", processedCount, totalOperations);
+                                    errors.Add($"CRITICAL: Could not include texture: {SanitizeEntryName(Path.GetFileName(entry.Key))} - {copyEx.Message}");
                                     // This is a true failure - log it
                                     try
                                     {
-                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] CRITICAL: Could not copy entry {entry.Key}: {copyEx.Message}\n");
+                                        File.AppendAllText(errorLogPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] CRITICAL: Could not copy entry {SanitizeEntryName(entry.Key)}: {copyEx.Message}\n");
                                     }
                                     catch { }
                                 }
@@ -1096,6 +1121,7 @@ namespace VPM.Services
                         TexturesConverted = textureConversionDetails.Count,
                         HairsModified = hairConversionDetails.Count,
                         TextureDetails = textureConversionDetails.ToList(),
+                        Errors = errors.ToList(),
                         JsonSizeBeforeMinify = jsonSizeBeforeMinify,
                         JsonSizeAfterMinify = jsonSizeAfterMinify
                     };
@@ -1127,18 +1153,19 @@ namespace VPM.Services
             catch (Exception ex)
             {
                 progressCallback?.Invoke("Error: " + ex.Message, 0, 0);
-                return new RepackageResult
-                {
-                    OutputPath = sourceVarPath,
-                    OriginalSize = 0,
-                    NewSize = 0,
-                    TexturesConverted = 0,
-                    HairsModified = 0,
-                    TextureDetails = new List<string>(),
-                    JsonSizeBeforeMinify = 0,
-                    JsonSizeAfterMinify = 0
-                };
+                // Rethrow the exception so the caller knows the optimization failed
+                throw;
             }
+        }
+
+        /// <summary>
+        /// Sanitizes entry name to remove non-printable characters and prevent garbage output
+        /// </summary>
+        private static string SanitizeEntryName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "[Empty Name]";
+            // Replace non-printable characters with '?'
+            return new string(name.Select(c => char.IsControl(c) ? '?' : c).ToArray());
         }
 
         /// <summary>

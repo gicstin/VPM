@@ -25,7 +25,7 @@ namespace VPM.Services
         
         // Separate queues for priority management
         private readonly ConcurrentQueue<QueuedImage> _thumbnailQueue = new();
-        private readonly ConcurrentQueue<QueuedImage> _imageQueue = new();
+        private readonly ConcurrentStack<QueuedImage> _imageQueue = new();
         
         // Texture reference counting for lifecycle management
         private readonly Dictionary<BitmapImage, int> _textureUseCount = new();
@@ -189,7 +189,7 @@ namespace VPM.Services
             }
             
             // Then regular images
-            if (_imageQueue.TryDequeue(out image))
+            if (_imageQueue.TryPop(out image))
             {
                 return true;
             }
@@ -280,8 +280,49 @@ namespace VPM.Services
                     
                     memoryStream.Position = 0;
                     
-                    // Store raw data stream for UI thread processing
-                    qi.RawDataStream = memoryStream;
+                    memoryStream.Position = 0;
+                    
+                    // Create BitmapImage on background thread
+                    try
+                    {
+                        var bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = memoryStream;
+                        bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
+                        
+                        if (qi.DecodeWidth > 0)
+                        {
+                            bitmap.DecodePixelWidth = qi.DecodeWidth;
+                        }
+                        if (qi.DecodeHeight > 0)
+                        {
+                            bitmap.DecodePixelHeight = qi.DecodeHeight;
+                        }
+                        
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+                        
+                        qi.Texture = bitmap;
+                        qi.Finished = true;
+                        
+                        // Save to disk cache if available
+                        if (_diskCache != null && qi.FileSize > 0 && qi.LastWriteTicks > 0)
+                        {
+                            _diskCache.TrySaveToCache(qi.VarPath, qi.InternalPath, qi.FileSize, qi.LastWriteTicks, bitmap);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        qi.HadError = true;
+                        qi.ErrorText = "Bitmap creation failed: " + ex.Message;
+                    }
+                    finally
+                    {
+                        // Dispose stream after loading
+                        memoryStream.Dispose();
+                        qi.RawDataStream = null;
+                    }
                 }
             }
             catch (Exception ex)
@@ -302,64 +343,12 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Finishes image processing on UI thread (creates BitmapImage)
+        /// Finishes image processing on UI thread (invokes callbacks)
         /// </summary>
         private void FinishImage(QueuedImage qi)
         {
-            if (qi.HadError || qi.Finished || (qi.RawData == null && qi.RawDataStream == null)) return;
-            
-            Stream memoryStream = null;
-            try
-            {
-                if (qi.RawDataStream != null)
-                {
-                    memoryStream = qi.RawDataStream;
-                }
-                else
-                {
-                    memoryStream = new MemoryStream(qi.RawData);
-                }
-                
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.StreamSource = memoryStream;
-                bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
-                
-                if (qi.DecodeWidth > 0)
-                {
-                    bitmap.DecodePixelWidth = qi.DecodeWidth;
-                }
-                if (qi.DecodeHeight > 0)
-                {
-                    bitmap.DecodePixelHeight = qi.DecodeHeight;
-                }
-                
-                bitmap.EndInit();
-                bitmap.Freeze();
-                
-                qi.Texture = bitmap;
-                
-                // Save to disk cache if available
-                if (_diskCache != null && qi.FileSize > 0 && qi.LastWriteTicks > 0)
-                {
-                    _diskCache.TrySaveToCache(qi.VarPath, qi.InternalPath, qi.FileSize, qi.LastWriteTicks, bitmap);
-                }
-                
-                qi.Finished = true;
-                
-                // Dispose stream after loading
-                memoryStream.Dispose();
-                memoryStream = null;
-                qi.RawDataStream = null;
-            }
-            catch (Exception ex)
-            {
-                memoryStream?.Dispose();
-                qi.RawDataStream = null;
-                qi.HadError = true;
-                qi.ErrorText = ex.Message;
-            }
+            // No-op: Image creation now happens in ProcessImage on background thread
+            // This method is kept for architectural consistency but does nothing
         }
         
         /// <summary>
@@ -401,7 +390,7 @@ namespace VPM.Services
             if (qi == null) return;
             
             qi.IsThumbnail = false;
-            _imageQueue.Enqueue(qi);
+            _imageQueue.Push(qi);
             
             lock (_progressLock)
             {
@@ -564,7 +553,7 @@ namespace VPM.Services
         public void ClearQueues()
         {
             while (_thumbnailQueue.TryDequeue(out _)) { }
-            while (_imageQueue.TryDequeue(out _)) { }
+            while (_imageQueue.TryPop(out _)) { }
             
             lock (_progressLock)
             {

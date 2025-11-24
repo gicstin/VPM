@@ -603,10 +603,13 @@ namespace VPM
                 }
                 else
                 {
-                    // Filter dependencies by text - using ContainsSearch for partial term matching
+                    // Prepare search terms
+                    var searchTerms = VPM.Services.SearchHelper.PrepareSearchTerms(filterText);
+
+                    // Filter dependencies by text - using MatchesAllTerms for multi-term matching
                     foreach (var dep in _originalDependencies)
                     {
-                        if (VPM.Services.SearchHelper.ContainsSearch(dep.Name, filterText))
+                        if (VPM.Services.SearchHelper.MatchesAllTerms(dep.Name, searchTerms))
                         {
                             Dependencies.Add(dep);
                         }
@@ -1450,10 +1453,11 @@ namespace VPM
                 ContentTypesList.Items.Clear();
                 
                 var categoryCounts = _filterManager.GetCategoryCounts(_packageManager.PackageMetadata);
+                var searchTerms = VPM.Services.SearchHelper.PrepareSearchTerms(filterText);
                 
                 foreach (var category in categoryCounts.OrderBy(c => c.Key))
                 {
-                    if (VPM.Services.SearchHelper.ContainsSearch(category.Key, filterText))
+                    if (VPM.Services.SearchHelper.MatchesAllTerms(category.Key, searchTerms))
                     {
                         var displayText = $"{category.Key} ({category.Value})";
                         ContentTypesList.Items.Add(displayText);
@@ -1481,10 +1485,11 @@ namespace VPM
                 CreatorsList.Items.Clear();
                 
                 var creatorCounts = _filterManager.GetCreatorCounts(_packageManager.PackageMetadata);
+                var searchTerms = VPM.Services.SearchHelper.PrepareSearchTerms(filterText);
                 
                 foreach (var creator in creatorCounts.OrderBy(c => c.Key))
                 {
-                    if (VPM.Services.SearchHelper.ContainsSearch(creator.Key, filterText))
+                    if (VPM.Services.SearchHelper.MatchesAllTerms(creator.Key, searchTerms))
                     {
                         var displayText = $"{creator.Key} ({creator.Value})";
                         CreatorsList.Items.Add(displayText);
@@ -1512,10 +1517,11 @@ namespace VPM
                 LicenseTypeList.Items.Clear();
                 
                 var licenseCounts = _filterManager.GetLicenseCounts(_packageManager.PackageMetadata);
+                var searchTerms = VPM.Services.SearchHelper.PrepareSearchTerms(filterText);
                 
                 foreach (var license in licenseCounts.OrderBy(l => l.Key))
                 {
-                    if (VPM.Services.SearchHelper.ContainsSearch(license.Key, filterText))
+                    if (VPM.Services.SearchHelper.MatchesAllTerms(license.Key, searchTerms))
                     {
                         var displayText = $"{license.Key} ({license.Value})";
                         LicenseTypeList.Items.Add(displayText);
@@ -1543,10 +1549,11 @@ namespace VPM
                 SubfoldersFilterList.Items.Clear();
                 
                 var subfolderCounts = _filterManager.GetSubfolderCounts(_packageManager.PackageMetadata);
+                var searchTerms = VPM.Services.SearchHelper.PrepareSearchTerms(filterText);
                 
                 foreach (var subfolder in subfolderCounts.OrderBy(s => s.Key))
                 {
-                    if (VPM.Services.SearchHelper.ContainsSearch(subfolder.Key, filterText))
+                    if (VPM.Services.SearchHelper.MatchesAllTerms(subfolder.Key, searchTerms))
                     {
                         var displayText = $"{subfolder.Key} ({subfolder.Value})";
                         SubfoldersFilterList.Items.Add(displayText);

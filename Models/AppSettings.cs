@@ -110,6 +110,7 @@ namespace VPM.Models
         private bool _forceLatestDependencies = true;
         private bool _disableMorphPreload = true;
         private bool _minifyJsonFiles = true;
+        private long _textureCompressionQuality = 90L;
         
         // Filter Position Settings
         private List<string> _packageFilterOrder = new List<string> { "DateFilter", "StatusFilter", "ContentTypesFilter", "CreatorsFilter", "LicenseTypeFilter", "FileSizeFilter", "SubfoldersFilter", "DamagedFilter" };
@@ -592,6 +593,12 @@ namespace VPM.Models
         {
             get => _minifyJsonFiles;
             set => SetProperty(ref _minifyJsonFiles, value);
+        }
+
+        public long TextureCompressionQuality
+        {
+            get => _textureCompressionQuality;
+            set => SetProperty(ref _textureCompressionQuality, Math.Max(10, Math.Min(100, value)));
         }
         
         // Filter Position Settings Properties

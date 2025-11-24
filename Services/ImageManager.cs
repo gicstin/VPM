@@ -951,12 +951,18 @@ namespace VPM.Services
         /// <summary>
         /// Loads a single image asynchronously, checking cache first
         /// </summary>
-        public async Task<BitmapImage> LoadImageAsync(string varPath, string internalPath)
+        public async Task<BitmapImage> LoadImageAsync(string varPath, string internalPath, int decodeWidth = 0, int decodeHeight = 0)
         {
             if (string.IsNullOrEmpty(varPath) || string.IsNullOrEmpty(internalPath))
                 return null;
 
+            // Include dimensions in cache key if specified
             var cacheKey = $"{varPath}::{internalPath}";
+            if (decodeWidth > 0 || decodeHeight > 0)
+            {
+                cacheKey += $"::{decodeWidth}x{decodeHeight}";
+            }
+
             var cachedBitmap = GetCachedImage(cacheKey);
             if (cachedBitmap != null)
             {
@@ -969,6 +975,8 @@ namespace VPM.Services
             {
                 VarPath = varPath,
                 InternalPath = internalPath,
+                DecodeWidth = decodeWidth,
+                DecodeHeight = decodeHeight,
                 Callback = (q) =>
                 {
                     if (q.HadError)
@@ -996,6 +1004,26 @@ namespace VPM.Services
                     }
                 }
             };
+            
+            // Optimization: Try to get file signature from index to avoid disk I/O in thread pool
+            try 
+            {
+                var packageName = Path.GetFileNameWithoutExtension(varPath);
+                _signatureLock.EnterReadLock();
+                try
+                {
+                    if (_imageIndexSignatures.TryGetValue(packageName, out var signature))
+                    {
+                        qi.FileSize = signature.length;
+                        qi.LastWriteTicks = signature.lastWriteTicks;
+                    }
+                }
+                finally
+                {
+                    _signatureLock.ExitReadLock();
+                }
+            }
+            catch { }
             
             _asyncPool.QueueImage(qi);
             

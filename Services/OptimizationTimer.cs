@@ -70,8 +70,8 @@ namespace VPM.Services
                 entry.MinMilliseconds = Math.Min(entry.MinMilliseconds, elapsed);
                 entry.MaxMilliseconds = Math.Max(entry.MaxMilliseconds, elapsed);
 
-                System.Diagnostics.Debug.WriteLine(string.Format("[TIMER] {0}: {1}ms (Total: {2}ms, Calls: {3})", 
-                    operationName, elapsed, entry.TotalMilliseconds, entry.CallCount));
+                // System.Diagnostics.Debug.WriteLine(string.Format("[TIMER] {0}: {1}ms (Total: {2}ms, Calls: {3})", 
+                //    operationName, elapsed, entry.TotalMilliseconds, entry.CallCount));
                 
                 return elapsed;
             }

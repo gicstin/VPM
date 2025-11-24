@@ -809,7 +809,14 @@ namespace VPM
                             // Set callback for lazy loading
                             LoadImageCallback = async () => 
                             {
-                                return await _imageManager.LoadImageAsync(location.VarFilePath, location.InternalPath);
+                                // Request downscaled image for grid (approx 400px width is enough for 3-column layout)
+                                // Don't upscale if original is smaller
+                                int targetWidth = 400;
+                                if (location.Width > 0 && location.Width < targetWidth)
+                                {
+                                    targetWidth = location.Width;
+                                }
+                                return await _imageManager.LoadImageAsync(location.VarFilePath, location.InternalPath, targetWidth);
                             },
                             
                             // Set extraction data

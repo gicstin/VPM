@@ -58,6 +58,11 @@ namespace VPM
         // Debounce timer for dependency selection changes
         private DispatcherTimer _dependencySelectionDebounceTimer;
         
+        // Debounce timers for search boxes
+        private DispatcherTimer _packageSearchDebounceTimer;
+        private DispatcherTimer _depsSearchDebounceTimer;
+        private DispatcherTimer _creatorsSearchDebounceTimer;
+        
         // Flag to prevent concurrent image display operations
         private bool _isDisplayingImages = false;
 
@@ -275,27 +280,38 @@ namespace VPM
         {
             if (sender is TextBox textBox && PackageDataGrid != null && this.IsLoaded)
             {
-                try
+                // Update package search clear button visibility immediately for responsiveness
+                UpdatePackageSearchClearButton();
+
+                // Debounce the search
+                _packageSearchDebounceTimer?.Stop();
+                if (_packageSearchDebounceTimer == null)
                 {
-                    var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    
-                    // If showing placeholder text OR text is empty, show all items
-                    if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                    _packageSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                    _packageSearchDebounceTimer.Tick += (s, args) =>
                     {
-                        FilterPackages(""); // Empty string to show all
-                    }
-                    else
-                    {
-                        FilterPackages(textBox.Text);
-                    }
-                    
-                    // Update package search clear button visibility
-                    UpdatePackageSearchClearButton();
+                        _packageSearchDebounceTimer.Stop();
+                        try
+                        {
+                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                            
+                            // If showing placeholder text OR text is empty, show all items
+                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            {
+                                FilterPackages(""); // Empty string to show all
+                            }
+                            else
+                            {
+                                FilterPackages(textBox.Text);
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore errors
+                        }
+                    };
                 }
-                catch
-                {
-                    // Ignore errors during initialization
-                }
+                _packageSearchDebounceTimer.Start();
             }
         }
         
@@ -303,27 +319,38 @@ namespace VPM
         {
             if (sender is TextBox textBox && DependenciesDataGrid != null && this.IsLoaded)
             {
-                try
+                // Update deps search clear button visibility immediately
+                UpdateDepsSearchClearButton();
+
+                // Debounce the search
+                _depsSearchDebounceTimer?.Stop();
+                if (_depsSearchDebounceTimer == null)
                 {
-                    var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    
-                    // If showing placeholder text OR text is empty, show all items
-                    if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                    _depsSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                    _depsSearchDebounceTimer.Tick += (s, args) =>
                     {
-                        FilterDependencies(""); // Empty string to show all
-                    }
-                    else
-                    {
-                        FilterDependencies(textBox.Text);
-                    }
-                    
-                    // Update deps search clear button visibility
-                    UpdateDepsSearchClearButton();
+                        _depsSearchDebounceTimer.Stop();
+                        try
+                        {
+                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                            
+                            // If showing placeholder text OR text is empty, show all items
+                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            {
+                                FilterDependencies(""); // Empty string to show all
+                            }
+                            else
+                            {
+                                FilterDependencies(textBox.Text);
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore errors
+                        }
+                    };
                 }
-                catch
-                {
-                    // Ignore errors during initialization
-                }
+                _depsSearchDebounceTimer.Start();
             }
         }
 
@@ -331,27 +358,38 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                try
+                // Update creators clear button visibility immediately
+                UpdateCreatorsClearButton();
+
+                // Debounce the search
+                _creatorsSearchDebounceTimer?.Stop();
+                if (_creatorsSearchDebounceTimer == null)
                 {
-                    var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    
-                    // If showing placeholder text OR text is empty, show all items
-                    if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                    _creatorsSearchDebounceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+                    _creatorsSearchDebounceTimer.Tick += (s, args) =>
                     {
-                        FilterCreators(""); // Empty string to show all
-                    }
-                    else
-                    {
-                        FilterCreators(textBox.Text);
-                    }
-                    
-                    // Update creators clear button visibility
-                    UpdateCreatorsClearButton();
+                        _creatorsSearchDebounceTimer.Stop();
+                        try
+                        {
+                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                            
+                            // If showing placeholder text OR text is empty, show all items
+                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            {
+                                FilterCreators(""); // Empty string to show all
+                            }
+                            else
+                            {
+                                FilterCreators(textBox.Text);
+                            }
+                        }
+                        catch
+                        {
+                            // Ignore errors
+                        }
+                    };
                 }
-                catch
-                {
-                    // Ignore errors during initialization
-                }
+                _creatorsSearchDebounceTimer.Start();
             }
         }
 

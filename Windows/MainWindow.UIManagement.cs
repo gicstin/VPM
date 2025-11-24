@@ -915,91 +915,94 @@ namespace VPM
                     // Calculate dependents count for all packages
                     var dependentsCount = CalculateDependentsCount();
 
-                    // Process and filter packages in background thread
-                    var seenDuplicates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    // Process and filter packages in parallel for performance
+                    var filteredItems = _packageManager.PackageMetadata
+                        .AsParallel()
+                        .WithDegreeOfParallelism(Environment.ProcessorCount)
+                        .Where(kvp => _filterManager.MatchesFilters(kvp.Value, kvp.Key))
+                        .Select(kvp => 
+                        {
+                            var metadataKey = kvp.Key;
+                            var metadata = kvp.Value;
+                            
+                            // Create PackageItem only for filtered packages
+                            // For archived packages, use the metadataKey which includes #archived suffix
+                            string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
+                                ? metadataKey 
+                                : Path.GetFileNameWithoutExtension(metadata.Filename);
+                            
+                            var dependentsCountValue = dependentsCount.TryGetValue(packageName, out var count) ? count : 0;
+                            
+                            return new PackageItem
+                            {
+                                MetadataKey = metadataKey, // Store for fast lookup later
+                                Name = packageName,
+                                Status = metadata.Status,
+                                Creator = metadata.CreatorName,
+                                DependencyCount = metadata.Dependencies?.Count ?? 0,
+                                DependentsCount = dependentsCountValue,
+                                FileSize = metadata.FileSize,
+                                ModifiedDate = metadata.ModifiedDate,
+                                IsLatestVersion = true, // Skip version check for performance
+                                IsOptimized = metadata.IsOptimized,
+                                IsDuplicate = metadata.IsDuplicate,
+                                DuplicateLocationCount = metadata.DuplicateLocationCount,
+                                IsOldVersion = metadata.IsOldVersion,
+                                LatestVersionNumber = metadata.LatestVersionNumber,
+                                IsFavorite = _favoritesManager?.IsFavorite(packageName) ?? false,
+                                IsAutoInstall = _autoInstallManager?.IsAutoInstall(packageName) ?? false,
+                                MorphCount = metadata.MorphCount,
+                                HairCount = metadata.HairCount,
+                                ClothingCount = metadata.ClothingCount,
+                                SceneCount = metadata.SceneCount,
+                                LooksCount = metadata.LooksCount,
+                                PosesCount = metadata.PosesCount,
+                                AssetsCount = metadata.AssetsCount,
+                                ScriptsCount = metadata.ScriptsCount,
+                                PluginsCount = metadata.PluginsCount,
+                                SubScenesCount = metadata.SubScenesCount,
+                                SkinsCount = metadata.SkinsCount
+                            };
+                        })
+                        .ToList();
+
+                    processedCount = _packageManager.PackageMetadata.Count;
                     
-                    foreach (var kvp in _packageManager.PackageMetadata)
+                    // Handle duplicate filtering - show only one instance per duplicate group
+                    if (_filterManager.FilterDuplicates)
                     {
-                        var metadataKey = kvp.Key;
-                        var metadata = kvp.Value;
-                        processedCount++;
-
-                        // Apply filter in background thread to avoid UI delay
-                        if (!_filterManager.MatchesFilters(metadata))
+                        var seenDuplicates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var item in filteredItems)
                         {
-                            continue; // Skip packages that don't match filter
-                        }
-
-                        // Special handling for duplicate filtering - show only one instance per duplicate group
-                        if (_filterManager.FilterDuplicates && metadata.DuplicateLocationCount > 1)
-                        {
-                            // Get the base package name from the filename
-                            string basePackageName = Path.GetFileNameWithoutExtension(metadata.Filename);
-                            
-                            // Remove version suffixes to get the core package name (consistent with counting logic)
-                            var parts = basePackageName.Split('.');
-                            if (parts.Length >= 3) // Creator.PackageName.Version format
+                            if (item.DuplicateLocationCount > 1)
                             {
-                                basePackageName = $"{parts[0]}.{parts[1]}"; // Creator.PackageName
+                                // Get the base package name from the filename
+                                string basePackageName = item.Name;
+                                
+                                // Remove version suffixes to get the core package name (consistent with counting logic)
+                                var parts = basePackageName.Split('.');
+                                if (parts.Length >= 3) // Creator.PackageName.Version format
+                                {
+                                    basePackageName = $"{parts[0]}.{parts[1]}"; // Creator.PackageName
+                                }
+                                
+                                // Skip if we've already seen this duplicate
+                                if (seenDuplicates.Contains(basePackageName))
+                                {
+                                    continue;
+                                }
+                                seenDuplicates.Add(basePackageName);
                             }
                             
-                            // Skip if we've already seen this duplicate
-                            if (seenDuplicates.Contains(basePackageName))
-                            {
-                                continue;
-                            }
-                            seenDuplicates.Add(basePackageName);
+                            allPackages.Add(item);
                         }
-
-                        filteredCount++;
-
-                        // Create PackageItem only for filtered packages
-                        // For archived packages, use the metadataKey which includes #archived suffix
-                        string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
-                            ? metadataKey 
-                            : Path.GetFileNameWithoutExtension(metadata.Filename);
-                        
-                        var dependentsCountValue = dependentsCount.TryGetValue(packageName, out var count) ? count : 0;
-                        
-                        // Debug: Log MacGruber.PostMagic.4
-                        if (packageName.Equals("MacGruber.PostMagic.4", StringComparison.OrdinalIgnoreCase))
-                        {
-                            Console.WriteLine($"[TABLE] Setting DependentsCount for {packageName} to {dependentsCountValue}");
-                        }
-                        
-                        var packageItem = new PackageItem
-                        {
-                            MetadataKey = metadataKey, // Store for fast lookup later
-                            Name = packageName,
-                            Status = metadata.Status,
-                            Creator = metadata.CreatorName,
-                            DependencyCount = metadata.Dependencies?.Count ?? 0,
-                            DependentsCount = dependentsCountValue,
-                            FileSize = metadata.FileSize,
-                            ModifiedDate = metadata.ModifiedDate,
-                            IsLatestVersion = true, // Skip version check for performance
-                            IsOptimized = metadata.IsOptimized,
-                            IsDuplicate = metadata.IsDuplicate,
-                            DuplicateLocationCount = metadata.DuplicateLocationCount,
-                            IsOldVersion = metadata.IsOldVersion,
-                            LatestVersionNumber = metadata.LatestVersionNumber,
-                            IsFavorite = _favoritesManager?.IsFavorite(packageName) ?? false,
-                            IsAutoInstall = _autoInstallManager?.IsAutoInstall(packageName) ?? false,
-                            MorphCount = metadata.MorphCount,
-                            HairCount = metadata.HairCount,
-                            ClothingCount = metadata.ClothingCount,
-                            SceneCount = metadata.SceneCount,
-                            LooksCount = metadata.LooksCount,
-                            PosesCount = metadata.PosesCount,
-                            AssetsCount = metadata.AssetsCount,
-                            ScriptsCount = metadata.ScriptsCount,
-                            PluginsCount = metadata.PluginsCount,
-                            SubScenesCount = metadata.SubScenesCount,
-                            SkinsCount = metadata.SkinsCount
-                        };
-                        
-                        allPackages.Add(packageItem);
                     }
+                    else
+                    {
+                        allPackages = filteredItems;
+                    }
+                    
+                    filteredCount = allPackages.Count;
 
                     // Update UI in one shot - packages already filtered in background
                     await Application.Current.Dispatcher.InvokeAsync(() =>
@@ -1138,14 +1141,11 @@ namespace VPM
                 if (!_cascadeFiltering)
                 {
                     // Build filtered package set for counting (background thread safe)
-                    var filteredPackages = new Dictionary<string, VarMetadata>();
-                    foreach (var kvp in _packageManager.PackageMetadata)
-                    {
-                        if (_filterManager.MatchesFilters(kvp.Value))
-                        {
-                            filteredPackages.Add(kvp.Key, kvp.Value);
-                        }
-                    }
+                    // Use PLINQ for parallel filtering
+                    var filteredPackages = _packageManager.PackageMetadata
+                        .AsParallel()
+                        .Where(kvp => _filterManager.MatchesFilters(kvp.Value, kvp.Key))
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
                     
                     packagesToCount = filteredPackages;
                 }
@@ -1167,23 +1167,27 @@ namespace VPM
                 if (_favoritesManager != null)
                 {
                     var favorites = _favoritesManager.GetAllFavorites();
-                    foreach (var pkg in _packageManager.PackageMetadata.Values)
+                    // Use parallel processing for counting
+                    favoriteCount = _packageManager.PackageMetadata.AsParallel().Count(kvp => 
                     {
-                        var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
-                        if (favorites.Contains(pkgName))
-                            favoriteCount++;
-                    }
+                        var pkgName = !string.IsNullOrEmpty(kvp.Value.PackageName) 
+                            ? kvp.Value.PackageName 
+                            : System.IO.Path.GetFileNameWithoutExtension(kvp.Value.Filename);
+                        return favorites.Contains(pkgName);
+                    });
                 }
                 
                 if (_autoInstallManager != null)
                 {
                     var autoInstall = _autoInstallManager.GetAllAutoInstall();
-                    foreach (var pkg in _packageManager.PackageMetadata.Values)
+                    // Use parallel processing for counting
+                    autoInstallCount = _packageManager.PackageMetadata.AsParallel().Count(kvp => 
                     {
-                        var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
-                        if (autoInstall.Contains(pkgName))
-                            autoInstallCount++;
-                    }
+                        var pkgName = !string.IsNullOrEmpty(kvp.Value.PackageName) 
+                            ? kvp.Value.PackageName 
+                            : System.IO.Path.GetFileNameWithoutExtension(kvp.Value.Filename);
+                        return autoInstall.Contains(pkgName);
+                    });
                 }
                 
                 // Now update UI on UI thread with all pre-built data

@@ -19,11 +19,18 @@ namespace VPM.Services
     {
         private readonly TextureConverter _textureConverter;
         private readonly ImageManager _imageManager;
+        private readonly ISettingsManager _settingsManager;
 
-        public VarRepackager(ImageManager imageManager = null)
+        public VarRepackager(ImageManager imageManager = null, ISettingsManager settingsManager = null)
         {
             _textureConverter = new TextureConverter();
             _imageManager = imageManager;
+            _settingsManager = settingsManager;
+            
+            if (_settingsManager != null)
+            {
+                _textureConverter.CompressionQuality = _settingsManager.Settings.TextureCompressionQuality;
+            }
         }
 
         /// <summary>

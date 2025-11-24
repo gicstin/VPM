@@ -20,6 +20,11 @@ namespace VPM.Services
             return Array.Find(encoders, e => e.MimeType == "image/jpeg");
         });
         /// <summary>
+        /// Compression quality for JPEG encoding (0-100). Default is 90.
+        /// </summary>
+        public long CompressionQuality { get; set; } = 90L;
+
+        /// <summary>
         /// Resizes an image to the target resolution (only downscaling)
         /// </summary>
         /// <param name="sourceData">Source image bytes</param>
@@ -29,20 +34,20 @@ namespace VPM.Services
         public byte[] ResizeImage(byte[] sourceData, int targetMaxDimension, string originalExtension)
         {
             var startTime = DateTime.UtcNow;
-            System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_START] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} Size={sourceData.Length} bytes Target={targetMaxDimension}px Extension={originalExtension}");
+            // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_START] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} Size={sourceData.Length} bytes Target={targetMaxDimension}px Extension={originalExtension}");
             
             try
             {
                 // Validate input
                 if (sourceData == null || sourceData.Length == 0)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Invalid source data: null or empty");
+                    // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Invalid source data: null or empty");
                     return null;
                 }
 
                 if (string.IsNullOrEmpty(originalExtension))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Invalid extension: null or empty");
+                    // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Invalid extension: null or empty");
                     return null;
                 }
 
@@ -59,11 +64,11 @@ namespace VPM.Services
                         // If the texture is already at or below target resolution, DON'T TOUCH IT
                         if (maxDimension <= targetMaxDimension)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_SKIP] Already at target ({originalWidth}x{originalHeight}, max={maxDimension}px <= {targetMaxDimension}px)");
+                            // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_SKIP] Already at target ({originalWidth}x{originalHeight}, max={maxDimension}px <= {targetMaxDimension}px)");
                             return null; // No conversion needed
                         }
                         
-                        System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_PROCESS] Downscaling {originalWidth}x{originalHeight} (max={maxDimension}px) to {targetMaxDimension}px");
+                        // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_PROCESS] Downscaling {originalWidth}x{originalHeight} (max={maxDimension}px) to {targetMaxDimension}px");
 
                         // Calculate new dimensions maintaining aspect ratio
                         double scale = (double)targetMaxDimension / maxDimension;
@@ -93,11 +98,11 @@ namespace VPM.Services
                                 
                                 if (format.Equals(ImageFormat.Jpeg))
                                 {
-                                    // OPTIMIZATION: Reduce JPEG quality from 90 to 85 for faster encoding
-                                    // Benefit: 15-20% faster JPEG encoding with imperceptible quality loss
+                                    // OPTIMIZATION: Use configured JPEG quality (default 90)
+                                    // Benefit: Balance between quality and size
                                     var encoderParameters = new EncoderParameters(1);
                                     encoderParameters.Param[0] = new EncoderParameter(
-                                        System.Drawing.Imaging.Encoder.Quality, 85L);
+                                        System.Drawing.Imaging.Encoder.Quality, CompressionQuality);
                                     
                                     var jpegCodec = _jpegEncoder.Value;
                                     resizedImage.Save(outputMs, jpegCodec, encoderParameters);
@@ -116,12 +121,12 @@ namespace VPM.Services
                                 // This prevents "optimization" from making packages worse
                                 if (convertedData.Length >= sourceData.Length)
                                 {
-                                    System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_SKIP] Output larger: {convertedData.Length} >= {sourceData.Length}");
+                                    // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_SKIP] Output larger: {convertedData.Length} >= {sourceData.Length}");
                                     return null; // Keep original - it's better
                                 }
                                 
                                 double reduction = ((sourceData.Length - convertedData.Length) * 100.0) / sourceData.Length;
-                                System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_COMPLETE] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} {originalWidth}x{originalHeight}→{newWidth}x{newHeight} {sourceData.Length}→{convertedData.Length} bytes ({reduction:F1}% reduction) Time={elapsed.TotalMilliseconds:F0}ms");
+                                // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_COMPLETE] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} {originalWidth}x{originalHeight}→{newWidth}x{newHeight} {sourceData.Length}→{convertedData.Length} bytes ({reduction:F1}% reduction) Time={elapsed.TotalMilliseconds:F0}ms");
                                 return convertedData;
                             }
                         }
@@ -130,8 +135,8 @@ namespace VPM.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} Error: {ex.GetType().Name}: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Stack: {ex.StackTrace}");
+                // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Thread={System.Threading.Thread.CurrentThread.ManagedThreadId} Error: {ex.GetType().Name}: {ex.Message}");
+                // System.Diagnostics.Debug.WriteLine($"[TEXTURE_RESIZE_ERROR] Stack: {ex.StackTrace}");
                 return null;
             }
         }
@@ -241,7 +246,7 @@ namespace VPM.Services
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Error converting texture {kvp.Key}: {ex.Message}");
+                            // System.Diagnostics.Debug.WriteLine($"Error converting texture {kvp.Key}: {ex.Message}");
                         }
                     }).ToArray();
 
@@ -267,7 +272,7 @@ namespace VPM.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error in parallel texture conversion: {ex.Message}");
+                // System.Diagnostics.Debug.WriteLine($"Error in parallel texture conversion: {ex.Message}");
             }
 
             return results;
@@ -303,7 +308,7 @@ namespace VPM.Services
                     // CRITICAL: Only downscale, never upscale OR same-resolution
                     if (maxDimension <= targetMaxDimension)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Skipping texture conversion - already at or below target resolution ({maxDimension}px <= {targetMaxDimension}px)");
+                        // System.Diagnostics.Debug.WriteLine($"Skipping texture conversion - already at or below target resolution ({maxDimension}px <= {targetMaxDimension}px)");
                         return null; // No conversion needed
                     }
 
@@ -335,11 +340,11 @@ namespace VPM.Services
                             
                             if (format.Equals(ImageFormat.Jpeg))
                             {
-                                // OPTIMIZATION: Reduce JPEG quality from 90 to 85 for faster encoding
-                                // Benefit: 15-20% faster JPEG encoding with imperceptible quality loss
+                                // OPTIMIZATION: Use configured JPEG quality (default 90)
+                                // Benefit: Balance between quality and size
                                 var encoderParameters = new EncoderParameters(1);
                                 encoderParameters.Param[0] = new EncoderParameter(
-                                    System.Drawing.Imaging.Encoder.Quality, 85L);
+                                    System.Drawing.Imaging.Encoder.Quality, CompressionQuality);
                                 
                                 var jpegCodec = _jpegEncoder.Value;
                                 resizedImage.Save(outputStream, jpegCodec, encoderParameters);
@@ -354,7 +359,7 @@ namespace VPM.Services
                             // CRITICAL SAFETY CHECK: Never return a texture larger than the original
                             if (convertedData.Length >= sourceStream.Length)
                             {
-                                System.Diagnostics.Debug.WriteLine($"Texture conversion skipped - output ({convertedData.Length} bytes) >= input ({sourceStream.Length} bytes)");
+                                // System.Diagnostics.Debug.WriteLine($"Texture conversion skipped - output ({convertedData.Length} bytes) >= input ({sourceStream.Length} bytes)");
                                 return null;
                             }
                             
@@ -365,7 +370,7 @@ namespace VPM.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error resizing image from stream: {ex.Message}");
+                // System.Diagnostics.Debug.WriteLine($"Error resizing image from stream: {ex.Message}");
                 return null;
             }
         }

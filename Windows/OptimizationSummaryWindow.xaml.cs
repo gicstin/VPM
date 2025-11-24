@@ -56,7 +56,8 @@ namespace VPM
             string backupFolderPath = null,
             TimeSpan? elapsedTime = null,
             int packagesSkipped = 0,
-            int totalPackagesSelected = 0)
+            int totalPackagesSelected = 0,
+            List<string> detailedErrors = null)
         {
             // Set title
             string titleText = errorCount > 0 
@@ -103,7 +104,14 @@ namespace VPM
             }
 
             summaryBuilder.AppendLine();
-            summaryBuilder.AppendLine("Original packages backed up to ArchivedPackages folder.");
+            if (!string.IsNullOrEmpty(backupFolderPath))
+            {
+                summaryBuilder.AppendLine($"Original packages backed up to:\n{backupFolderPath}");
+            }
+            else
+            {
+                summaryBuilder.AppendLine("Original packages backed up to ArchivedPackages folder.");
+            }
 
             SummaryBlock.Text = summaryBuilder.ToString();
 
@@ -113,11 +121,15 @@ namespace VPM
             // Build full report
             _fullReportContent = BuildFullReport(packagesOptimized, errorCount, spaceSaved, percentSaved, 
                                                  sizeIncreased, totalOriginalSize, totalNewSize, errors, packageDetails,
-                                                 elapsedTime, packagesSkipped, totalPackagesSelected);
+                                                 elapsedTime, packagesSkipped, totalPackagesSelected, detailedErrors);
 
             // Set up button handlers
             OkButton.Click += (s, e) => this.Close();
-            FullReportButton.Click += (s, e) => ShowFullReport();
+            FullReportButton.Click += (s, e) => 
+            {
+                ShowFullReport();
+                this.Close();
+            };
             OpenBackupButton.Click += (s, e) => OpenBackupFolder();
             
             // Hide backup button if no backup folder path provided
@@ -139,7 +151,8 @@ namespace VPM
             Dictionary<string, OptimizationDetails> packageDetails,
             TimeSpan? elapsedTime = null,
             int packagesSkipped = 0,
-            int totalPackagesSelected = 0)
+            int totalPackagesSelected = 0,
+            List<string> detailedErrors = null)
         {
             var report = new StringBuilder();
 
@@ -147,67 +160,54 @@ namespace VPM
             string appVersion = GetAppVersion();
             
             report.AppendLine("╔═══════════════════════════════════════════════════════════════════════════════════════════════════╗");
-            report.AppendLine($"║                         VPM OPTIMIZATION REPORT - v{appVersion,-38}║");
+            report.AppendLine($"║                   VPM OPTIMIZATION EXECUTION REPORT - v{appVersion,-32}║");
             report.AppendLine("╚═══════════════════════════════════════════════════════════════════════════════════════════════════╝");
             report.AppendLine();
 
             // Overall Summary
             report.AppendLine("┌─ OVERALL SUMMARY ─────────────────────────────────────────────────────────────────────────────────┐");
-            report.AppendLine($"│ Timestamp:               {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             
-            if (totalPackagesSelected > 0)
+            // Line 1: Timestamp and Timing
+            string timestamp = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+            string duration = elapsedTime.HasValue ? FormatTimeSpan(elapsedTime.Value) : "N/A";
+            string rate = "N/A";
+            if (elapsedTime.HasValue && elapsedTime.Value.TotalHours > 0 && packagesOptimized > 0)
             {
-                report.AppendLine($"│ Packages Selected:       {totalPackagesSelected}");
-                report.AppendLine($"│ Packages Optimized:      {packagesOptimized}");
-                if (packagesSkipped > 0)
-                {
-                    report.AppendLine($"│ Packages Skipped:        {packagesSkipped} (no changes needed)");
-                }
-            }
-            else
-            {
-                report.AppendLine($"│ Packages Processed:      {packagesOptimized}");
+                rate = $"{packagesOptimized / elapsedTime.Value.TotalHours:F1} pkgs/hr";
             }
             
-            report.AppendLine($"│ Errors Encountered:      {errorCount}");
-            int successCount = packagesOptimized - errorCount;
-            report.AppendLine($"│ Success Rate:            {(packagesOptimized > 0 ? (successCount * 100.0 / packagesOptimized).ToString("F1") : "0")}% ({successCount}/{packagesOptimized})");
-            
-            if (elapsedTime.HasValue)
-            {
-                report.AppendLine("│");
-                report.AppendLine($"│ Total Time Elapsed:      {FormatTimeSpan(elapsedTime.Value)}");
-                if (packagesOptimized > 0)
-                {
-                    double avgSeconds = elapsedTime.Value.TotalSeconds / packagesOptimized;
-                    report.AppendLine($"│ Average Time/Package:    {FormatSeconds(avgSeconds)}");
-                    
-                    // Calculate throughput
-                    if (elapsedTime.Value.TotalHours > 0)
-                    {
-                        double packagesPerHour = packagesOptimized / elapsedTime.Value.TotalHours;
-                        report.AppendLine($"│ Processing Rate:         {packagesPerHour:F1} packages/hour");
-                    }
-                }
-            }
-            
+            report.AppendLine($"│ Timestamp: {timestamp,-22} | Duration: {duration,-15} | Rate: {rate}");
             report.AppendLine("│");
 
-            string spaceMessage = sizeIncreased
-                ? $"Size Increased: {FormatBytes(Math.Abs(spaceSaved))} (+{Math.Abs(percentSaved):F1}%)"
-                : $"Space Saved: {FormatBytes(spaceSaved)} ({percentSaved:F1}%)";
+            // Line 2: Package Counts
+            int successCount = packagesOptimized - errorCount;
+            double successRate = packagesOptimized > 0 ? (successCount * 100.0 / packagesOptimized) : 0;
+            
+            report.AppendLine("│ [ PACKAGES ]");
+            report.AppendLine($"│ Selected: {totalPackagesSelected,-5} Optimized: {packagesOptimized,-5} Skipped: {packagesSkipped,-5} Errors: {errorCount,-5} Success: {successRate:F1}%");
+            report.AppendLine("│");
 
-            report.AppendLine($"│ {spaceMessage}");
-            report.AppendLine($"│ Total Original Size:     {FormatBytes(totalOriginalSize)} ({totalOriginalSize:N0} bytes)");
-            report.AppendLine($"│ Total New Size:          {FormatBytes(totalNewSize)} ({totalNewSize:N0} bytes)");
-            report.AppendLine($"│ Absolute Difference:     {FormatBytes(Math.Abs(spaceSaved))} ({Math.Abs(spaceSaved):N0} bytes)");
+            // Line 3: Storage
+            report.AppendLine("│ [ STORAGE ]");
+            report.AppendLine($"│ Original:   {FormatBytes(totalOriginalSize)}");
+            report.AppendLine($"│ New Size:   {FormatBytes(totalNewSize)}");
+            
+            string diffSign = sizeIncreased ? "+" : "-";
+            report.AppendLine($"│ Difference: {diffSign}{FormatBytes(Math.Abs(spaceSaved))} ({diffSign}{Math.Abs(percentSaved):F1}%)");
+            
+            if (!string.IsNullOrEmpty(_backupFolderPath))
+            {
+                report.AppendLine("│");
+                report.AppendLine($"│ Backup: {_backupFolderPath}");
+            }
+            
             report.AppendLine("└───────────────────────────────────────────────────────────────────────────────────────────────────┘");
             report.AppendLine();
 
             // Per-Package Details
             if (packageDetails != null && packageDetails.Count > 0)
             {
-                report.AppendLine("┌─ PACKAGE-BY-PACKAGE DETAILS ─────────────────────────────────────────────────────────────────────┐");
+                report.AppendLine("┌─ PACKAGE DETAILS ─────────────────────────────────────────────────────────────────────────────────┐");
                 report.AppendLine();
 
                 int packageNum = 1;
@@ -215,83 +215,95 @@ namespace VPM
                 {
                     string packageName = kvp.Key;
                     var details = kvp.Value;
-
-                    report.AppendLine($"  [{packageNum:D2}] Package: {packageName}");
-                    report.AppendLine($"      ─ Original Size:         {FormatBytes(details.OriginalSize)} ({details.OriginalSize:N0} bytes)");
-                    report.AppendLine($"      ─ New Size:              {FormatBytes(details.NewSize)} ({details.NewSize:N0} bytes)");
                     
+                    string statusSymbol = !string.IsNullOrEmpty(details.Error) ? "✗ ERROR" : (details.OriginalSize > 0 ? "✓ SUCCESS" : "– NO CHANGES");
                     long pkgSaved = details.OriginalSize - details.NewSize;
                     double pkgPercent = details.OriginalSize > 0 ? (100.0 * pkgSaved / details.OriginalSize) : 0;
+                    string pkgDiffSign = pkgSaved < 0 ? "+" : "-";
                     
-                    if (pkgSaved >= 0)
+                    // Header line for package
+                    report.AppendLine($"  [{packageNum:D2}] {packageName}");
+                    
+                    if (details.OriginalSize > 0)
                     {
-                        report.AppendLine($"      ─ Space Saved:          {FormatBytes(pkgSaved)} ({pkgPercent:F1}%) ({pkgSaved:N0} bytes)");
+                        report.AppendLine($"       {FormatBytes(details.OriginalSize)} → {FormatBytes(details.NewSize)}  |  Diff: {pkgDiffSign}{FormatBytes(Math.Abs(pkgSaved))} ({pkgDiffSign}{Math.Abs(pkgPercent):F1}%)  |  {statusSymbol}");
                     }
                     else
                     {
-                        report.AppendLine($"      ─ Size Increased:       {FormatBytes(Math.Abs(pkgSaved))} (+{Math.Abs(pkgPercent):F1}%) ({Math.Abs(pkgSaved):N0} bytes)");
+                        report.AppendLine($"       {statusSymbol}");
                     }
 
-                    report.AppendLine($"      ─ Compression Ratio:    {(details.OriginalSize > 0 ? (details.NewSize * 100.0 / details.OriginalSize).ToString("F1") : "0")}%");
-                    report.AppendLine("      │");
+                    // Error details
+                    if (!string.IsNullOrEmpty(details.Error))
+                    {
+                         report.AppendLine($"       ERROR: {details.Error}");
+                    }
 
                     // Optimization details
                     if (details.TextureCount > 0 || details.HairCount > 0 || details.MirrorCount > 0 || 
                         details.LightCount > 0 || details.DisabledDependencies > 0 || details.LatestDependencies > 0 || details.JsonMinified)
                     {
-                        report.AppendLine("      ─ Optimizations Applied:");
+                        report.AppendLine("       "); // Spacer
                         
                         if (details.TextureCount > 0)
                         {
-                            report.AppendLine($"      │  ─ Textures Optimized:        {details.TextureCount}");
-                            // Use detailed size information if available, otherwise use basic details
+                            report.AppendLine($"       • Textures: {details.TextureCount} optimized");
                             var textureDetailsToShow = details.TextureDetailsWithSizes.Count > 0 
                                 ? details.TextureDetailsWithSizes 
                                 : details.TextureDetails;
+                            
                             foreach (var textureDetail in textureDetailsToShow)
                             {
-                                report.AppendLine($"      │  │  {textureDetail}");
+                                // Clean up the detail string to align it better
+                                // Format is usually: "  • Filename: Res -> Res (Size -> Size)"
+                                string cleanDetail = textureDetail.TrimStart();
+                                if (cleanDetail.StartsWith("•"))
+                                {
+                                    cleanDetail = cleanDetail.Substring(1).Trim();
+                                }
+                                
+                                report.AppendLine($"         - {cleanDetail}");
                             }
                         }
 
                         if (details.HairCount > 0)
                         {
-                            report.AppendLine($"      │  ─ Hair Settings Modified:    {details.HairCount}");
+                            report.AppendLine($"       • Hair Settings: {details.HairCount} modified");
                             foreach (var hairDetail in details.HairDetails)
                             {
-                                report.AppendLine($"      │  │  • {hairDetail}");
+                                report.AppendLine($"         - {hairDetail}");
                             }
                         }
 
                         if (details.MirrorCount > 0)
                         {
-                            report.AppendLine($"      │  ─ Mirrors Disabled:          Yes");
+                            report.AppendLine($"       • Mirrors: Disabled");
                         }
 
                         if (details.LightCount > 0)
                         {
-                            report.AppendLine($"      │  ─ Shadow Settings Modified:  {details.LightCount}");
+                            report.AppendLine($"       • Shadows: {details.LightCount} modified");
                             foreach (var lightDetail in details.LightDetails)
                             {
-                                report.AppendLine($"      │  │  • {lightDetail}");
+                                report.AppendLine($"         - {lightDetail}");
                             }
                         }
 
                         if (details.DisabledDependencies > 0)
                         {
-                            report.AppendLine($"      │  ─ Dependencies Removed:     {details.DisabledDependencies}");
+                            report.AppendLine($"       • Dependencies Removed: {details.DisabledDependencies}");
                             foreach (var depDetail in details.DisabledDependencyDetails)
                             {
-                                report.AppendLine($"      │  │  • {depDetail}");
+                                report.AppendLine($"         - {depDetail}");
                             }
                         }
 
                         if (details.LatestDependencies > 0)
                         {
-                            report.AppendLine($"      │  ─ Dependencies to .latest:  {details.LatestDependencies}");
+                            report.AppendLine($"       • Dependencies Updated: {details.LatestDependencies} to .latest");
                             foreach (var depDetail in details.LatestDependencyDetails)
                             {
-                                report.AppendLine($"      │     • {depDetail}");
+                                report.AppendLine($"         - {depDetail}");
                             }
                         }
 
@@ -299,25 +311,8 @@ namespace VPM
                         {
                             long jsonSaved = details.JsonSizeBeforeMinify - details.JsonSizeAfterMinify;
                             double jsonPercent = details.JsonSizeBeforeMinify > 0 ? (100.0 * jsonSaved / details.JsonSizeBeforeMinify) : 0;
-                            report.AppendLine($"      │  └─ JSON Minification:        Yes");
-                            report.AppendLine($"      │     ─ Before Minify:         {FormatBytes(details.JsonSizeBeforeMinify)} ({details.JsonSizeBeforeMinify:N0} bytes)");
-                            report.AppendLine($"      │     ─ After Minify:          {FormatBytes(details.JsonSizeAfterMinify)} ({details.JsonSizeAfterMinify:N0} bytes)");
-                            report.AppendLine($"      │     └─ Space Saved:           {FormatBytes(jsonSaved)} ({jsonPercent:F1}%) ({jsonSaved:N0} bytes)");
+                            report.AppendLine($"       • JSON: Minified ({FormatBytes(details.JsonSizeBeforeMinify)} → {FormatBytes(details.JsonSizeAfterMinify)}, -{jsonPercent:F1}%)");
                         }
-                    }
-
-                    if (!string.IsNullOrEmpty(details.Error))
-                    {
-                        report.AppendLine($"      └─ Status:               ✗ ERROR");
-                        report.AppendLine($"         Error Details:       {details.Error}");
-                    }
-                    else if (details.OriginalSize > 0)
-                    {
-                        report.AppendLine($"      └─ Status:               ✓ SUCCESS");
-                    }
-                    else
-                    {
-                        report.AppendLine($"      └─ Status:               – NO CHANGES");
                     }
 
                     report.AppendLine();
@@ -328,10 +323,10 @@ namespace VPM
                 report.AppendLine();
             }
 
-            // Errors Section
+            // Errors Section (Summary of errors)
             if (errorCount > 0)
             {
-                report.AppendLine("┌─ ERRORS ─────────────────────────────────────────────────────────────────────────────────────────┐");
+                report.AppendLine("┌─ ERROR SUMMARY ───────────────────────────────────────────────────────────────────────────────────┐");
                 int errorNum = 1;
                 foreach (var error in errors)
                 {
@@ -343,10 +338,7 @@ namespace VPM
             }
 
             // Summary Statistics
-            report.AppendLine("┌─ SUMMARY STATISTICS ──────────────────────────────────────────────────────────────────────────────┐");
-            report.AppendLine($"│ Total Packages:          {packageDetails?.Count ?? 0}");
-            report.AppendLine($"│ Successful:              {(packageDetails?.Count(p => string.IsNullOrEmpty(p.Value.Error)) ?? 0)}");
-            report.AppendLine($"│ Failed:                  {errorCount}");
+            report.AppendLine("┌─ STATISTICS ──────────────────────────────────────────────────────────────────────────────────────┐");
             
             var totalTextures = packageDetails?.Sum(p => p.Value.TextureCount) ?? 0;
             var totalHair = packageDetails?.Sum(p => p.Value.HairCount) ?? 0;
@@ -354,65 +346,67 @@ namespace VPM
             var totalDisabledDeps = packageDetails?.Sum(p => p.Value.DisabledDependencies) ?? 0;
             var totalLatestDeps = packageDetails?.Sum(p => p.Value.LatestDependencies) ?? 0;
             var totalJsonMinified = packageDetails?.Count(p => p.Value.JsonMinified) ?? 0;
-            var totalJsonSizeBefore = packageDetails?.Sum(p => p.Value.JsonSizeBeforeMinify) ?? 0;
-            var totalJsonSizeAfter = packageDetails?.Sum(p => p.Value.JsonSizeAfterMinify) ?? 0;
-            var totalJsonSaved = totalJsonSizeBefore - totalJsonSizeAfter;
-
-            if (totalTextures > 0) report.AppendLine($"│ Total Textures Optimized: {totalTextures}");
-            if (totalHair > 0) report.AppendLine($"│ Total Hair Modifications: {totalHair}");
-            if (totalLights > 0) report.AppendLine($"│ Total Light Modifications: {totalLights}");
-            if (totalDisabledDeps > 0) report.AppendLine($"│ Total Dependencies Removed: {totalDisabledDeps}");
-            if (totalLatestDeps > 0) report.AppendLine($"│ Total Dependencies to .latest: {totalLatestDeps}");
+            
+            // Group stats in columns
+            report.AppendLine($"│ Textures: {totalTextures,-10} Hair: {totalHair,-10} Shadows: {totalLights,-10}");
+            report.AppendLine($"│ Deps Removed: {totalDisabledDeps,-6} Deps Updated: {totalLatestDeps,-6} JSON Minified: {totalJsonMinified}");
+            
             if (totalJsonMinified > 0)
             {
+                var totalJsonSizeBefore = packageDetails?.Sum(p => p.Value.JsonSizeBeforeMinify) ?? 0;
+                var totalJsonSizeAfter = packageDetails?.Sum(p => p.Value.JsonSizeAfterMinify) ?? 0;
+                var totalJsonSaved = totalJsonSizeBefore - totalJsonSizeAfter;
                 double totalJsonPercent = totalJsonSizeBefore > 0 ? (100.0 * totalJsonSaved / totalJsonSizeBefore) : 0;
-                report.AppendLine($"│ Total JSON Minifications:  {totalJsonMinified}");
-                report.AppendLine($"│   ─ Total Size Before:    {FormatBytes(totalJsonSizeBefore)} ({totalJsonSizeBefore:N0} bytes)");
-                report.AppendLine($"│   ─ Total Size After:     {FormatBytes(totalJsonSizeAfter)} ({totalJsonSizeAfter:N0} bytes)");
-                report.AppendLine($"│   └─ Total Space Saved:    {FormatBytes(totalJsonSaved)} ({totalJsonPercent:F1}%) ({totalJsonSaved:N0} bytes)");
+                
+                report.AppendLine($"│ JSON Savings: {FormatBytes(totalJsonSaved)} ({totalJsonPercent:F1}%)");
             }
-
+            
             report.AppendLine("└───────────────────────────────────────────────────────────────────────────────────────────────────┘");
             report.AppendLine();
 
-            // Performance Breakdown (if we have timing data)
+            // Performance Breakdown
             if (elapsedTime.HasValue && packageDetails != null && packageDetails.Count > 0)
             {
-                report.AppendLine("┌─ PERFORMANCE BREAKDOWN ──────────────────────────────────────────────────────────────────────────┐");
-                
                 // Find fastest and slowest packages by size
-                var sortedBySize = packageDetails.Where(p => string.IsNullOrEmpty(p.Value.Error) && p.Value.OriginalSize > 0)
-                    .OrderBy(p => p.Value.OriginalSize).ToList();
+                var sortedBySize = packageDetails.Where(p => string.IsNullOrEmpty(p.Value.Error) && p.Value.OriginalSize > 0).OrderBy(p => p.Value.OriginalSize);
                 
                 if (sortedBySize.Any())
                 {
+                    report.AppendLine("┌─ EXTREMES ────────────────────────────────────────────────────────────────────────────────────────┐");
                     var smallest = sortedBySize.First();
                     var largest = sortedBySize.Last();
                     
-                    report.AppendLine($"│ Smallest Package:        {smallest.Key}");
-                    report.AppendLine($"│   ─ Size:               {FormatBytes(smallest.Value.OriginalSize)}");
-                    report.AppendLine($"│");
-                    report.AppendLine($"│ Largest Package:         {largest.Key}");
-                    report.AppendLine($"│   ─ Size:               {FormatBytes(largest.Value.OriginalSize)}");
+                    report.AppendLine($"│ Smallest: {smallest.Key} ({FormatBytes(smallest.Value.OriginalSize)})");
+                    report.AppendLine($"│ Largest:  {largest.Key} ({FormatBytes(largest.Value.OriginalSize)})");
+                    
+                    // Most optimized package (by percentage)
+                    var packagesWithSavings = packageDetails.Where(p => string.IsNullOrEmpty(p.Value.Error) && 
+                        p.Value.OriginalSize > 0 && p.Value.OriginalSize > p.Value.NewSize).ToList();
+                    
+                    if (packagesWithSavings.Any())
+                    {
+                        var mostOptimized = packagesWithSavings.OrderByDescending(p => 
+                            (p.Value.OriginalSize - p.Value.NewSize) * 100.0 / p.Value.OriginalSize).First();
+                        
+                        long saved = mostOptimized.Value.OriginalSize - mostOptimized.Value.NewSize;
+                        double percent = (saved * 100.0) / mostOptimized.Value.OriginalSize;
+                        
+                        report.AppendLine($"│ Best Opt: {mostOptimized.Key} (-{FormatBytes(saved)}, -{percent:F1}%)");
+                    }
+                    report.AppendLine("└───────────────────────────────────────────────────────────────────────────────────────────────────┘");
+                    report.AppendLine();
                 }
-                
-                // Most optimized package (by percentage)
-                var packagesWithSavings = packageDetails.Where(p => string.IsNullOrEmpty(p.Value.Error) && 
-                    p.Value.OriginalSize > 0 && p.Value.OriginalSize > p.Value.NewSize).ToList();
-                
-                if (packagesWithSavings.Any())
+            }
+
+            // Detailed Error Log
+            if (detailedErrors != null && detailedErrors.Count > 0)
+            {
+                report.AppendLine("┌─ DETAILED ERROR LOG ─────────────────────────────────────────────────────────────────────────────┐");
+                foreach (var error in detailedErrors)
                 {
-                    var mostOptimized = packagesWithSavings.OrderByDescending(p => 
-                        (p.Value.OriginalSize - p.Value.NewSize) * 100.0 / p.Value.OriginalSize).First();
-                    
-                    long saved = mostOptimized.Value.OriginalSize - mostOptimized.Value.NewSize;
-                    double percent = (saved * 100.0) / mostOptimized.Value.OriginalSize;
-                    
-                    report.AppendLine($"│");
-                    report.AppendLine($"│ Most Optimized Package:  {mostOptimized.Key}");
-                    report.AppendLine($"│   ─ Space Saved:        {FormatBytes(saved)} ({percent:F1}%)");
+                    report.AppendLine(error);
+                    report.AppendLine("────────────────────────────────────────────────────────────────────────────────────────────────────");
                 }
-                
                 report.AppendLine("└───────────────────────────────────────────────────────────────────────────────────────────────────┘");
                 report.AppendLine();
             }

@@ -5289,7 +5289,7 @@
                                     Margin="3"
                                     Padding="0"
                                     Click="OptimizeDependencies_Click"
-                                    Content="⚡️ Optimize"
+                                    Content="⚡ Optimize"
                                     FontSize="12"
                                     FontWeight="SemiBold"
                                     ToolTip="Optimize selected dependencies"

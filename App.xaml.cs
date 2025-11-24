@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using VPM.Services;
 using VPM.Models;
+using System.Diagnostics;
 
 namespace VPM
 {
@@ -12,6 +13,9 @@ namespace VPM
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            
+            // Suppress WPF binding errors in debug output
+            PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Critical;
             
             // Set shutdown mode to manual so closing setup window doesn't close app
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
