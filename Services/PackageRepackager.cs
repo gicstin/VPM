@@ -487,6 +487,7 @@ namespace VPM.Services
                     {
                         string originalMetaJson = null;
                         DateTime? originalMetaJsonDate = null;
+                        object archiveLock = new object();
                         
                         // First pass: collect entry metadata ONLY (not data) to avoid OOM
                         progressCallback?.Invoke("🔍 Analyzing package contents...", 0, totalOperations);
@@ -555,6 +556,7 @@ namespace VPM.Services
                         // Texture resizing is CPU-intensive, not I/O-bound, so we can use all cores
                         int maxConcurrentTextures = Math.Max(2, Environment.ProcessorCount); // Full parallelism for CPU-bound work
                         _performanceTimer.Start("Texture Conversion (All)");
+                        using (var archivePool = new ArchiveHandlePool(sourcePathForProcessing, maxConcurrentTextures))
                         using (var semaphore = new System.Threading.SemaphoreSlim(maxConcurrentTextures))
                         {
                             var tasks = textureEntries.Select(async item =>
@@ -565,22 +567,40 @@ namespace VPM.Services
                                     var (entry, _, _, _) = item;
                                     
                                     // Update progress with current texture name
-                                    // progressCallback?.Invoke($"⚡ Converting: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                    progressCallback?.Invoke($"⚡ Converting: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
 
                                     var conversionInfo = config.TextureConversions[entry.Key];
 
                                     try
                                     {
-                                        // Load texture data - use synchronous read to avoid async stream issues
+                                        // Load texture data - use pool for parallel access
                                         byte[] sourceData = null;
                                         try
                                         {
-                                            using (var stream = entry.OpenEntryStream())
-                                            using (var ms = new MemoryStream())
+                                            // Acquire a dedicated archive handle for this thread
+                                            var poolArchive = await archivePool.AcquireHandleAsync();
+                                            try
                                             {
-                                                // Use synchronous copy to handle problematic streams
-                                                stream.CopyTo(ms);
-                                                sourceData = ms.ToArray();
+                                                // Find the entry in this archive instance
+                                                var threadEntry = SharpCompressHelper.FindEntry(poolArchive, entry.Key);
+                                                
+                                                if (threadEntry != null)
+                                                {
+                                                    using (var stream = threadEntry.OpenEntryStream())
+                                                    using (var ms = new MemoryStream())
+                                                    {
+                                                        stream.CopyTo(ms);
+                                                        sourceData = ms.ToArray();
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    throw new FileNotFoundException($"Entry not found in pool archive: {entry.Key}");
+                                                }
+                                            }
+                                            finally
+                                            {
+                                                archivePool.ReleaseHandle(poolArchive);
                                             }
                                         }
                                         catch (SharpCompress.Compressors.Deflate.ZlibException)
@@ -721,11 +741,14 @@ namespace VPM.Services
                                 
                                 // CRITICAL FIX: Load scene data on-demand (not pre-loaded)
                                 byte[] sourceData;
-                                using (var stream = entry.OpenEntryStream())
-                                using (var ms = new MemoryStream())
+                                lock (archiveLock)
                                 {
-                                    stream.CopyTo(ms);
-                                    sourceData = ms.ToArray();
+                                    using (var stream = entry.OpenEntryStream())
+                                    using (var ms = new MemoryStream())
+                                    {
+                                        stream.CopyTo(ms);
+                                        sourceData = ms.ToArray();
+                                    }
                                 }
 
                                 string fileName = Path.GetFileName(entry.Key);

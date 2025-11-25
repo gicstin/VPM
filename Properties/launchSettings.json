@@ -1,8 +1,8 @@
-﻿{
+{
   "profiles": {
     "VPM": {
       "commandName": "Project",
-      "workingDirectory": "D:\\Games\\_VPM\\_VS"
+      "workingDirectory": "C:\\Users\\user\\Documents\\GitHub\\VPM\\.build"
     }
   }
 }
