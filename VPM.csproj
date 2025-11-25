@@ -24,12 +24,15 @@
     <!-- JSON Serialization Configuration for .NET 10 -->
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
   
   <!-- Rely on in-box System.Text.Json from .NET 8 to avoid copying extra DLLs -->
   
   <ItemGroup>
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
+    <PackageReference Include="NetVips" Version="3.1.0" />
+    <PackageReference Include="NetVips.Native" Version="8.17.3" />
     <PackageReference Include="SharpCompress" Version="0.37.2" />
   </ItemGroup>
   

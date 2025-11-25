@@ -29,7 +29,7 @@ namespace VPM.Services
             
             if (_settingsManager != null)
             {
-                _textureConverter.CompressionQuality = _settingsManager.Settings.TextureCompressionQuality;
+                _textureConverter.CompressionQuality = (int)_settingsManager.Settings.TextureCompressionQuality;
             }
         }
 

@@ -325,6 +325,281 @@ namespace VPM.Services
             return true;
         }
 
+        public FilterState GetSnapshot()
+        {
+            return new FilterState
+            {
+                SearchText = SearchText,
+                SearchTerms = _searchTerms,
+                HideArchivedPackages = HideArchivedPackages,
+                SelectedStatus = SelectedStatus,
+                SelectedStatuses = new HashSet<string>(SelectedStatuses, StringComparer.OrdinalIgnoreCase),
+                SelectedFavoriteStatuses = new HashSet<string>(SelectedFavoriteStatuses, StringComparer.OrdinalIgnoreCase),
+                SelectedAutoInstallStatuses = new HashSet<string>(SelectedAutoInstallStatuses, StringComparer.OrdinalIgnoreCase),
+                SelectedOptimizationStatuses = new HashSet<string>(SelectedOptimizationStatuses, StringComparer.OrdinalIgnoreCase),
+                SelectedVersionStatuses = new HashSet<string>(SelectedVersionStatuses, StringComparer.OrdinalIgnoreCase),
+                SelectedCategory = SelectedCategory,
+                SelectedCategories = new HashSet<string>(SelectedCategories, StringComparer.OrdinalIgnoreCase),
+                SelectedCreator = SelectedCreator,
+                SelectedCreators = new HashSet<string>(SelectedCreators, StringComparer.OrdinalIgnoreCase),
+                SelectedLicenseType = SelectedLicenseType,
+                SelectedLicenseTypes = new HashSet<string>(SelectedLicenseTypes, StringComparer.OrdinalIgnoreCase),
+                SelectedFileSizeRanges = new HashSet<string>(SelectedFileSizeRanges, StringComparer.OrdinalIgnoreCase),
+                SelectedSubfolders = new HashSet<string>(SelectedSubfolders, StringComparer.OrdinalIgnoreCase),
+                SelectedDamagedFilter = SelectedDamagedFilter,
+                FilterDuplicates = FilterDuplicates,
+                DateFilter = new DateFilter 
+                { 
+                    FilterType = DateFilter.FilterType,
+                    CustomStartDate = DateFilter.CustomStartDate,
+                    CustomEndDate = DateFilter.CustomEndDate
+                },
+                FavoritesManager = FavoritesManager,
+                AutoInstallManager = AutoInstallManager,
+                FileSizeTinyMax = FileSizeTinyMax,
+                FileSizeSmallMax = FileSizeSmallMax,
+                FileSizeMediumMax = FileSizeMediumMax
+            };
+        }
+
+        public bool MatchesFilters(VarMetadata metadata, FilterState state, string packageName = null)
+        {
+            if (metadata == null)
+                return false;
+
+            // 1. Search text filter (most restrictive, check first)
+            if (!string.IsNullOrEmpty(state.SearchText))
+            {
+                // Use provided package name or get from metadata/filename
+                if (string.IsNullOrEmpty(packageName))
+                {
+                    packageName = !string.IsNullOrEmpty(metadata.PackageName) 
+                        ? metadata.PackageName 
+                        : Path.GetFileNameWithoutExtension(metadata.Filename);
+                }
+                
+                // Use helper with state's search terms
+                if (!SearchHelper.MatchesPackageSearch(packageName, state.SearchTerms))
+                    return false;
+            }
+
+            // 2. Hide archived packages (fast boolean check)
+            if (state.HideArchivedPackages)
+            {
+                // Check if package is archived by status
+                if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                
+                // Check if package is archived by variant role
+                if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                
+                // Check if package is archived by filename suffix (backup marker)
+                if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
+                    return false;
+                
+                // Check if package is in archive folder (handle both "archive" and "ArchivedPackages")
+                string pathToCheck = !string.IsNullOrEmpty(metadata.FilePath) ? metadata.FilePath : metadata.Filename;
+                if (!string.IsNullOrEmpty(pathToCheck))
+                {
+                    if (pathToCheck.IndexOf("\\archive\\", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return false;
+                    
+                    if (pathToCheck.IndexOf("\\ArchivedPackages\\", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
+                            return false;
+                    }
+                }
+            }
+
+            // 3. Status filter (HashSet lookup O(1))
+            if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
+                return false;
+            
+            if (state.SelectedStatuses.Count > 0 && !state.SelectedStatuses.Contains(metadata.Status))
+                return false;
+
+            // 4. Optimization status filter
+            if (state.SelectedOptimizationStatuses.Count > 0)
+            {
+                if (metadata.Status == "Archived")
+                    return false;
+                
+                bool matchesOptimization = false;
+                foreach (var optStatus in state.SelectedOptimizationStatuses)
+                {
+                    if (optStatus.StartsWith("Optimized") && metadata.IsOptimized)
+                    {
+                        matchesOptimization = true;
+                        break;
+                    }
+                    else if (optStatus.StartsWith("Unoptimized") && !metadata.IsOptimized)
+                    {
+                        matchesOptimization = true;
+                        break;
+                    }
+                }
+                if (!matchesOptimization)
+                    return false;
+            }
+
+            // 5. Version status filter
+            if (state.SelectedVersionStatuses.Count > 0)
+            {
+                bool matchesVersion = false;
+                foreach (var verStatus in state.SelectedVersionStatuses)
+                {
+                    if (verStatus.StartsWith("Latest") && !metadata.IsOldVersion)
+                    {
+                        matchesVersion = true;
+                        break;
+                    }
+                    else if (verStatus.StartsWith("Old") && metadata.IsOldVersion)
+                    {
+                        matchesVersion = true;
+                        break;
+                    }
+                }
+                if (!matchesVersion)
+                    return false;
+            }
+
+            // 6. Favorites filter
+            if (state.SelectedFavoriteStatuses.Count > 0 && state.FavoritesManager != null)
+            {
+                if (string.IsNullOrEmpty(packageName))
+                {
+                    packageName = !string.IsNullOrEmpty(metadata.PackageName) 
+                        ? metadata.PackageName 
+                        : Path.GetFileNameWithoutExtension(metadata.Filename);
+                }
+                
+                bool isFavorite = state.FavoritesManager.IsFavorite(packageName);
+                if (!isFavorite)
+                    return false;
+            }
+
+            // 7. AutoInstall filter
+            if (state.SelectedAutoInstallStatuses.Count > 0 && state.AutoInstallManager != null)
+            {
+                if (string.IsNullOrEmpty(packageName))
+                {
+                    packageName = !string.IsNullOrEmpty(metadata.PackageName) 
+                        ? metadata.PackageName 
+                        : Path.GetFileNameWithoutExtension(metadata.Filename);
+                }
+                
+                bool isAutoInstall = state.AutoInstallManager.IsAutoInstall(packageName);
+                if (!isAutoInstall)
+                    return false;
+            }
+
+            // 8. Category filter
+            if (!string.IsNullOrEmpty(state.SelectedCategory))
+            {
+                if (metadata.Categories == null || !metadata.Categories.Contains(state.SelectedCategory))
+                    return false;
+            }
+            
+            if (state.SelectedCategories.Count > 0)
+            {
+                // Use Any + Contains to leverage SelectedCategories' case-insensitive comparer
+                if (metadata.Categories == null || !metadata.Categories.Any(c => state.SelectedCategories.Contains(c)))
+                    return false;
+            }
+
+            // 9. Creator filter
+            if (!string.IsNullOrEmpty(state.SelectedCreator) && 
+                !string.Equals(metadata.CreatorName, state.SelectedCreator, StringComparison.OrdinalIgnoreCase))
+                return false;
+                
+            if (state.SelectedCreators.Count > 0 && 
+                !state.SelectedCreators.Contains(metadata.CreatorName))
+                return false;
+
+            // 10. License filter
+            if (!string.IsNullOrEmpty(state.SelectedLicenseType) && metadata.LicenseType != state.SelectedLicenseType)
+                return false;
+            
+            if (state.SelectedLicenseTypes.Count > 0)
+            {
+                var license = string.IsNullOrEmpty(metadata.LicenseType) ? "Unknown" : metadata.LicenseType;
+                if (!state.SelectedLicenseTypes.Contains(license))
+                    return false;
+            }
+
+            // 11. Duplicate filter
+            if (state.FilterDuplicates && metadata.DuplicateLocationCount <= 1)
+                return false;
+
+            // 12. Date filter
+            if (state.DateFilter.FilterType != DateFilterType.AllTime)
+            {
+                var dateToCheck = metadata.ModifiedDate ?? metadata.CreatedDate;
+                if (!state.DateFilter.MatchesFilter(dateToCheck))
+                    return false;
+            }
+
+            // 13. File size filter
+            if (state.SelectedFileSizeRanges.Count > 0)
+            {
+                if (!MatchesFileSizeFilter(metadata.FileSize, state))
+                    return false;
+            }
+
+            // 14. Subfolders filter
+            if (state.SelectedSubfolders.Count > 0)
+            {
+                var subfolder = ExtractSubfolderFromMetadata(metadata);
+                if (string.IsNullOrEmpty(subfolder) || !state.SelectedSubfolders.Contains(subfolder))
+                    return false;
+            }
+
+            // 15. Damaged filter
+            if (!string.IsNullOrEmpty(state.SelectedDamagedFilter))
+            {
+                if (state.SelectedDamagedFilter.Contains("Damaged"))
+                {
+                    if (!metadata.IsDamaged)
+                        return false;
+                }
+                else if (state.SelectedDamagedFilter.Contains("Valid"))
+                {
+                    if (metadata.IsDamaged)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        private bool MatchesFileSizeFilter(long fileSizeBytes, FilterState state)
+        {
+            if (state.SelectedFileSizeRanges.Count == 0)
+                return true;
+
+            // Convert bytes to MB for comparison
+            double fileSizeMB = fileSizeBytes / (1024.0 * 1024.0);
+
+            foreach (var range in state.SelectedFileSizeRanges)
+            {
+                // Extract the range name without the count (e.g., "Tiny (5)" -> "Tiny")
+                var rangeName = range.Split('(')[0].Trim();
+                
+                if (rangeName == "Tiny" && fileSizeMB < state.FileSizeTinyMax)
+                    return true;
+                if (rangeName == "Small" && fileSizeMB >= state.FileSizeTinyMax && fileSizeMB < state.FileSizeSmallMax)
+                    return true;
+                if (rangeName == "Medium" && fileSizeMB >= state.FileSizeSmallMax && fileSizeMB < state.FileSizeMediumMax)
+                    return true;
+                if (rangeName == "Large" && fileSizeMB >= state.FileSizeMediumMax)
+                    return true;
+            }
+
+            return false;
+        }
+
         public Dictionary<string, int> GetCreatorCounts(Dictionary<string, VarMetadata> packages)
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

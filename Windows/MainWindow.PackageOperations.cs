@@ -72,6 +72,10 @@ namespace VPM
                 {
                     // Use enhanced batch operation with progress reporting
                     var packageNames = selectedPackages.Select(p => p.Name).ToList();
+                    
+                    // Release file locks before operation to prevent conflicts with image grid
+                    await _imageManager.ReleasePackagesAsync(packageNames);
+
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {
                         // Update status with progress
@@ -265,6 +269,9 @@ namespace VPM
                 {
                     var allPackagesToLoad = new List<string>(packagesToLoad);
                     allPackagesToLoad.AddRange(availableDependencies);
+
+                    // Release file locks before operation to prevent conflicts with image grid
+                    await _imageManager.ReleasePackagesAsync(allPackagesToLoad);
 
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {

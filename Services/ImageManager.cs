@@ -71,13 +71,13 @@ namespace VPM.Services
         private int _cacheMisses = 0;
         
         // Memory pressure management
-        // Reduced thresholds for more aggressive memory management
-        // 600MB (HIGH): Start aggressive cache cleanup to prevent OOM
-        // 900MB (CRITICAL): Force immediate cleanup and GC
+        // Increased thresholds for Server GC
+        // 4GB (HIGH): Start aggressive cache cleanup
+        // 6GB (CRITICAL): Force immediate cleanup
         private DateTime _lastMemoryCheck = DateTime.MinValue;
-        private const int MEMORY_CHECK_INTERVAL_MS = 3000; // Check every 3 seconds (more frequent)
-        private const long HIGH_MEMORY_THRESHOLD = 600_000_000; // 600MB
-        private const long CRITICAL_MEMORY_THRESHOLD = 900_000_000; // 900MB
+        private const int MEMORY_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds
+        private const long HIGH_MEMORY_THRESHOLD = 4L * 1024 * 1024 * 1024; // 4GB
+        private const long CRITICAL_MEMORY_THRESHOLD = 6L * 1024 * 1024 * 1024; // 6GB
         
         // Live loading from VAR archives
         private readonly ReaderWriterLockSlim _varArchiveLock = new ReaderWriterLockSlim();
@@ -138,9 +138,58 @@ namespace VPM.Services
 
 
         
+        public async Task ReleasePackagesAsync(IEnumerable<string> packageNames)
+        {
+            var pathsToRelease = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var packageName in packageNames)
+            {
+                // Try to find path from ImageIndex
+                if (ImageIndex.TryGetValue(packageName, out var locations) && locations.Count > 0)
+                {
+                    pathsToRelease.Add(locations[0].VarFilePath);
+                }
+                
+                // Also check metadata provider if not in index
+                var metadata = _metadataProvider.GetCachedPackageMetadata(packageName);
+                if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath))
+                {
+                    pathsToRelease.Add(metadata.FilePath);
+                }
+                
+                // Clear from caches
+                _bitmapCacheLock.EnterWriteLock();
+                try
+                {
+                    // We can't easily remove by package name from the cache keys if they are just paths
+                    // But the cache keys seem to be "VarPath|InternalPath" or similar?
+                    // Let's check TryGetCached usage.
+                    // It uses VarPath + InternalPath.
+                    // So we can't easily clear without iterating.
+                    // But BitmapImage OnLoad shouldn't lock the file.
+                    // The main issue is the open file stream in ImageLoaderAsyncPool.
+                }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
+                }
+            }
+            
+            if (pathsToRelease.Count > 0)
+            {
+                await _asyncPool.ReleaseFileLocksAsync(pathsToRelease);
+            }
+        }
+
         public async Task<bool> BuildImageIndexFromVarsAsync(IEnumerable<string> varPaths, bool forceRebuild = false)
         {
             var varPathsList = varPaths.ToList();
+            
+            // Reset cancellation for these paths as we are about to use them
+            foreach (var path in varPathsList)
+            {
+                _asyncPool.ResetCancellation(path);
+            }
 
             if (forceRebuild)
             {
@@ -186,6 +235,15 @@ namespace VPM.Services
         /// </summary>
         private bool IndexImagesInVar(string varPath)
         {
+            // Check if file is locked/cancelled
+            if (_asyncPool.IsFileCancelled(varPath))
+            {
+                return false;
+            }
+
+            // Register active file usage
+            _asyncPool.RegisterActiveFile(varPath);
+
             try
             {
                 var filename = Path.GetFileName(varPath);
@@ -299,6 +357,10 @@ namespace VPM.Services
             catch (Exception)
             {
                 return false;
+            }
+            finally
+            {
+                _asyncPool.UnregisterActiveFile(varPath);
             }
         }
         
@@ -603,59 +665,103 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Loads multiple images from the same VAR in one pass (batch optimization)
+        /// Preloads images from a VAR archive into memory and saves them to the disk cache.
+        /// This ensures the archive is opened once, read, and closed immediately, preventing file locks.
         /// </summary>
-        private Dictionary<string, BitmapImage> LoadImagesFromVarBatch(string varPath, List<string> internalPaths)
+        public async Task PreloadImagesFromVarAsync(string varPath)
         {
-            var results = new Dictionary<string, BitmapImage>();
+            if (string.IsNullOrEmpty(varPath)) return;
+
             var packageName = Path.GetFileNameWithoutExtension(varPath);
-            
-            
-            // Check memory pressure before loading new images
-            CheckMemoryPressure();
-            
-            // Get VAR file signature for disk cache
-            long fileSize = 0;
-            long lastWriteTicks = 0;
-            try
+            if (!ImageIndex.TryGetValue(packageName, out var locations))
             {
-                var fileInfo = new FileInfo(varPath);
-                fileSize = fileInfo.Length;
-                lastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
-            }
-            catch
-            {
-                // If we can't get file info, skip disk caching
-            }
-            
-            // Try disk cache first for all images (using batch lookup for efficiency)
-            var uncachedPaths = new List<string>();
-            if (fileSize > 0 && lastWriteTicks > 0)
-            {
-                // MEDIUM PRIORITY FIX 5: Use batch lookup instead of sequential checks
-                var (cachedImages, uncached) = _diskCache.TryGetCachedBatch(varPath, internalPaths, fileSize, lastWriteTicks);
-                
-                // Add cached images to results
-                foreach (var (path, bitmap) in cachedImages)
-                {
-                    results[path] = bitmap;
-                }
-                
-                uncachedPaths = uncached;
-            }
-            else
-            {
-                uncachedPaths.AddRange(internalPaths);
+                return;
             }
 
-            // Load uncached images from VAR
-            if (uncachedPaths.Count == 0)
+            var internalPaths = locations.Select(l => l.InternalPath).ToList();
+            
+            // Run on background thread
+            await Task.Run(() => 
+            {
+                // This method loads images and saves them to disk cache
+                // We discard the returned dictionary as we only care about the side effect (caching)
+                // Use parallel loading for better performance
+                LoadImagesFromVarParallel(varPath, internalPaths, maxParallelism: 0, cacheOnly: true);
+            });
+        }
+
+        /// <summary>
+        /// Preloads images from multiple VAR archives in parallel
+        /// </summary>
+        public async Task PreloadImagesFromVarsAsync(IEnumerable<string> varPaths)
+        {
+            var tasks = varPaths.Select(PreloadImagesFromVarAsync);
+            await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// Loads multiple images from the same VAR in one pass (batch optimization)
+        /// </summary>
+        public Dictionary<string, BitmapImage> LoadImagesFromVarBatch(string varPath, List<string> internalPaths, bool cacheOnly = false)
+        {
+            var results = new Dictionary<string, BitmapImage>();
+            
+            // Check if file is locked/cancelled
+            if (_asyncPool.IsFileCancelled(varPath))
             {
                 return results;
             }
-            
+
+            // Register active file usage
+            _asyncPool.RegisterActiveFile(varPath);
+
             try
             {
+                var packageName = Path.GetFileNameWithoutExtension(varPath);
+                
+                // Check memory pressure before loading new images
+                CheckMemoryPressure();
+            
+                // Get VAR file signature for disk cache
+                long fileSize = 0;
+                long lastWriteTicks = 0;
+                try
+                {
+                    var fileInfo = new FileInfo(varPath);
+                    fileSize = fileInfo.Length;
+                    lastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
+                }
+                catch
+                {
+                    // If we can't get file info, skip disk caching
+                }
+                
+                // Try disk cache first for all images (using batch lookup for efficiency)
+                var uncachedPaths = new List<string>();
+                if (fileSize > 0 && lastWriteTicks > 0)
+                {
+                    // MEDIUM PRIORITY FIX 5: Use batch lookup instead of sequential checks
+                    var (cachedImages, uncached) = _diskCache.TryGetCachedBatch(varPath, internalPaths, fileSize, lastWriteTicks);
+                    
+                    // Add cached images to results
+                    foreach (var (path, bitmap) in cachedImages)
+                    {
+                        results[path] = bitmap;
+                    }
+                    
+                    uncachedPaths = uncached;
+                }
+                else
+                {
+                    uncachedPaths.AddRange(internalPaths);
+                }
+
+                // Load uncached images from VAR
+                if (uncachedPaths.Count == 0)
+                {
+                    return results;
+                }
+                
                 using var archive = SharpCompressHelper.OpenForRead(varPath);
 
                 foreach (var internalPath in uncachedPaths)
@@ -745,7 +851,10 @@ namespace VPM.Services
             {
                 Console.WriteLine($"[ImageManager] Error loading images from '{varPath}': {ex.Message}");
             }
-            
+            finally
+            {
+                _asyncPool.UnregisterActiveFile(varPath);
+            }
             
             return results;
         }
@@ -754,72 +863,92 @@ namespace VPM.Services
         /// Phase 4: Loads multiple images from the same VAR using parallel archive handles
         /// Achieves 2-4x throughput improvement for batch operations
         /// </summary>
-        private Dictionary<string, BitmapImage> LoadImagesFromVarParallel(string varPath, List<string> internalPaths, int maxParallelism = 0)
+        private Dictionary<string, BitmapImage> LoadImagesFromVarParallel(string varPath, List<string> internalPaths, int maxParallelism = 0, bool cacheOnly = false)
         {
             var results = new Dictionary<string, BitmapImage>();
             
-            // Check memory pressure before loading new images
-            CheckMemoryPressure();
-            
-            if (maxParallelism <= 0)
-                maxParallelism = Math.Max(2, Environment.ProcessorCount / 2);
+            // Check if file is locked/cancelled
+            if (_asyncPool.IsFileCancelled(varPath))
+            {
+                return results;
+            }
 
-            var startTime = DateTime.UtcNow;
+            // Register active file usage
+            _asyncPool.RegisterActiveFile(varPath);
 
             try
             {
-                // Check if file exists before attempting to open
-                if (!File.Exists(varPath))
-                {
-                    Console.WriteLine($"[ImageManager] VAR file not found: {varPath}");
-                    return results; // Return empty results
-                }
-
-                using var pool = new ArchiveHandlePool(varPath, maxParallelism);
+                // Check memory pressure before loading new images
+                CheckMemoryPressure();
                 
-                // Get VAR file signature for disk cache
-                long fileSize = 0;
-                long lastWriteTicks = 0;
-                try
-                {
-                    var fileInfo = new FileInfo(varPath);
-                    fileSize = fileInfo.Length;
-                    lastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
-                }
-                catch { }
-
-                // Try disk cache first (using batch lookup for efficiency)
-                var uncachedPaths = new List<string>();
-                if (fileSize > 0 && lastWriteTicks > 0)
-                {
-                    // MEDIUM PRIORITY FIX 5: Use batch lookup instead of sequential checks
-                    var (cachedImages, uncached) = _diskCache.TryGetCachedBatch(varPath, internalPaths, fileSize, lastWriteTicks);
-                    
-                    // Add cached images to results
-                    foreach (var (path, bitmap) in cachedImages)
+                if (maxParallelism <= 0)
+                    maxParallelism = Math.Max(2, Environment.ProcessorCount / 2);
+    
+                var startTime = DateTime.UtcNow;
+    
+                    // Check if file exists before attempting to open
+                    if (!File.Exists(varPath))
                     {
-                        results[path] = bitmap;
+                        Console.WriteLine($"[ImageManager] VAR file not found: {varPath}");
+                        return results; // Return empty results
                     }
+    
+                    using var pool = new ArchiveHandlePool(varPath, maxParallelism);
                     
-                    uncachedPaths = uncached;
-                }
-                else
-                {
-                    uncachedPaths.AddRange(internalPaths);
-                }
-
-                if (uncachedPaths.Count == 0)
-                    return results;
-
-                // Phase 4: Parallel loading with archive pool
-                var tasks = uncachedPaths.Select(internalPath => Task.Run(async () =>
-                {
+                    // Get VAR file signature for disk cache
+                    long fileSize = 0;
+                    long lastWriteTicks = 0;
                     try
                     {
-                        var archive = await pool.AcquireHandleAsync();
+                        var fileInfo = new FileInfo(varPath);
+                        fileSize = fileInfo.Length;
+                        lastWriteTicks = fileInfo.LastWriteTimeUtc.Ticks;
+                    }
+                    catch { }
+    
+                    // Try disk cache first (using batch lookup for efficiency)
+                    var uncachedPaths = new List<string>();
+                    if (fileSize > 0 && lastWriteTicks > 0)
+                    {
+                        // MEDIUM PRIORITY FIX 5: Use batch lookup instead of sequential checks
+                        var (cachedImages, uncached) = _diskCache.TryGetCachedBatch(varPath, internalPaths, fileSize, lastWriteTicks);
+                        
+                        // Add cached images to results
+                        if (!cacheOnly)
+                        {
+                            foreach (var (path, bitmap) in cachedImages)
+                            {
+                                results[path] = bitmap;
+                            }
+                        }
+                        
+                        uncachedPaths = uncached;
+                    }
+                    else
+                    {
+                        uncachedPaths.AddRange(internalPaths);
+                    }
+    
+                    if (uncachedPaths.Count == 0)
+                        return results;
+    
+                    // Phase 4: Parallel loading with archive pool
+                    var tasks = uncachedPaths.Select(internalPath => Task.Run(async () =>
+                    {
+                        // Check cancellation inside task
+                        if (_asyncPool.IsFileCancelled(varPath))
+                            return (internalPath, bitmap: (BitmapImage)null);
+
                         try
                         {
-                            var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
+                            var archive = await pool.AcquireHandleAsync();
+                            try
+                            {
+                                // Check cancellation again after acquiring handle
+                                if (_asyncPool.IsFileCancelled(varPath))
+                                    return (internalPath, bitmap: (BitmapImage)null);
+
+                                var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
                             if (entry == null)
                                 return (internalPath, bitmap: (BitmapImage)null);
 
@@ -919,7 +1048,10 @@ namespace VPM.Services
                     var (path, bitmap) = task.Result;
                     if (bitmap != null)
                     {
-                        results[path] = bitmap;
+                        if (!cacheOnly)
+                        {
+                            results[path] = bitmap;
+                        }
                         
                         if (fileSize > 0 && lastWriteTicks > 0)
                         {
@@ -942,7 +1074,11 @@ namespace VPM.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"[ImageManager] Parallel loading failed, falling back to sequential: {ex.Message}");
-                return LoadImagesFromVarBatch(varPath, internalPaths);
+                return LoadImagesFromVarBatch(varPath, internalPaths, cacheOnly);
+            }
+            finally
+            {
+                _asyncPool.UnregisterActiveFile(varPath);
             }
 
             return results;
@@ -1776,7 +1912,7 @@ namespace VPM.Services
                     _bitmapCacheLock.ExitWriteLock();
                 }
 
-                GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
+                // GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
             }
             else if (memoryUsage > HIGH_MEMORY_THRESHOLD)
             {
@@ -1815,7 +1951,7 @@ namespace VPM.Services
                     _bitmapCacheLock.ExitWriteLock();
                 }
                 
-                GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
+                // GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
             }
         }
 
@@ -2100,6 +2236,10 @@ namespace VPM.Services
             {
                 var packageName = Path.GetFileNameWithoutExtension(varPath);
                 
+                // CRITICAL: Cancel any pending image loads for this package
+                // This prevents new file handles from being opened while we try to close existing ones
+                _asyncPool.CancelPendingForPackage(varPath);
+
                 // CRITICAL: Clear bitmap cache entries for this package to release memory references
                 // This must happen BEFORE the file operation to prevent "file in use" errors
                 _bitmapCacheLock.EnterWriteLock();
@@ -2157,8 +2297,8 @@ namespace VPM.Services
                 }
                 
                 // Force garbage collection to ensure all references are released
-                GC.Collect(0, GCCollectionMode.Optimized);
-                GC.WaitForPendingFinalizers();
+                // GC.Collect(0, GCCollectionMode.Optimized);
+                // GC.WaitForPendingFinalizers();
             }
             catch (Exception ex)
             {

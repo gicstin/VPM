@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -43,6 +44,10 @@ namespace VPM.Services
         private int _totalValidationChecks = 0;
         private readonly object _validationMetricsLock = new();
         
+        // File locking management
+        private readonly ConcurrentDictionary<string, int> _activeFiles = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, bool> _cancelledPaths = new(StringComparer.OrdinalIgnoreCase);
+        
         // Callbacks and events
         public event Action<int, int> ProgressChanged; // (current, total)
         public event Action<QueuedImage> ImageProcessed;
@@ -84,6 +89,81 @@ namespace VPM.Services
         }
         
         /// <summary>
+        /// Cancels pending operations for specific file paths and waits for active ones to finish
+        /// </summary>
+        public async Task ReleaseFileLocksAsync(IEnumerable<string> filePaths)
+        {
+            var paths = filePaths.ToList();
+            
+            // 1. Mark paths as cancelled to prevent new operations
+            foreach (var path in paths)
+            {
+                _cancelledPaths.TryAdd(path, true);
+            }
+            
+            // 2. Wait for active operations to finish
+            var maxWait = TimeSpan.FromSeconds(5);
+            var start = DateTime.UtcNow;
+            
+            while (DateTime.UtcNow - start < maxWait)
+            {
+                bool anyActive = false;
+                foreach (var path in paths)
+                {
+                    if (_activeFiles.TryGetValue(path, out int count) && count > 0)
+                    {
+                        anyActive = true;
+                        break;
+                    }
+                }
+                
+                if (!anyActive)
+                    break;
+                    
+                await Task.Delay(50);
+            }
+            
+            // 3. Clear cancellation status (optional, depending on if we want to permanently block)
+            // For unload, we probably want to keep them cancelled until re-added? 
+            // But usually the file is gone after unload.
+            // If we reload, we might need to clear this. 
+            // For now, let's leave them cancelled. The caller should clear if needed.
+            // Actually, if the user re-downloads the package, we want to be able to load it again.
+            // So we should probably clear the cancellation flag after the wait, 
+            // assuming the caller will proceed with the exclusive operation immediately.
+            // BUT, if we clear it, the queue might pick up pending items again.
+            // So we should probably clear the queue of these items?
+            // We can't easily clear the queue.
+            
+            // Better approach: Keep them cancelled. If the user reloads the package, 
+            // the application logic usually creates new QueuedImage objects.
+            // We need a way to "Uncancel" or "Reset" for a path.
+        }
+
+        public void ResetCancellation(string path)
+        {
+            _cancelledPaths.TryRemove(path, out _);
+        }
+
+        public void RegisterActiveFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            _activeFiles.AddOrUpdate(path, 1, (k, v) => v + 1);
+        }
+
+        public void UnregisterActiveFile(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            _activeFiles.AddOrUpdate(path, 0, (k, v) => Math.Max(0, v - 1));
+        }
+
+        public bool IsFileCancelled(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return false;
+            return _cancelledPaths.ContainsKey(path);
+        }
+
+        /// <summary>
         /// Starts the async processing loop
         /// </summary>
         private void StartProcessing()
@@ -113,19 +193,67 @@ namespace VPM.Services
                         continue;
                     }
                     
+                    // Check if path is cancelled
+                    if (!string.IsNullOrEmpty(queuedImage.VarPath) && _cancelledPaths.ContainsKey(queuedImage.VarPath))
+                    {
+                        queuedImage.HadError = true;
+                        queuedImage.ErrorText = "Operation cancelled due to file lock request";
+                        // Skip processing but invoke callback to cleanup
+                        FinishImage(queuedImage); // This is empty but good for consistency
+                        
+                        // Invoke callback on UI thread to ensure UI knows it's done (failed)
+                        if (!_disposed && _dispatcher != null)
+                        {
+                            _dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    queuedImage.Callback?.Invoke(queuedImage);
+                                }
+                                catch { }
+                            }));
+                        }
+                        continue;
+                    }
+                    
                     try
                     {
-                        // Process image with concurrency control
-                        await _concurrencySemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                        try
+                        if (queuedImage.Cancelled)
                         {
-                            // Process on thread pool (CPU-bound work)
-                            await Task.Run(() => ProcessImage(queuedImage), cancellationToken).ConfigureAwait(false);
-                            FinishImage(queuedImage);
+                            queuedImage.HadError = true;
+                            queuedImage.ErrorText = "Operation cancelled";
                         }
-                        finally
+                        else
                         {
-                            _concurrencySemaphore.Release();
+                            // Process image with concurrency control
+                            await _concurrencySemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+                            try
+                            {
+                                // Track active file usage
+                                if (!string.IsNullOrEmpty(queuedImage.VarPath))
+                                {
+                                    _activeFiles.AddOrUpdate(queuedImage.VarPath, 1, (k, v) => v + 1);
+                                }
+
+                                try
+                                {
+                                    // Process on thread pool (CPU-bound work)
+                                    await Task.Run(() => ProcessImage(queuedImage), cancellationToken).ConfigureAwait(false);
+                                    FinishImage(queuedImage);
+                                }
+                                finally
+                                {
+                                    // Release file usage tracking
+                                    if (!string.IsNullOrEmpty(queuedImage.VarPath))
+                                    {
+                                        _activeFiles.AddOrUpdate(queuedImage.VarPath, 0, (k, v) => Math.Max(0, v - 1));
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                _concurrencySemaphore.Release();
+                            }
                         }
                         
                         // Invoke callback on UI thread
@@ -590,6 +718,33 @@ namespace VPM.Services
             }
         }
         
+        /// <summary>
+        /// Cancels all pending image loads for a specific VAR file
+        /// </summary>
+        public void CancelPendingForPackage(string varPath)
+        {
+            if (string.IsNullOrEmpty(varPath)) return;
+            
+            // Normalize path for comparison
+            var normalizedPath = varPath.Replace('/', '\\');
+
+            foreach (var item in _thumbnailQueue)
+            {
+                if (item.VarPath != null && item.VarPath.Replace('/', '\\').Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    item.Cancelled = true;
+                }
+            }
+
+            foreach (var item in _imageQueue)
+            {
+                if (item.VarPath != null && item.VarPath.Replace('/', '\\').Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    item.Cancelled = true;
+                }
+            }
+        }
+
         public void Dispose()
         {
             if (_disposed) return;

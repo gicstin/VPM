@@ -115,6 +115,20 @@ namespace VPM
                     await _imageManager.BuildImageIndexFromVarsAsync(packagesToIndex, forceRebuild: false);
                 }
 
+                // Preload images for selected packages to avoid file locking during display
+                // This reads all previews into memory/cache in one go, then releases the archive
+                var packagesToPreload = selectedPackages
+                    .Select(pkg => GetCachedPackageMetadata(!string.IsNullOrEmpty(pkg.MetadataKey) ? pkg.MetadataKey : pkg.Name))
+                    .Where(meta => meta?.FilePath != null)
+                    .Select(meta => meta.FilePath)
+                    .Distinct()
+                    .ToList();
+
+                if (packagesToPreload.Count > 0)
+                {
+                    await _imageManager.PreloadImagesFromVarsAsync(packagesToPreload);
+                }
+
                 var selectedPackageNames = selectedPackages.Select(p => p.Name).ToList();
 
                 // Determine operation mode: full redraw, selective removal, or incremental append

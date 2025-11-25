@@ -666,8 +666,8 @@ namespace VPM.Services
                 // First ensure any open file handles are closed
                 _imageManager?.CloseFileHandles(sourceFile);
                 
-                // Give the OS time to release file handles
-                await Task.Delay(100);
+                // Give the OS time to release file handles and for pending tasks to cancel
+                await Task.Delay(200);
 
                 // Move the file with enhanced error handling (skip validation to allow corrupt VARs to move)
                 var (success, error) = await SafeMoveFileAsync(sourceFile, destinationFile, 5, true);
@@ -788,8 +788,8 @@ namespace VPM.Services
                         _imageManager?.InvalidatePackageCache(packageName);
                         _imageManager?.CloseFileHandles(sourceFile);
                         
-                        // Give the OS time to release file handles
-                        await Task.Delay(150);
+                        // Give the OS time to release file handles and for pending tasks to cancel
+                        await Task.Delay(250);
                         
                         File.Delete(sourceFile);
                         

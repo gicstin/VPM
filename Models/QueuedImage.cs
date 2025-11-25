@@ -25,5 +25,6 @@ namespace VPM.Models
         // Cache validation properties
         public long FileSize { get; set; }
         public long LastWriteTicks { get; set; }
+        public bool Cancelled { get; set; }
     }
 }
