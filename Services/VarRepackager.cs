@@ -98,7 +98,7 @@ namespace VPM.Services
                     // Read from archive (keep original), write to loaded folder
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, textureConversions.Count);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     // Determine output folder (AddonPackages or AllPackages)
@@ -131,8 +131,8 @@ namespace VPM.Services
                     // This provides BETTER QUALITY when downscaling (e.g., 8K†’2K is better than 4K†’2K)
                     progressCallback?.Invoke("Re-optimizing from original archive (better quality)...", 0, textureConversions.Count);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
-                    _imageManager?.CloseFileHandles(archiveFilePath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(archiveFilePath);
                     await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
@@ -145,7 +145,7 @@ namespace VPM.Services
                     // Move original to archive, then optimize
                     progressCallback?.Invoke("Moving original to archive...", 0, textureConversions.Count);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     archivedPath = archiveFilePath;
@@ -167,7 +167,7 @@ namespace VPM.Services
                             if (attempt < 3)
                             {
                                 await ReleaseFileHandlesAsync(1000 * attempt);
-                                _imageManager?.CloseFileHandles(sourceVarPath);
+                                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                             }
                         }
                     }

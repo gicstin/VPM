@@ -183,6 +183,17 @@ namespace VPM.Windows
         }
         
         /// <summary>
+        /// Cancels any pending loading operation and prevents future loading
+        /// </summary>
+        public void CancelLoading()
+        {
+            _isLoadingInProgress = false;
+            // We can't easily cancel the callback if it's already running, 
+            // but we can prevent the result from being applied
+            LoadImageCallback = null;
+        }
+
+        /// <summary>
         /// Loads the actual image using the provided callback
         /// </summary>
         public async Task LoadImageAsync()
@@ -202,7 +213,18 @@ namespace VPM.Windows
                 }
                 else if (LoadImageCallback != null)
                 {
-                    image = await LoadImageCallback();
+                    // Capture callback to local variable to handle race conditions with CancelLoading
+                    var callback = LoadImageCallback;
+                    if (callback != null)
+                    {
+                        image = await callback();
+                    }
+                }
+                
+                // Check if cancelled (callback set to null)
+                if (LoadImageCallback == null && ImageSource == null)
+                {
+                    return;
                 }
                 
                 if (image != null)

@@ -99,6 +99,8 @@ namespace VPM.Services
             foreach (var path in paths)
             {
                 _cancelledPaths.TryAdd(path, true);
+                // Also cancel any pending items in the queue for this path
+                CancelPendingForPackage(path);
             }
             
             // 2. Wait for active operations to finish
@@ -140,6 +142,31 @@ namespace VPM.Services
             // We need a way to "Uncancel" or "Reset" for a path.
         }
 
+        /// <summary>
+        /// Cancels all pending operations and waits for active ones to finish
+        /// </summary>
+        public async Task CancelAllOperationsAsync()
+        {
+            // 1. Cancel all queued items
+            foreach (var item in _thumbnailQueue) item.Cancelled = true;
+            foreach (var item in _imageQueue) item.Cancelled = true;
+            
+            // 2. Clear queues
+            ClearQueues();
+            
+            // 3. Wait for active operations to finish
+            var maxWait = TimeSpan.FromSeconds(5);
+            var start = DateTime.UtcNow;
+            
+            while (DateTime.UtcNow - start < maxWait)
+            {
+                if (_activeFiles.IsEmpty)
+                    break;
+                    
+                await Task.Delay(50);
+            }
+        }
+
         public void ResetCancellation(string path)
         {
             _cancelledPaths.TryRemove(path, out _);
@@ -173,7 +200,7 @@ namespace VPM.Services
             _running = true;
             _cancellationTokenSource = new CancellationTokenSource();
             // Fire and forget - processing runs in background
-            _ = ProcessQueueAsync(_cancellationTokenSource.Token);
+            _processingTask = ProcessQueueAsync(_cancellationTokenSource.Token);
         }
         
         /// <summary>

@@ -146,7 +146,7 @@ namespace VPM.Services
                     // This preserves the original old version while creating an optimized version
                     progressCallback?.Invoke("Backing up old version and optimizing...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     // Create backup of old version with #archived suffix
@@ -195,7 +195,7 @@ namespace VPM.Services
                     // Read from archive (keep original), write to loaded folder
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     // Determine output folder (AddonPackages or AllPackages)
@@ -228,8 +228,8 @@ namespace VPM.Services
                     // This provides BETTER QUALITY when downscaling (e.g., 8K→2K is better than 4K→2K)
                     progressCallback?.Invoke("Re-optimizing textures from original archive (better quality)...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
-                    _imageManager?.CloseFileHandles(archiveFilePath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(archiveFilePath);
                     await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
@@ -243,7 +243,7 @@ namespace VPM.Services
                     // This preserves previous optimizations (textures, hair, etc.) while applying new metadata changes
                     progressCallback?.Invoke("Applying metadata optimizations...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = sourceVarPath; // Modify current file
@@ -256,7 +256,7 @@ namespace VPM.Services
                     // Move original to archive, then optimize
                     progressCallback?.Invoke("Moving original to archive...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     archivedPath = archiveFilePath;
@@ -278,7 +278,7 @@ namespace VPM.Services
                             if (attempt < 3)
                             {
                                 await ReleaseFileHandlesAsync(1000 * attempt);
-                                _imageManager?.CloseFileHandles(sourceVarPath);
+                                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                             }
                         }
                     }
@@ -300,8 +300,8 @@ namespace VPM.Services
                     // This avoids creating unnecessary #archived copies on re-optimization
                     progressCallback?.Invoke("Re-optimizing from original archive...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
-                    _imageManager?.CloseFileHandles(archiveFilePath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(archiveFilePath);
                     await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = archiveFilePath; // Read from archive (original)
@@ -315,7 +315,7 @@ namespace VPM.Services
                     // Quality will be limited by current package resolution
                     progressCallback?.Invoke("Re-optimizing from current version (archive not found)...", 0, totalOperations);
                     
-                    _imageManager?.CloseFileHandles(sourceVarPath);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
                     sourcePathForProcessing = sourceVarPath;
@@ -363,8 +363,8 @@ namespace VPM.Services
                         string fileToModify = sourcePathForProcessing;
                         if (isSourceInArchive && sourcePathForProcessing != finalOutputPath)
                         {
-                            _imageManager?.CloseFileHandles(sourcePathForProcessing);
-                            _imageManager?.CloseFileHandles(finalOutputPath);
+                            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePathForProcessing);
+                            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(finalOutputPath);
                             await ReleaseFileHandlesAsync(100);
                             
                             // Copy archive to final output location
@@ -376,7 +376,7 @@ namespace VPM.Services
                             fileToModify = finalOutputPath;
                         }
                         
-                        _imageManager?.CloseFileHandles(fileToModify);
+                        if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(fileToModify);
                         await ReleaseFileHandlesAsync(100);
                         
                         // Use SharpCompress to read and re-write the archive with metadata updates

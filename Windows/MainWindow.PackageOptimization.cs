@@ -190,6 +190,10 @@ namespace VPM
                 // This ensures any file handles are released
                 parentDialog.Close();
                 
+                // CRITICAL: Cancel any active image loading to prevent file locks
+                // This stops the image grid from requesting new images while we're working
+                await CancelImageLoading();
+                
                 // Small delay to ensure dialog cleanup completes
                 await System.Threading.Tasks.Task.Delay(200);
 

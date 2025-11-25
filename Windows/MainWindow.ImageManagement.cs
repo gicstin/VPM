@@ -1305,6 +1305,8 @@ namespace VPM
             _reflowTimer.Start();
         }
 
+
+
         /// <summary>
         /// Refreshes the image display with current settings - used when settings change
         /// </summary>
@@ -2793,6 +2795,50 @@ namespace VPM
                 {
                     FindAndUpdateImageExtractionState(child, internalImagePath, isExtracted);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Cancels all image loading operations and clears the image grid.
+        /// This is critical for releasing file locks before package optimization.
+        /// </summary>
+        public async Task CancelImageLoading()
+        {
+            try
+            {
+                // 1. Stop the virtualized manager
+                if (_virtualizedImageManager != null)
+                {
+                    _virtualizedImageManager.Dispose();
+                    _virtualizedImageManager = null;
+                }
+
+                // 2. Clear the UI immediately to remove references
+                ImagesPanel.Children.Clear();
+                
+                // 3. Clear internal tracking
+                lock (_statusIndicatorsLock) _packageStatusIndicators.Clear();
+                lock (_buttonsLock) _packageButtons.Clear();
+                _incrementalImageGridManager.Clear();
+                
+                // 4. Cancel all background image loading operations
+                if (_imageManager != null)
+                {
+                    await _imageManager.CancelAllOperationsAsync();
+                }
+                
+                // 5. Force GC to clean up any lingering BitmapImage objects
+                // This is aggressive but necessary for file operations
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                
+                // 6. Small delay to ensure OS releases handles
+                await Task.Delay(100);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error cancelling image loading: {ex.Message}");
             }
         }
 

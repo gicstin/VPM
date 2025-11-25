@@ -98,6 +98,7 @@ $publishArgs = @(
     "--self-contained", "false",
     "-p:PublishSingleFile=$singleFile",
     "-p:PublishTrimmed=$trimmed",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
     "-p:PublishReadyToRun=$readyToRun",
     "-p:DebugType=$debugType",
     "-o", $outputDir,

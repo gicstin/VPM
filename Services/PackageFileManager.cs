@@ -664,7 +664,7 @@ namespace VPM.Services
                 }
 
                 // First ensure any open file handles are closed
-                _imageManager?.CloseFileHandles(sourceFile);
+                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
                 
                 // Give the OS time to release file handles and for pending tasks to cancel
                 await Task.Delay(200);
@@ -786,7 +786,7 @@ namespace VPM.Services
                         // CRITICAL: Invalidate all image caches for this package BEFORE file operations
                         // This ensures no image references are held when the file is deleted
                         _imageManager?.InvalidatePackageCache(packageName);
-                        _imageManager?.CloseFileHandles(sourceFile);
+                        if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
                         
                         // Give the OS time to release file handles and for pending tasks to cancel
                         await Task.Delay(250);
@@ -829,7 +829,7 @@ namespace VPM.Services
                 // CRITICAL: Invalidate all image caches for this package BEFORE file operations
                 // This ensures no image references are held when the file is moved
                 _imageManager?.InvalidatePackageCache(packageName);
-                _imageManager?.CloseFileHandles(sourceFile);
+                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
                 
                 // Give the OS time to release file handles
                 await Task.Delay(150);

@@ -181,6 +181,15 @@ namespace VPM.Services
             }
         }
 
+        /// <summary>
+        /// Cancels all pending image operations and waits for active ones to finish.
+        /// Used when performing global file operations like optimization.
+        /// </summary>
+        public async Task CancelAllOperationsAsync()
+        {
+            await _asyncPool.CancelAllOperationsAsync();
+        }
+
         public async Task<bool> BuildImageIndexFromVarsAsync(IEnumerable<string> varPaths, bool forceRebuild = false)
         {
             var varPathsList = varPaths.ToList();
@@ -2228,7 +2237,7 @@ namespace VPM.Services
         /// Closes any open file handles for a specific .var file
         /// This is a critical operation that must happen BEFORE the file is moved/deleted
         /// </summary>
-        public void CloseFileHandles(string varPath)
+        public async Task CloseFileHandlesAsync(string varPath)
         {
             if (string.IsNullOrEmpty(varPath)) return;
             
@@ -2239,6 +2248,9 @@ namespace VPM.Services
                 // CRITICAL: Cancel any pending image loads for this package
                 // This prevents new file handles from being opened while we try to close existing ones
                 _asyncPool.CancelPendingForPackage(varPath);
+
+                // Wait for active file operations to complete
+                await _asyncPool.ReleaseFileLocksAsync(new[] { varPath });
 
                 // CRITICAL: Clear bitmap cache entries for this package to release memory references
                 // This must happen BEFORE the file operation to prevent "file in use" errors
