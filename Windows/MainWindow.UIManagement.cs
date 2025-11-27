@@ -361,7 +361,7 @@ namespace VPM
             _selectedFolder = settings.SelectedFolder;
             
             // Apply image columns
-            _imageColumns = settings.ImageColumns;
+            ImageColumns = settings.ImageColumns;
             
             
             // Apply cascade filtering setting
@@ -607,9 +607,9 @@ namespace VPM
             }
             
             // Apply image columns if changed
-            if (_imageColumns != settings.ImageColumns)
+            if (ImageColumns != settings.ImageColumns)
             {
-                _imageColumns = settings.ImageColumns;
+                ImageColumns = settings.ImageColumns;
                 RefreshImageDisplay();
             }
             

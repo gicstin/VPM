@@ -927,7 +927,7 @@ namespace VPM.Services
                                     progressCallback?.Invoke($"📝 Writing files... ({writeIndex}/{totalWrites})", processedCount, totalOperations);
                                 }
                             }
-                            catch (SharpCompress.Compressors.Deflate.ZlibException zlibEx)
+                            catch (SharpCompress.Compressors.Deflate.ZlibException)
                             {
                                 // CRITICAL FIX: Never skip textures - copy as-is even if decompression fails
                                 // System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Decompression error on entry (copying as-is): {entry.Key}");

@@ -263,8 +263,19 @@ namespace VPM.Services
         /// </summary>
         public static IArchiveEntry FindEntry(IArchive archive, string entryName)
         {
-            return archive.Entries.FirstOrDefault(e => 
-                e.Key.Equals(entryName, StringComparison.OrdinalIgnoreCase));
+            try
+            {
+                return archive.Entries.FirstOrDefault(e => 
+                    e.Key.Equals(entryName, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (ArchiveException)
+            {
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -272,8 +283,21 @@ namespace VPM.Services
         /// </summary>
         public static IArchiveEntry FindEntryByPath(IArchive archive, string fullPath)
         {
-            return archive.Entries.FirstOrDefault(e => 
-                e.Key.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
+            try
+            {
+                return archive.Entries.FirstOrDefault(e => 
+                    e.Key.Equals(fullPath, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (ArchiveException)
+            {
+                // Archive is likely corrupt
+                return null;
+            }
+            catch (InvalidOperationException)
+            {
+                // Archive might be in an invalid state
+                return null;
+            }
         }
 
         /// <summary>

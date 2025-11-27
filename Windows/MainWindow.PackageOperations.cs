@@ -1746,6 +1746,22 @@ namespace VPM
             }
         }
 
+        private async void LoadPackageFromHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is PackageItem packageItem)
+            {
+                await LoadSinglePackageAsync(packageItem, null, null);
+            }
+        }
+
+        private async void UnloadPackageFromHeader_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is PackageItem packageItem)
+            {
+                await UnloadSinglePackageAsync(packageItem, null, null);
+            }
+        }
+
         #endregion
     }
 }

@@ -4,7 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:System="clr-namespace:System;assembly=mscorlib"
     xmlns:local="clr-namespace:VPM"
+    xmlns:windows="clr-namespace:VPM.Windows"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+    x:Name="VPMWindow"
     Title="VPM - Ready"
     Width="1200"
     Height="800"
@@ -22,9 +24,21 @@
     <Window.Resources>
         <CollectionViewSource x:Key="PackagesView" />
         <CollectionViewSource x:Key="ScenesView" />
+        <CollectionViewSource x:Key="PreviewImagesView">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="PackageItem" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <local:ContentCountsConverter x:Key="ContentCountsConverter" />
         <local:ThumbnailPathConverter x:Key="ThumbnailPathConverter" />
+        <local:ColorToBrushConverter x:Key="ColorToBrushConverter" />
+        <windows:DebugConverter x:Key="DebugConverter" />
+        <windows:CountToColumnsConverter x:Key="CountToColumnsConverter" />
+        <windows:ImageWidthConverter x:Key="ImageWidthConverter" />
+        <windows:FirstImageOfPackageConverter x:Key="FirstImageOfPackageConverter" />
+        <windows:BytesToMegabytesConverter x:Key="BytesToMegabytesConverter" />
+        <windows:PackageStatusToLoadButtonConverter x:Key="PackageStatusToLoadButtonConverter" />
         <System:Double x:Key="FilterToggleButtonSize">27</System:Double>
         <System:Double x:Key="LinkedButtonHeight">36</System:Double>
         <Thickness x:Key="StandardMargin">6</Thickness>
@@ -5891,63 +5905,167 @@
 
                     <!--  Main images area with overlay controls  -->
                     <Grid Grid.Row="1">
-                        <ScrollViewer
-                            x:Name="ImagesScrollViewer"
-                            BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
-                            BorderThickness="1"
-                            HorizontalScrollBarVisibility="Disabled"
-                            PreviewMouseWheel="ImagesScrollViewer_PreviewMouseWheel"
-                            ScrollChanged="OnProgressiveScrollChanged"
-                            VerticalScrollBarVisibility="Auto">
-                            <ScrollViewer.Template>
-                                <ControlTemplate TargetType="ScrollViewer">
-                                    <Border
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                        CornerRadius="{StaticResource CornerRadiusValue}">
-                                        <Grid>
-                                            <Grid.RowDefinitions>
-                                                <RowDefinition Height="*" />
-                                                <RowDefinition Height="Auto" />
-                                            </Grid.RowDefinitions>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <ScrollContentPresenter Grid.Row="0" Grid.Column="0" />
-                                            <ScrollBar
-                                                Name="PART_VerticalScrollBar"
-                                                Grid.Row="0"
-                                                Grid.Column="1"
-                                                Maximum="{TemplateBinding ScrollableHeight}"
-                                                Orientation="Vertical"
-                                                ViewportSize="{TemplateBinding ViewportHeight}"
-                                                Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
-                                                Value="{TemplateBinding VerticalOffset}" />
-                                            <ScrollBar
-                                                Name="PART_HorizontalScrollBar"
-                                                Grid.Row="1"
-                                                Grid.Column="0"
-                                                Maximum="{TemplateBinding ScrollableWidth}"
-                                                Orientation="Horizontal"
-                                                ViewportSize="{TemplateBinding ViewportWidth}"
-                                                Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
-                                                Value="{TemplateBinding HorizontalOffset}" />
-                                        </Grid>
-                                    </Border>
-                                </ControlTemplate>
-                            </ScrollViewer.Template>
-                            <StackPanel x:Name="ImagesPanel" Margin="3">
-                                <!--  Images will be populated dynamically  -->
-                                <Border Padding="12" HorizontalAlignment="Stretch">
-                                    <TextBlock
-                                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                        Text="No images available"
-                                        TextAlignment="Center"
-                                        TextWrapping="Wrap" />
-                                </Border>
-                            </StackPanel>
-                        </ScrollViewer>
+                        <windows:ImageListView
+                            x:Name="ImagesListView"
+                            ItemsSource="{Binding Source={StaticResource PreviewImagesView}}"
+                            BorderThickness="0"
+                            Background="Transparent"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            PreviewMouseWheel="ImagesListView_PreviewMouseWheel"
+                            SizeChanged="ImagesListView_SizeChanged">
+                            
+                            <windows:ImageListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="VerticalContentAlignment" Value="Top" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="BorderBrush" Value="Transparent" />
+                                </Style>
+                            </windows:ImageListView.ItemContainerStyle>
+
+                            <windows:ImageListView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Top" Margin="0" Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=windows:ImageListView}}" />
+                                </ItemsPanelTemplate>
+                            </windows:ImageListView.ItemsPanel>
+
+                            <windows:ImageListView.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.ContainerStyle>
+                                        <Style TargetType="{x:Type GroupItem}">
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                        <StackPanel Orientation="Vertical">
+                                                            <!-- Package header spanning full width -->
+                                                            <Border Background="#2A2A2A" 
+                                                                    BorderBrush="#444444" 
+                                                                    BorderThickness="1" 
+                                                                    Padding="6,4" 
+                                                                    CornerRadius="3"
+                                                                    Margin="0,8,0,0"
+                                                                    HorizontalAlignment="Stretch"
+                                                                    Height="48">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                        <ColumnDefinition Width="*" MinWidth="100" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    
+                                                                    <!-- Load/Unload button -->
+                                                                    <Button Grid.Column="0" 
+                                                                            x:Name="PackageHeaderLoadUnloadButton"
+                                                                            Width="Auto" 
+                                                                            Padding="12,6" 
+                                                                            Margin="0,0,8,0"
+                                                                            Content="{Binding Items[0].PackageItem.Status, Converter={StaticResource PackageStatusToLoadButtonConverter}}"
+                                                                            FontSize="12"
+                                                                            FontWeight="SemiBold"
+                                                                            ToolTip="Load/Unload package"
+                                                                            Background="#20FFFFFF"
+                                                                            Foreground="White"
+                                                                            BorderThickness="1"
+                                                                            BorderBrush="#40FFFFFF"
+                                                                            Click="PackageHeaderLoadUnload_Click">
+                                                                        <Button.Style>
+                                                                            <Style TargetType="Button">
+                                                                                <Setter Property="Template">
+                                                                                    <Setter.Value>
+                                                                                        <ControlTemplate TargetType="Button">
+                                                                                            <Border Background="{TemplateBinding Background}" 
+                                                                                                    BorderBrush="{TemplateBinding BorderBrush}" 
+                                                                                                    BorderThickness="{TemplateBinding BorderThickness}" 
+                                                                                                    CornerRadius="3">
+                                                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                                            </Border>
+                                                                                            <ControlTemplate.Triggers>
+                                                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                                                    <Setter Property="Background" Value="#30FFFFFF" />
+                                                                                                </Trigger>
+                                                                                            </ControlTemplate.Triggers>
+                                                                                        </ControlTemplate>
+                                                                                    </Setter.Value>
+                                                                                </Setter>
+                                                                            </Style>
+                                                                        </Button.Style>
+                                                                    </Button>
+                                                                    
+                                                                    <!-- Status line -->
+                                                                    <Border Grid.Column="1" 
+                                                                            Width="4" 
+                                                                            Height="20" 
+                                                                            Background="{Binding Items[0].StatusBrush}" 
+                                                                            CornerRadius="2" 
+                                                                            Margin="4,0,12,0" 
+                                                                            VerticalAlignment="Center" />
+                                                                    
+                                                                    <!-- Package name with clipping -->
+                                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                        <TextBlock Text="{Binding Items[0].PackageName}" 
+                                                                                   Foreground="White" 
+                                                                                   FontSize="13" 
+                                                                                   FontWeight="SemiBold"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   Margin="0,0,8,0" />
+                                                                    </StackPanel>
+                                                                    
+                                                                    <!-- Package size (always visible) -->
+                                                                    <TextBlock Grid.Column="3" 
+                                                                               Foreground="#AAAAAA" 
+                                                                               FontSize="13" 
+                                                                               VerticalAlignment="Center"
+                                                                               Margin="8,0,16,0"
+                                                                               Text="{Binding Items[0].PackageItem.FileSizeFormatted}" />
+                                                                </Grid>
+                                                            </Border>
+                                                            <!-- Items container -->
+                                                            <ItemsPresenter />
+                                                        </StackPanel>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </GroupStyle.ContainerStyle>
+                                </GroupStyle>
+                            </windows:ImageListView.GroupStyle>
+
+                            <windows:ImageListView.ItemTemplate>
+                                <DataTemplate>
+                                    <!-- Image with rounded corners using OpacityMask -->
+                                    <Grid Margin="3">
+                                        <Image Source="{Binding Image}" 
+                                               Stretch="Uniform" 
+                                               HorizontalAlignment="Center">
+                                            <Image.OpacityMask>
+                                                <VisualBrush>
+                                                    <VisualBrush.Visual>
+                                                        <Border CornerRadius="6" Background="White" Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}" Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Grid}}" />
+                                                    </VisualBrush.Visual>
+                                                </VisualBrush>
+                                            </Image.OpacityMask>
+                                            <Image.Width>
+                                                <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
+                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
+                                                    <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                </MultiBinding>
+                                            </Image.Width>
+                                            <Image.Height>
+                                                <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
+                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
+                                                    <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                </MultiBinding>
+                                            </Image.Height>
+                                        </Image>
+                                    </Grid>
+                                </DataTemplate>
+                            </windows:ImageListView.ItemTemplate>
+                        </windows:ImageListView>
+                        
 
                         <!--  Hoverable overlay controls - positioned at bottom right of image area  -->
                         <Border

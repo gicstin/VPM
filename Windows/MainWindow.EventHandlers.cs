@@ -64,7 +64,7 @@ namespace VPM
         private DispatcherTimer _creatorsSearchDebounceTimer;
         
         // Flag to prevent concurrent image display operations
-        private bool _isDisplayingImages = false;
+
 
         private void PackageDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -146,7 +146,7 @@ namespace VPM
                     {
                         PackageInfoTextBlock.Text = $"{PackageDataGrid.SelectedItems.Count} packages selected – selection too large to preview\n\n" +
                             $"Preview limit: {_settingsManager.Settings.MaxSafeSelection} packages (configurable via Config ' Preview Selection Limit)";
-                        ImagesPanel.Children.Clear();
+                        PreviewImages.Clear();
                         Dependencies.Clear();
                         ClearCategoryTabs();
                         UpdatePackageButtonBar();
@@ -2785,7 +2785,6 @@ namespace VPM
             
             // Always allow new selections to interrupt previous image loading
             // This ensures clicking on a package always loads its images, even if previous loading is in progress
-            _isDisplayingImages = true;
             try
             {
                 var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>().ToList();
@@ -2795,7 +2794,7 @@ namespace VPM
                     PackageInfoTextBlock.Text = "No packages selected";
                     
                     // Clear images when no packages are selected
-                    ImagesPanel.Children.Clear();
+                    PreviewImages.Clear();
                     
                     // Clear dependencies when no packages are selected to prevent loading all deps
                     ClearDependenciesDisplay();
@@ -2839,21 +2838,15 @@ namespace VPM
                     else
                         DisplayConsolidatedDependencies(selectedPackages);
                     
-                    // Use progressive loading for selections over 20 packages to prevent stalls
-                    if (selectedPackages.Count > 20)
-                    {
-                        await DisplayMultiplePackageImagesProgressiveAsync(selectedPackages, null, imageToken);
-                    }
-                    else
-                    {
-                        await DisplayMultiplePackageImagesAsync(selectedPackages, null, imageToken);
-                    }
+                    // Use standard loading (now optimized)
+                    await DisplayMultiplePackageImagesAsync(selectedPackages, null, imageToken);
                 }
                 
                 // Reset scroll position to top for fresh selections
-                if (ImagesScrollViewer != null)
+                if (ImagesListView != null)
                 {
-                    ImagesScrollViewer.ScrollToTop();
+                    var scrollViewer = FindVisualChild<ScrollViewer>(ImagesListView);
+                    scrollViewer?.ScrollToTop();
                 }
                 
                 // Update button bar based on selection
@@ -2880,7 +2873,7 @@ namespace VPM
                 if (selectedPackages.Count == 0)
                 {
                     // Clear images when no selection
-                    ImagesPanel.Children.Clear();
+                    PreviewImages.Clear();
                     PackageInfoTextBlock.Text = "No packages selected";
                     ClearDependenciesDisplay();
                     ClearCategoryTabs();
@@ -3071,7 +3064,7 @@ namespace VPM
 
                 if (allPackages.Count == 0)
                 {
-                    ImagesPanel.Children.Clear();
+                    PreviewImages.Clear();
                 }
                 else
                 {
@@ -3079,10 +3072,6 @@ namespace VPM
                     if (allPackages.Count == 1)
                     {
                         await DisplayPackageImagesAsync(allPackages[0]);
-                    }
-                    else if (allPackages.Count > 20)
-                    {
-                        await DisplayMultiplePackageImagesProgressiveAsync(allPackages, packageSources);
                     }
                     else
                     {

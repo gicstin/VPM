@@ -372,48 +372,28 @@ namespace VPM
             try
             {
                 // Clear existing images
-                ImagesPanel.Children.Clear();
+                PreviewImages.Clear();
 
                 if (string.IsNullOrEmpty(scene.ThumbnailPath) || !System.IO.File.Exists(scene.ThumbnailPath))
                     return;
 
-                // Create image element
-                var image = new System.Windows.Controls.Image
+                // Create image item
+                var bitmap = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(scene.ThumbnailPath, System.UriKind.Absolute));
+                
+                // Create a dummy package item for grouping
+                var scenePackage = new PackageItem
                 {
-                    Source = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(scene.ThumbnailPath, System.UriKind.Absolute)),
-                    Stretch = System.Windows.Media.Stretch.UniformToFill,
-                    StretchDirection = System.Windows.Controls.StretchDirection.Both
+                    Name = scene.Name,
+                    Status = "Available"
                 };
-
-                // Wrap image in a border with rounded corners for consistency
-                var imageBorder = new Border
+                
+                PreviewImages.Add(new ImagePreviewItem
                 {
-                    Child = image,
-                    CornerRadius = new CornerRadius(UI_CORNER_RADIUS),
-                    ClipToBounds = true,
-                    Margin = new System.Windows.Thickness(4),
-                    Background = Brushes.Transparent
-                };
-
-                // Apply clip geometry that updates with size changes
-                void ApplyClipGeometry(Border border)
-                {
-                    if (border != null && border.ActualWidth > 0 && border.ActualHeight > 0)
-                    {
-                        border.Clip = new System.Windows.Media.RectangleGeometry
-                        {
-                            RadiusX = UI_CORNER_RADIUS,
-                            RadiusY = UI_CORNER_RADIUS,
-                            Rect = new Rect(0, 0, border.ActualWidth, border.ActualHeight)
-                        };
-                    }
-                }
-
-                imageBorder.Loaded += (s, e) => ApplyClipGeometry(s as Border);
-                imageBorder.SizeChanged += (s, e) => ApplyClipGeometry(s as Border);
-
-                // Add to grid
-                ImagesPanel.Children.Add(imageBorder);
+                    Image = bitmap,
+                    PackageName = scene.Name,
+                    InternalPath = scene.ThumbnailPath,
+                    PackageItem = scenePackage
+                });
             }
             catch
             {
@@ -429,10 +409,17 @@ namespace VPM
             try
             {
                 // Clear existing images
-                ImagesPanel.Children.Clear();
+                PreviewImages.Clear();
 
                 if (scenes == null || scenes.Count == 0)
                     return;
+
+                // Create a dummy package item for grouping all scenes
+                var scenesPackage = new PackageItem
+                {
+                    Name = "Selected Scenes",
+                    Status = "Available"
+                };
 
                 // Display thumbnail for each selected scene
                 foreach (var scene in scenes)
@@ -440,44 +427,15 @@ namespace VPM
                     if (string.IsNullOrEmpty(scene.ThumbnailPath) || !System.IO.File.Exists(scene.ThumbnailPath))
                         continue;
 
-                    // Create image element
-                    var image = new System.Windows.Controls.Image
+                    var bitmap = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(scene.ThumbnailPath, System.UriKind.Absolute));
+                    
+                    PreviewImages.Add(new ImagePreviewItem
                     {
-                        Source = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(scene.ThumbnailPath, System.UriKind.Absolute)),
-                        Stretch = System.Windows.Media.Stretch.UniformToFill,
-                        StretchDirection = System.Windows.Controls.StretchDirection.Both,
-                        ToolTip = scene.Name
-                    };
-
-                    // Wrap image in a border with rounded corners for consistency
-                    var imageBorder = new Border
-                    {
-                        Child = image,
-                        CornerRadius = new CornerRadius(UI_CORNER_RADIUS),
-                        ClipToBounds = true,
-                        Margin = new System.Windows.Thickness(4),
-                        Background = Brushes.Transparent
-                    };
-
-                    // Apply clip geometry that updates with size changes
-                    void ApplyClipGeometry(Border border)
-                    {
-                        if (border != null && border.ActualWidth > 0 && border.ActualHeight > 0)
-                        {
-                            border.Clip = new System.Windows.Media.RectangleGeometry
-                            {
-                                RadiusX = UI_CORNER_RADIUS,
-                                RadiusY = UI_CORNER_RADIUS,
-                                Rect = new Rect(0, 0, border.ActualWidth, border.ActualHeight)
-                            };
-                        }
-                    }
-
-                    imageBorder.Loaded += (s, e) => ApplyClipGeometry(s as Border);
-                    imageBorder.SizeChanged += (s, e) => ApplyClipGeometry(s as Border);
-
-                    // Add to grid
-                    ImagesPanel.Children.Add(imageBorder);
+                        Image = bitmap,
+                        PackageName = scene.Name,
+                        InternalPath = scene.ThumbnailPath,
+                        PackageItem = scenesPackage
+                    });
                 }
             }
             catch
@@ -491,7 +449,7 @@ namespace VPM
         /// </summary>
         private void ClearImageGrid()
         {
-            ImagesPanel.Children.Clear();
+            PreviewImages.Clear();
         }
 
         /// <summary>

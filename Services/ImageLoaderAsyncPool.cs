@@ -231,7 +231,7 @@ namespace VPM.Services
                         // Invoke callback on UI thread to ensure UI knows it's done (failed)
                         if (!_disposed && _dispatcher != null)
                         {
-                            _dispatcher.BeginInvoke(new Action(() =>
+                            _ = _dispatcher.BeginInvoke(new Action(() =>
                             {
                                 try
                                 {
@@ -286,7 +286,7 @@ namespace VPM.Services
                         // Invoke callback on UI thread
                         if (!_disposed && _dispatcher != null)
                         {
-                            _dispatcher.BeginInvoke(new Action(() =>
+                            _ = _dispatcher.BeginInvoke(new Action(() =>
                             {
                                 try
                                 {

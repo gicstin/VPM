@@ -196,10 +196,18 @@ namespace VPM
             try
             {
                 // Clear existing images
-                ImagesPanel.Children.Clear();
+                PreviewImages.Clear();
 
                 if (items == null || items.Count == 0)
+                {
                     return;
+                }
+
+                var customItemsPackage = new PackageItem
+                {
+                    Name = "Selected Items",
+                    Status = "Available"
+                };
 
                 // Display thumbnail for each selected item
                 foreach (var item in items)
@@ -207,44 +215,24 @@ namespace VPM
                     if (string.IsNullOrEmpty(item.ThumbnailPath) || !System.IO.File.Exists(item.ThumbnailPath))
                         continue;
 
-                    // Create image element
-                    var image = new System.Windows.Controls.Image
+                    try 
                     {
-                        Source = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(item.ThumbnailPath, System.UriKind.Absolute)),
-                        Stretch = System.Windows.Media.Stretch.UniformToFill,
-                        StretchDirection = System.Windows.Controls.StretchDirection.Both,
-                        ToolTip = item.Name
-                    };
-
-                    // Wrap image in a border with rounded corners for consistency
-                    var imageBorder = new System.Windows.Controls.Border
-                    {
-                        Child = image,
-                        CornerRadius = new System.Windows.CornerRadius(UI_CORNER_RADIUS),
-                        ClipToBounds = true,
-                        Margin = new System.Windows.Thickness(4),
-                        Background = System.Windows.Media.Brushes.Transparent
-                    };
-
-                    // Apply clip geometry that updates with size changes
-                    void ApplyClipGeometry(System.Windows.Controls.Border border)
-                    {
-                        if (border != null && border.ActualWidth > 0 && border.ActualHeight > 0)
+                        // Create preview item
+                        var previewItem = new ImagePreviewItem
                         {
-                            border.Clip = new System.Windows.Media.RectangleGeometry
-                            {
-                                RadiusX = UI_CORNER_RADIUS,
-                                RadiusY = UI_CORNER_RADIUS,
-                                Rect = new System.Windows.Rect(0, 0, border.ActualWidth, border.ActualHeight)
-                            };
-                        }
+                            Image = new System.Windows.Media.Imaging.BitmapImage(new System.Uri(item.ThumbnailPath, System.UriKind.Absolute)),
+                            PackageName = item.Name,
+                            InternalPath = item.ThumbnailPath,
+                            StatusBrush = System.Windows.Media.Brushes.Transparent,
+                            PackageItem = customItemsPackage
+                        };
+                        
+                        PreviewImages.Add(previewItem);
                     }
-
-                    imageBorder.Loaded += (s, e) => ApplyClipGeometry(s as System.Windows.Controls.Border);
-                    imageBorder.SizeChanged += (s, e) => ApplyClipGeometry(s as System.Windows.Controls.Border);
-
-                    // Add to grid
-                    ImagesPanel.Children.Add(imageBorder);
+                    catch
+                    {
+                        // Ignore individual image load failures
+                    }
                 }
             }
             catch

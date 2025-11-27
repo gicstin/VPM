@@ -789,36 +789,46 @@ namespace VPM.Services
                             continue;
                         }
 
-                        using (var entryStream = entry.OpenEntryStream())
+                        // Phase 2 Optimization: Validate header BEFORE full decompression
+                        // This saves 50-70% I/O for invalid images
+                        byte[] header = new byte[4];
+                        bool isValid = false;
+
+                        // Use a separate stream for validation to avoid seeking issues with DeflateStream
+                        using (var validationStream = entry.OpenEntryStream())
                         {
-                            // Phase 2 Optimization: Validate header BEFORE full decompression
-                            // This saves 50-70% I/O for invalid images
-                            byte[] header = new byte[4];
-                            int bytesRead = entryStream.Read(header, 0, 4);
-                            
-                            if (bytesRead < 4 || !IsValidImageHeader(header))
-                                continue;  // Skip invalid images without decompression
-                            
-                            entryStream.Position = 0;
-                            
-                            byte[] imageData;
-                            
-                            // Phase 3 Optimization: Use chunked loading for large images
-                            if (entry.Size > CHUNKED_LOADING_THRESHOLD)
+                            int bytesRead = validationStream.Read(header, 0, 4);
+                            if (bytesRead >= 4 && IsValidImageHeader(header))
                             {
-                                int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
-                                imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
+                                isValid = true;
                             }
-                            else
+                        }
+
+                        if (!isValid)
+                            continue;  // Skip invalid images without full decompression
+                        
+                        byte[] imageData;
+                        
+                        // Phase 3 Optimization: Use chunked loading for large images
+                        if (entry.Size > CHUNKED_LOADING_THRESHOLD)
+                        {
+                            // ReadEntryChunked opens a new stream, so it starts from the beginning
+                            int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
+                            imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
+                        }
+                        else
+                        {
+                            // Use standard loading for small images
+                            // We need to open the stream again since we closed the validation stream
+                            // This is acceptable overhead for small files to ensure safety
+                            using (var entryStream = entry.OpenEntryStream())
+                            using (var ms = new MemoryStream())
                             {
-                                // Use standard loading for small images
-                                using (var ms = new MemoryStream())
-                                {
-                                    entryStream.CopyTo(ms);
-                                    ms.Position = 0;
-                                    imageData = ms.ToArray();
-                                }
+                                entryStream.CopyTo(ms);
+                                ms.Position = 0;
+                                imageData = ms.ToArray();
                             }
+                        }
 
                             MemoryStream memoryStream = null;
                             try
@@ -848,7 +858,6 @@ namespace VPM.Services
                             {
                                 memoryStream?.Dispose();
                             }
-                        }
                     }
                     catch (Exception ex) when (ex is ArgumentException or IOException or InvalidOperationException)
                     {
@@ -856,7 +865,7 @@ namespace VPM.Services
                     }
                 }
             }
-            catch (Exception ex) when (ex is ArgumentException or IOException)
+            catch (Exception ex) when (ex is ArgumentException or IOException or SharpCompress.Common.ArchiveException or InvalidOperationException)
             {
                 Console.WriteLine($"[ImageManager] Error loading images from '{varPath}': {ex.Message}");
             }
@@ -866,6 +875,28 @@ namespace VPM.Services
             }
             
             return results;
+        }
+
+        /// <summary>
+        /// Asynchronously loads images for preview, using cache first, then reading from archive once.
+        /// Ensures archive is released immediately after reading.
+        /// </summary>
+        public async Task<List<BitmapImage>> LoadImagesForPreviewAsync(string varPath, List<string> internalPaths)
+        {
+            return await Task.Run(() =>
+            {
+                var dict = LoadImagesFromVarBatch(varPath, internalPaths);
+                // Return images in the requested order
+                var list = new List<BitmapImage>();
+                foreach (var path in internalPaths)
+                {
+                    if (dict.TryGetValue(path, out var img))
+                    {
+                        list.Add(img);
+                    }
+                }
+                return list;
+            });
         }
 
         /// <summary>

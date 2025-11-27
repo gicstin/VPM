@@ -96,6 +96,8 @@ namespace VPM
         // Cancellation token for image loading operations
         private System.Threading.CancellationTokenSource _imageLoadingCts;
         
+        private bool _isDisplayingImages = false;
+        
         // Animation configuration - reduced for better responsiveness
         private const int SELECTION_DEBOUNCE_DELAY_MS = 15;
         private const int FADE_ANIMATION_DURATION_MS = 300;
@@ -130,6 +132,9 @@ namespace VPM
 
             var customAtomItemsSource = new CollectionViewSource { Source = CustomAtomItems };
             CustomAtomItemsView = customAtomItemsSource.View;
+
+            var previewImagesSource = (CollectionViewSource)FindResource("PreviewImagesView");
+            previewImagesSource.Source = PreviewImages;
 
             // Initialize settings manager first (use provided instance or create new one)
             _settingsManager = settingsManager ?? new SettingsManager();
@@ -267,7 +272,7 @@ namespace VPM
                 ContentTypesList.SelectionChanged += ContentTypesList_SelectionChanged;
                 
                 // Image scroll viewer events
-                ImagesScrollViewer.PreviewMouseWheel += ImagesScrollViewer_PreviewMouseWheel;
+                ImagesListView.PreviewMouseWheel += ImagesListView_PreviewMouseWheel;
                 
                 // Event handlers setup completed
             }

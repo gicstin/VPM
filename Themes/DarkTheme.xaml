@@ -91,7 +91,10 @@
                         BorderBrush="{TemplateBinding BorderBrush}"
                         BorderThickness="{TemplateBinding BorderThickness}"
                         CornerRadius="{StaticResource CornerRadiusValue}">
-                        <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False">
+                        <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False"
+                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
                             <ItemsPresenter />
                         </ScrollViewer>
                     </Border>
@@ -411,7 +414,10 @@
                         BorderBrush="{TemplateBinding BorderBrush}"
                         BorderThickness="{TemplateBinding BorderThickness}"
                         CornerRadius="{StaticResource CornerRadiusValue}">
-                        <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False">
+                        <ScrollViewer Padding="{TemplateBinding Padding}" Focusable="False"
+                                      HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                                      VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
+                                      CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
                             <ItemsPresenter />
                         </ScrollViewer>
                     </Border>
