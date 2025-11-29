@@ -95,13 +95,13 @@ namespace VPM.Services
         {
             var paths = filePaths.ToList();
             
-            Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Starting release for {paths.Count} paths");
+            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Starting release for {paths.Count} paths");
             
             // 1. Mark paths as cancelled to prevent new operations
             // Also mark the package NAME (without path) to catch both AddonPackages and AllPackages versions
             foreach (var path in paths)
             {
-                Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Marking path as cancelled: {path}");
+                // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Marking path as cancelled: {path}");
                 _cancelledPaths.TryAdd(path, true);
                 
                 // Also extract package name and mark it (e.g., "Package.Name.1" from full path)
@@ -109,14 +109,14 @@ namespace VPM.Services
                 if (!string.IsNullOrEmpty(fileName))
                 {
                     _cancelledPaths.TryAdd(fileName, true);
-                    Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Also marked package name: {fileName}");
+                    // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Also marked package name: {fileName}");
                 }
                 
                 // Also cancel any pending items in the queue for this path
                 CancelPendingForPackage(path);
             }
             
-            Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Paths marked as cancelled");
+            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Paths marked as cancelled");
             
             // 2. Wait for active operations to finish
             var maxWait = TimeSpan.FromSeconds(10); // Increased from 5s to 10s for robustness
@@ -132,14 +132,16 @@ namespace VPM.Services
                     if (_activeFiles.TryGetValue(path, out int count) && count > 0)
                     {
                         if (waitIterations % 10 == 0) // Log every 500ms
-                            Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Path still active: {path} (count: {count})");
+                        {
+                            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Path still active: {path} (count: {count})");
+                        }
                         anyActive = true;
                     }
                 }
                 
                 if (!anyActive)
                 {
-                    Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] All paths released after {waitIterations} iterations");
+                    // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] All paths released after {waitIterations} iterations");
                     break;
                 }
                     
@@ -148,24 +150,24 @@ namespace VPM.Services
             
             if (waitIterations >= maxWait.TotalMilliseconds / 50)
             {
-                Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] WARNING: Timeout waiting for file locks to release");
+                // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] WARNING: Timeout waiting for file locks to release");
                 foreach (var path in paths)
                 {
                     if (_activeFiles.TryGetValue(path, out int count) && count > 0)
                     {
-                        Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] STILL ACTIVE: {path} (count: {count})");
+                        // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] STILL ACTIVE: {path} (count: {count})");
                     }
                 }
             }
             
             // 3. Force garbage collection to ensure any lingering file handles are released
             // This is critical for the "Rock Solid" solution
-            Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Forcing garbage collection to release file handles...");
+            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Forcing garbage collection to release file handles...");
             GC.Collect();
             GC.WaitForPendingFinalizers();
             // GC.Collect(); // Double collect for generations - REMOVED: Excessive GC causing slowdowns
             
-            Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] === COMPLETE ===");
+            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] === COMPLETE ===");
         }
 
         /// <summary>

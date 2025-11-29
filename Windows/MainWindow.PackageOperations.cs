@@ -1840,6 +1840,19 @@ namespace VPM
                     }
                 });
                 
+                // Cancel any pending image loading operations to free up file handles
+                _imageLoadingCts?.Cancel();
+                _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                
+                // Clear image preview grid before processing
+                PreviewImages.Clear();
+                
+                // Get package names/paths to release
+                var packagesToRelease = oldVersions.Select(v => Path.GetFileNameWithoutExtension(v.FilePath)).ToList();
+
+                // Release file locks before operation to prevent conflicts with image grid
+                await _imageManager.ReleasePackagesAsync(packagesToRelease);
+                
                 int movedCount = 0;
                 int failedCount = 0;
                 var errors = new List<string>();
@@ -1890,6 +1903,9 @@ namespace VPM
                 DarkMessageBox.Show(message, "Archive Complete", MessageBoxButton.OK, MessageBoxImage.Information);
                 
                 RefreshPackages();
+                
+                // Refresh image grid to show updated package status
+                await RefreshCurrentlyDisplayedImagesAsync();
             }
             catch (Exception ex)
             {

@@ -194,6 +194,12 @@ namespace VPM
                 // This stops the image grid from requesting new images while we're working
                 await CancelImageLoading();
                 
+                // Clear image preview grid before processing
+                PreviewImages.Clear();
+                
+                // Release file locks before operation to prevent conflicts with image grid
+                await _imageManager.ReleasePackagesAsync(new List<string> { packageName });
+                
                 // Small delay to ensure dialog cleanup completes
                 await System.Threading.Tasks.Task.Delay(200);
 
@@ -244,6 +250,9 @@ namespace VPM
 
                     // Refresh package data for the converted package
                     await RefreshSinglePackage(packageName);
+                    
+                    // Refresh image grid to show updated package status
+                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     // Calculate savings
                     long spaceSaved = originalPackageSize - newPackageSize;

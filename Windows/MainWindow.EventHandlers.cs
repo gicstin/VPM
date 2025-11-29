@@ -4058,7 +4058,7 @@ namespace VPM
         /// <summary>
         /// Opens the Fix Duplicates window with ALL duplicates detected by the app
         /// </summary>
-        private void FixDuplicates_Click(object sender, RoutedEventArgs e)
+        private async void FixDuplicates_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -4073,6 +4073,17 @@ namespace VPM
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
+                
+                // Cancel any pending image loading operations
+                _imageLoadingCts?.Cancel();
+                _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                
+                // Clear image preview grid
+                PreviewImages.Clear();
+                
+                // Release file locks for all duplicate packages
+                var packageNames = duplicatePackages.Select(p => p.Name).ToList();
+                await _imageManager.ReleasePackagesAsync(packageNames);
                 
                 // Get folder paths
                 string addonPackagesPath = Path.Combine(_selectedFolder, "AddonPackages");
@@ -4091,6 +4102,9 @@ namespace VPM
                 {
                     SetStatus("Refreshing package list after fixing duplicates...");
                     RefreshPackages();
+                    
+                    // Refresh image grid
+                    await RefreshCurrentlyDisplayedImagesAsync();
                 }
             }
             catch (Exception ex)
@@ -4117,6 +4131,17 @@ namespace VPM
                     return;
                 }
                 
+                // Cancel any pending image loading operations
+                _imageLoadingCts?.Cancel();
+                _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                
+                // Clear image preview grid
+                PreviewImages.Clear();
+                
+                // Release file locks for all duplicate packages
+                var packageNames = duplicatePackages.Select(p => p.Name).ToList();
+                await _imageManager.ReleasePackagesAsync(packageNames);
+                
                 // Get folder paths
                 string addonPackagesPath = Path.Combine(_selectedFolder, "AddonPackages");
                 string allPackagesPath = Path.Combine(_selectedFolder, "AllPackages");
@@ -4134,6 +4159,9 @@ namespace VPM
                 {
                     SetStatus("Refreshing package list after fixing duplicates...");
                     RefreshPackages();
+                    
+                    // Refresh image grid
+                    await RefreshCurrentlyDisplayedImagesAsync();
                 }
             }
             catch (Exception ex)

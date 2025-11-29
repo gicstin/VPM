@@ -98,6 +98,8 @@ namespace VPM.Services
         /// </summary>
         public string GetReport()
         {
+            return string.Empty;
+            /*
             lock (_lock)
             {
                 var sb = new StringBuilder();
@@ -157,6 +159,7 @@ namespace VPM.Services
 
                 return sb.ToString();
             }
+            */
         }
 
         /// <summary>

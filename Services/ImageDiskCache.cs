@@ -52,7 +52,7 @@ namespace VPM.Services
             // Don't load cache database here - it will be loaded asynchronously
             // to avoid blocking the UI thread during startup
             
-            Console.WriteLine($"[ImageDiskCache] Cache location: {_cacheFilePath}");
+            // Console.WriteLine($"[ImageDiskCache] Cache location: {_cacheFilePath}");
         }
         
         /// <summary>

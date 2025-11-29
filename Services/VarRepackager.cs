@@ -244,7 +244,7 @@ namespace VPM.Services
                         }
 
                         // Use adaptive memory-aware parallelism with proper async I/O
-                        System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_START] Processing {totalConversions} textures with adaptive parallelism");
+                        // System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_START] Processing {totalConversions} textures with adaptive parallelism");
                         
                         // OPTIMIZATION: Use full CPU cores for texture conversion (CPU-bound operation)
                         // Texture resizing is CPU-intensive, not I/O-bound, so we can use all cores
@@ -293,7 +293,7 @@ namespace VPM.Services
 
                             // Wait for all texture conversions to complete
                             await System.Threading.Tasks.Task.WhenAll(tasks);
-                            System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_COMPLETE] All {totalConversions} textures processed");
+                            // System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_COMPLETE] All {totalConversions} textures processed");
                         }
 
                         progressCallback?.Invoke("📝 Writing optimized package...", totalConversions, totalConversions);

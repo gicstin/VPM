@@ -160,7 +160,7 @@ namespace VPM.Services
         private void OnThreadPoolProgressChanged(int current, int total)
         {
             // Can be used to update UI progress indicators
-            Console.WriteLine($"[ImageLoader] Progress: {current}/{total}");
+            // Console.WriteLine($"[ImageLoader] Progress: {current}/{total}");
         }
         
         /// <summary>
@@ -181,70 +181,70 @@ namespace VPM.Services
             var pathsToRelease = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var packageNamesList = packageNames.ToList();
             
-            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Starting release for {packageNamesList.Count} packages");
-            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex contains {ImageIndex.Count} entries");
+            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Starting release for {packageNamesList.Count} packages");
+            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex contains {ImageIndex.Count} entries");
             
             foreach (var packageName in packageNamesList)
             {
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Processing package: {packageName}");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Processing package: {packageName}");
                 
                 // Invalidate all caches for this package (bitmap, preview index, signatures)
                 InvalidatePackageCache(packageName);
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Invalidated cache for {packageName}");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Invalidated cache for {packageName}");
                 
                 // Try to find path from ImageIndex
                 bool foundInIndex = ImageIndex.TryGetValue(packageName, out var locations);
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex lookup: {(foundInIndex ? "FOUND" : "NOT FOUND")}");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex lookup: {(foundInIndex ? "FOUND" : "NOT FOUND")}");
                 
                 if (foundInIndex && locations != null && locations.Count > 0)
                 {
                     var varPath = locations[0].VarFilePath;
                     pathsToRelease.Add(varPath);
-                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Found in ImageIndex: {varPath}");
+                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Found in ImageIndex: {varPath}");
                 }
                 else if (foundInIndex)
                 {
-                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex entry exists but has no locations");
+                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex entry exists but has no locations");
                 }
                 
                 // Also check metadata provider if not in index
                 var metadata = _metadataProvider.GetCachedPackageMetadata(packageName);
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata lookup: {(metadata != null ? "FOUND" : "NOT FOUND")}");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata lookup: {(metadata != null ? "FOUND" : "NOT FOUND")}");
                 
                 if (metadata != null)
                 {
-                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata FilePath: {metadata.FilePath}");
+                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata FilePath: {metadata.FilePath}");
                     if (!string.IsNullOrEmpty(metadata.FilePath))
                     {
                         pathsToRelease.Add(metadata.FilePath);
-                        Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Added from metadata: {metadata.FilePath}");
+                        // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Added from metadata: {metadata.FilePath}");
                     }
                 }
             }
             
-            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Total paths to release: {pathsToRelease.Count}");
+            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Total paths to release: {pathsToRelease.Count}");
             foreach (var path in pathsToRelease)
             {
-                Console.WriteLine($"  - {path}");
+                // Console.WriteLine($"  - {path}");
                 
                 // Remove and dispose shared pool for this path
                 if (_sharedArchivePools.TryRemove(path, out var pool))
                 {
                     pool.Dispose();
-                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Disposed shared pool for {path}");
+                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Disposed shared pool for {path}");
                 }
             }
             
             // Release file locks from async pool (handles open streams)
             if (pathsToRelease.Count > 0)
             {
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Calling ReleaseFileLocksAsync");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Calling ReleaseFileLocksAsync");
                 await _asyncPool.ReleaseFileLocksAsync(pathsToRelease);
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ReleaseFileLocksAsync completed");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ReleaseFileLocksAsync completed");
             }
             else
             {
-                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] WARNING: No paths found to release! Dependencies may not be indexed.");
+                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] WARNING: No paths found to release! Dependencies may not be indexed.");
             }
             
             // Only force GC once at the end of the batch operation, not per package
@@ -252,7 +252,7 @@ namespace VPM.Services
             GC.Collect();
             GC.WaitForPendingFinalizers();
             
-            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] === COMPLETE ===");
+            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] === COMPLETE ===");
         }
 
         /// <summary>
@@ -2454,15 +2454,15 @@ namespace VPM.Services
                 // GC.WaitForPendingFinalizers();
                 
                 // Wait for file system to release locks (increased to 500ms to allow pending operations to complete)
-                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Waiting for file system to release locks");
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Waiting for file system to release locks");
                 await Task.Delay(100);
                 
-                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] === COMPLETE ===");
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] === COMPLETE ===");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Error: {ex.Message}");
-                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Stack trace: {ex.StackTrace}");
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Error: {ex.Message}");
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Stack trace: {ex.StackTrace}");
             }
         }
 
