@@ -92,15 +92,29 @@ namespace VPM.Models
             }
         }
 
-        private object _extractionButtonContent;
-        public object ExtractionButtonContent
+        private string _extractionStatusIcon;
+        public string ExtractionStatusIcon
         {
-            get => _extractionButtonContent;
+            get => _extractionStatusIcon;
             set
             {
-                if (_extractionButtonContent != value)
+                if (_extractionStatusIcon != value)
                 {
-                    _extractionButtonContent = value;
+                    _extractionStatusIcon = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private string _extractionStatusText;
+        public string ExtractionStatusText
+        {
+            get => _extractionStatusText;
+            set
+            {
+                if (_extractionStatusText != value)
+                {
+                    _extractionStatusText = value;
                     OnPropertyChanged();
                 }
             }
@@ -125,40 +139,16 @@ namespace VPM.Models
             // Get category name
             var category = GetCategoryFromPath(InternalPath);
             
-            // Create content with icon and text
-            var stackPanel = new System.Windows.Controls.StackPanel 
-            { 
-                Orientation = System.Windows.Controls.Orientation.Horizontal,
-                VerticalAlignment = System.Windows.VerticalAlignment.Center
-            };
-            
-            var iconBlock = new System.Windows.Controls.TextBlock 
-            { 
-                Margin = new System.Windows.Thickness(0, 0, 6, 0),
-                FontWeight = System.Windows.FontWeights.Bold,
-                VerticalAlignment = System.Windows.VerticalAlignment.Center,
-                FontFamily = new FontFamily("Segoe UI Emoji, Segoe UI Symbol"),
-                FontSize = 12
-            };
-            
-            var textBlock = new System.Windows.Controls.TextBlock 
-            { 
-                Text = category,
-                VerticalAlignment = System.Windows.VerticalAlignment.Center,
-                FontWeight = System.Windows.FontWeights.SemiBold,
-                FontSize = 12
-            };
-            
-            stackPanel.Children.Add(iconBlock);
-            stackPanel.Children.Add(textBlock);
+            ExtractionStatusText = category;
 
             if (IsExtracted)
             {
                 // Show checkmark with label
-                iconBlock.Text = "✓";
-                ExtractionButtonContent = stackPanel;
+                ExtractionStatusIcon = "✓";
                 // Neutral green for extracted state (not too bright)
-                ExtractionButtonBackground = new SolidColorBrush(Color.FromArgb(160, 60, 120, 70)); 
+                var brush = new SolidColorBrush(Color.FromArgb(160, 60, 120, 70));
+                brush.Freeze();
+                ExtractionButtonBackground = brush;
             }
             else
             {
@@ -171,10 +161,11 @@ namespace VPM.Models
                 else if (string.Equals(category, "Scene", System.StringComparison.OrdinalIgnoreCase)) iconText = "🎬";
                 
                 // Show extract button with icon and label
-                iconBlock.Text = iconText; 
-                ExtractionButtonContent = stackPanel;
+                ExtractionStatusIcon = iconText; 
                 // Transparent gray for available state
-                ExtractionButtonBackground = new SolidColorBrush(Color.FromArgb(120, 80, 80, 80)); 
+                var brush = new SolidColorBrush(Color.FromArgb(120, 80, 80, 80));
+                brush.Freeze();
+                ExtractionButtonBackground = brush;
             }
         }
 
@@ -198,6 +189,36 @@ namespace VPM.Models
                 
             return "Content";
         }
+
+        private int _imageWidth;
+        public int ImageWidth
+        {
+            get => _imageWidth;
+            set
+            {
+                if (_imageWidth != value)
+                {
+                    _imageWidth = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private int _imageHeight;
+        public int ImageHeight
+        {
+            get => _imageHeight;
+            set
+            {
+                if (_imageHeight != value)
+                {
+                    _imageHeight = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public System.Func<System.Threading.Tasks.Task<System.Windows.Media.Imaging.BitmapImage>> LoadImageCallback { get; set; }
 
         public event PropertyChangedEventHandler PropertyChanged;
 

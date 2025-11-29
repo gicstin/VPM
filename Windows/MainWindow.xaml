@@ -6056,36 +6056,31 @@
 
                             <windows:ImageListView.ItemTemplate>
                                 <DataTemplate>
-                                    <!--  Image with rounded corners using OpacityMask  -->
+                                    <!--  Image with rounded corners using LazyLoadImage  -->
                                     <Grid Margin="3">
-                                        <Image
+                                        <windows:LazyLoadImage
                                             HorizontalAlignment="Center"
-                                            Source="{Binding Image}"
-                                            Stretch="Uniform">
-                                            <Image.OpacityMask>
-                                                <VisualBrush>
-                                                    <VisualBrush.Visual>
-                                                        <Border
-                                                            Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                                            Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Grid}}"
-                                                            Background="White"
-                                                            CornerRadius="6" />
-                                                    </VisualBrush.Visual>
-                                                </VisualBrush>
-                                            </Image.OpacityMask>
-                                            <Image.Width>
+                                            LoadImageCallback="{Binding LoadImageCallback}"
+                                            PackageKey="{Binding PackageName}"
+                                            InternalImagePath="{Binding InternalPath}"
+                                            ImageWidth="{Binding ImageWidth}"
+                                            ImageHeight="{Binding ImageHeight}"
+                                            Loaded="LazyLoadImage_Loaded"
+                                            Unloaded="LazyLoadImage_Unloaded">
+                                            <windows:LazyLoadImage.Width>
                                                 <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
                                                     <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
                                                     <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
                                                 </MultiBinding>
-                                            </Image.Width>
-                                            <Image.Height>
+                                            </windows:LazyLoadImage.Width>
+                                            <windows:LazyLoadImage.Height>
                                                 <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
                                                     <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
                                                     <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
                                                 </MultiBinding>
-                                            </Image.Height>
-                                        </Image>
+                                            </windows:LazyLoadImage.Height>
+                                            <windows:LazyLoadImage.CornerRadius>6</windows:LazyLoadImage.CornerRadius>
+                                        </windows:LazyLoadImage>
                                         
                                         <!-- Delete button (only visible when extracted) -->
                                         <Button
@@ -6134,13 +6129,26 @@
                                             Padding="18,5"
                                             Height="28"
                                             Background="{Binding ExtractionButtonBackground}"
-                                            Content="{Binding ExtractionButtonContent}"
                                             Foreground="White"
                                             BorderThickness="1"
                                             BorderBrush="Transparent"
                                             Click="ExtractContent_Click"
                                             ToolTip="Extract files from archive"
                                             Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <TextBlock 
+                                                    Margin="0,0,6,0"
+                                                    FontWeight="Bold"
+                                                    VerticalAlignment="Center"
+                                                    FontFamily="Segoe UI Emoji, Segoe UI Symbol"
+                                                    FontSize="12"
+                                                    Text="{Binding ExtractionStatusIcon}" />
+                                                <TextBlock 
+                                                    Text="{Binding ExtractionStatusText}"
+                                                    VerticalAlignment="Center"
+                                                    FontWeight="SemiBold"
+                                                    FontSize="12" />
+                                            </StackPanel>
                                             <Button.Style>
                                                 <Style TargetType="Button">
                                                     <Setter Property="Template">

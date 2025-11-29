@@ -91,6 +91,9 @@ namespace VPM.Services
         private long _parallelTotalTime = 0;
         private readonly ReaderWriterLockSlim _parallelMetricsLock = new ReaderWriterLockSlim();
 
+        // Shared archive pools for sequential loading optimization
+        private readonly ConcurrentDictionary<string, ArchiveHandlePool> _sharedArchivePools = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Timer _poolCleanupTimer;
 
         public ImageManager(string cacheFolder, IPackageMetadataProvider metadataProvider)
         {
@@ -105,6 +108,41 @@ namespace VPM.Services
             
             _preloadCancellation = new CancellationTokenSource();
             StartPreloadingTask();
+
+            // Cleanup unused pools every 10 seconds
+            _poolCleanupTimer = new Timer(CleanupUnusedPools, null, 10000, 10000);
+        }
+
+        private void CleanupUnusedPools(object state)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var timeout = TimeSpan.FromSeconds(30); // Dispose pools unused for 30 seconds
+
+                foreach (var kvp in _sharedArchivePools)
+                {
+                    if (now - kvp.Value.LastUsed > timeout)
+                    {
+                        if (_sharedArchivePools.TryRemove(kvp.Key, out var pool))
+                        {
+                            pool.Dispose();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore errors during cleanup
+            }
+        }
+
+        /// <summary>
+        /// Gets or creates a shared archive pool for the specified path
+        /// </summary>
+        private ArchiveHandlePool GetSharedArchivePool(string varPath)
+        {
+            return _sharedArchivePools.GetOrAdd(varPath, path => new ArchiveHandlePool(path, maxHandles: 2));
         }
         
         /// <summary>
@@ -188,6 +226,13 @@ namespace VPM.Services
             foreach (var path in pathsToRelease)
             {
                 Console.WriteLine($"  - {path}");
+                
+                // Remove and dispose shared pool for this path
+                if (_sharedArchivePools.TryRemove(path, out var pool))
+                {
+                    pool.Dispose();
+                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Disposed shared pool for {path}");
+                }
             }
             
             // Release file locks from async pool (handles open streams)
@@ -217,6 +262,13 @@ namespace VPM.Services
         public async Task CancelAllOperationsAsync()
         {
             await _asyncPool.CancelAllOperationsAsync();
+            
+            // Clear all shared pools
+            foreach (var kvp in _sharedArchivePools)
+            {
+                kvp.Value.Dispose();
+            }
+            _sharedArchivePools.Clear();
         }
 
         public async Task<bool> BuildImageIndexFromVarsAsync(IEnumerable<string> varPaths, bool forceRebuild = false)
@@ -1207,16 +1259,23 @@ namespace VPM.Services
                 // 3. Read from Archive (Cache Miss)
                 byte[] imageData = null;
                 
-                // Open the archive, read the data, and IMMEDIATELY close it via 'using'
-                // This prevents file locking issues when packages are moved or modified
-                using (var archive = SharpCompressHelper.OpenForRead(varPath))
+                // Use shared archive pool to avoid opening/closing file repeatedly
+                // This significantly improves performance for sequential reads (e.g. scrolling)
+                var pool = GetSharedArchivePool(varPath);
+                var archive = await pool.AcquireHandleAsync();
+                
+                try
                 {
-                    var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, internalPath);
+                    var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
                     if (entry != null)
                     {
                         int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
-                        imageData = SharpCompressHelper.ReadEntryChunked(archive.Archive, entry, chunkSize);
+                        imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
                     }
+                }
+                finally
+                {
+                    pool.ReleaseHandle(archive);
                 }
 
                 if (imageData == null || imageData.Length == 0) return null;

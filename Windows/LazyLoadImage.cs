@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -25,22 +25,132 @@ namespace VPM.Windows
         private Button _removeButton;
         private bool _isCurrentlyExtracted = false;
         
-        // Image data
-        public string PackageKey { get; set; }
-        public int ImageIndex { get; set; }
-        public BitmapImage ImageSource { get; set; }
-        
-        // Image dimensions for aspect ratio calculations
-        public int ImageWidth { get; set; }
-        public int ImageHeight { get; set; }
-        
-        // Callback for loading the actual image
-        public Func<Task<BitmapImage>> LoadImageCallback { get; set; }
-        
-        // Extraction data
-        public string VarFilePath { get; set; }
-        public string InternalImagePath { get; set; }
-        public string GameFolder { get; set; }
+        #region Dependency Properties
+
+        public static readonly DependencyProperty PackageKeyProperty =
+            DependencyProperty.Register("PackageKey", typeof(string), typeof(LazyLoadImage), new PropertyMetadata(null, OnIdentityChanged));
+
+        public string PackageKey
+        {
+            get { return (string)GetValue(PackageKeyProperty); }
+            set { SetValue(PackageKeyProperty, value); }
+        }
+
+        public static readonly DependencyProperty ImageIndexProperty =
+            DependencyProperty.Register("ImageIndex", typeof(int), typeof(LazyLoadImage), new PropertyMetadata(0));
+
+        public int ImageIndex
+        {
+            get { return (int)GetValue(ImageIndexProperty); }
+            set { SetValue(ImageIndexProperty, value); }
+        }
+
+        public static readonly DependencyProperty ImageSourceProperty =
+            DependencyProperty.Register("ImageSource", typeof(ImageSource), typeof(LazyLoadImage), new PropertyMetadata(null, OnImageSourceChanged));
+
+        public ImageSource ImageSource
+        {
+            get { return (ImageSource)GetValue(ImageSourceProperty); }
+            set { SetValue(ImageSourceProperty, value); }
+        }
+
+        private static void OnImageSourceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            var control = (LazyLoadImage)d;
+            var newImage = (ImageSource)e.NewValue;
+            
+            if (newImage != null)
+            {
+                control.UpdateImageSource(newImage);
+            }
+            else
+            {
+                control.UnloadImage();
+            }
+        }
+
+        private static void OnIdentityChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            var control = (LazyLoadImage)d;
+            control.ResetState();
+        }
+
+        private void ResetState()
+        {
+            // Reset loading flag
+            _isLoadingInProgress = false;
+            
+            // Clear existing image source if any
+            // This will trigger OnImageSourceChanged -> UnloadImage
+            if (ImageSource != null)
+            {
+                ImageSource = null;
+            }
+            else
+            {
+                // If ImageSource was already null, ensure UI is cleared
+                UnloadImage();
+            }
+            
+            // Ensure _isLoaded is false (in case UnloadImage didn't run because it thought it wasn't loaded)
+            _isLoaded = false;
+        }
+
+        public static readonly DependencyProperty ImageWidthProperty =
+            DependencyProperty.Register("ImageWidth", typeof(int), typeof(LazyLoadImage), new PropertyMetadata(0));
+
+        public int ImageWidth
+        {
+            get { return (int)GetValue(ImageWidthProperty); }
+            set { SetValue(ImageWidthProperty, value); }
+        }
+
+        public static readonly DependencyProperty ImageHeightProperty =
+            DependencyProperty.Register("ImageHeight", typeof(int), typeof(LazyLoadImage), new PropertyMetadata(0));
+
+        public int ImageHeight
+        {
+            get { return (int)GetValue(ImageHeightProperty); }
+            set { SetValue(ImageHeightProperty, value); }
+        }
+
+        public static readonly DependencyProperty LoadImageCallbackProperty =
+            DependencyProperty.Register("LoadImageCallback", typeof(Func<Task<BitmapImage>>), typeof(LazyLoadImage), new PropertyMetadata(null, OnIdentityChanged));
+
+        public Func<Task<BitmapImage>> LoadImageCallback
+        {
+            get { return (Func<Task<BitmapImage>>)GetValue(LoadImageCallbackProperty); }
+            set { SetValue(LoadImageCallbackProperty, value); }
+        }
+
+        public static readonly DependencyProperty VarFilePathProperty =
+            DependencyProperty.Register("VarFilePath", typeof(string), typeof(LazyLoadImage), new PropertyMetadata(null, OnIdentityChanged));
+
+        public string VarFilePath
+        {
+            get { return (string)GetValue(VarFilePathProperty); }
+            set { SetValue(VarFilePathProperty, value); }
+        }
+
+        public static readonly DependencyProperty InternalImagePathProperty =
+            DependencyProperty.Register("InternalImagePath", typeof(string), typeof(LazyLoadImage), new PropertyMetadata(null, OnIdentityChanged));
+
+        public string InternalImagePath
+        {
+            get { return (string)GetValue(InternalImagePathProperty); }
+            set { SetValue(InternalImagePathProperty, value); }
+        }
+
+        public static readonly DependencyProperty GameFolderProperty =
+            DependencyProperty.Register("GameFolder", typeof(string), typeof(LazyLoadImage), new PropertyMetadata(null));
+
+        public string GameFolder
+        {
+            get { return (string)GetValue(GameFolderProperty); }
+            set { SetValue(GameFolderProperty, value); }
+        }
+
+        #endregion
         
         // Events
         public event EventHandler ImageLoaded;
@@ -137,6 +247,14 @@ namespace VPM.Windows
             this.Cursor = System.Windows.Input.Cursors.Hand;
         }
         
+        private void UpdateImageSource(ImageSource image)
+        {
+             _imageControl.Source = image;
+             _imageControl.Visibility = Visibility.Visible;
+             _isLoaded = true;
+             ImageLoaded?.Invoke(this, EventArgs.Empty);
+        }
+
         /// <summary>
         /// Checks if the image tile is visible in the viewport and loads it if needed
         /// </summary>
@@ -190,7 +308,8 @@ namespace VPM.Windows
             _isLoadingInProgress = false;
             // We can't easily cancel the callback if it's already running, 
             // but we can prevent the result from being applied
-            LoadImageCallback = null;
+            // Note: We don't set LoadImageCallback to null here because it's a dependency property
+            // and we might want to reload later.
         }
 
         /// <summary>
@@ -204,7 +323,7 @@ namespace VPM.Windows
             
             try
             {
-                BitmapImage image = null;
+                ImageSource image = null;
                 
                 // Use provided ImageSource if available, otherwise use callback
                 if (ImageSource != null)
@@ -221,34 +340,30 @@ namespace VPM.Windows
                     }
                 }
                 
-                // Check if cancelled (callback set to null)
-                if (LoadImageCallback == null && ImageSource == null)
+                // Check if cancelled (callback set to null) or no image found
+                if (image == null)
                 {
                     return;
                 }
                 
-                if (image != null)
+                // Update property if it was loaded via callback so it can be accessed later
+                if (ImageSource == null)
                 {
-                    // Update property if it was loaded via callback so it can be accessed later
-                    if (ImageSource == null)
-                    {
-                        ImageSource = image;
-                    }
-
-                    // Set the Source and show immediately
+                    ImageSource = image;
+                }
+                else
+                {
+                    // If ImageSource was already set (or set by us above), ensure UI is updated
+                    // This covers the case where ImageSource was set but _isLoaded was false
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        _imageControl.Source = image;
-                        _imageControl.Visibility = Visibility.Visible;
-                        _isLoaded = true;
+                        UpdateImageSource(image);
                     });
-                    
-                    ImageLoaded?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Exception)
             {
-                // Failed to load image
+                // Ignore errors
             }
             finally
             {

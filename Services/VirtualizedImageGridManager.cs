@@ -143,7 +143,10 @@ namespace VPM.Services
                     
                     if (bottom >= loadTop && top <= loadBottom)
                     {
-                        await image.LoadImageAsync();
+                        // Start loading but don't wait for it to complete
+                        // This prevents blocking the processing loop and allows other images to start loading
+                        // The _isProcessing flag will be released quickly, allowing new scroll events to be handled
+                        _ = image.LoadImageAsync();
                         loadedCount++;
                     }
                 }

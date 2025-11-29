@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using VPM.Models;
 
 namespace VPM
@@ -127,6 +128,37 @@ namespace VPM
             }
         }
 
+        private VPM.Services.VirtualizedImageGridManager _virtualizedImageGridManager;
+
+        private void LazyLoadImage_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is VPM.Windows.LazyLoadImage lazyImage)
+            {
+                if (_virtualizedImageGridManager == null)
+                {
+                    // Try to find the ScrollViewer from the ImageListView
+                    var scrollViewer = FindVisualChild<ScrollViewer>(ImagesListView);
+                    if (scrollViewer != null)
+                    {
+                        _virtualizedImageGridManager = new VPM.Services.VirtualizedImageGridManager(scrollViewer);
+                    }
+                }
+
+                _virtualizedImageGridManager?.RegisterImage(lazyImage);
+                
+                // Trigger initial load check
+                _virtualizedImageGridManager?.ProcessImagesAsync();
+            }
+        }
+
+        private void LazyLoadImage_Unloaded(object sender, RoutedEventArgs e)
+        {
+            if (sender is VPM.Windows.LazyLoadImage lazyImage)
+            {
+                _virtualizedImageGridManager?.UnregisterImage(lazyImage);
+            }
+        }
+
         private async Task DisplayPackageImagesAsync(PackageItem packageItem, System.Threading.CancellationToken cancellationToken = default)
         {
             await DisplayMultiplePackageImagesAsync(new List<PackageItem> { packageItem }, null, cancellationToken);
@@ -137,70 +169,161 @@ namespace VPM
             try
             {
                 if (cancellationToken.IsCancellationRequested)
+                {
                     return;
+                }
 
                 PreviewImages.Clear();
+                
+                // Clear the virtualized manager if it exists
+                _virtualizedImageGridManager?.Clear();
                 
                 if (selectedPackages == null || selectedPackages.Count == 0)
                     return;
 
-                // Load images for each package
-                // Strategy: Use binary cache-first approach to avoid archive locks
-                // 1. Check binary cache for each image
-                // 2. If cache miss, load from archive and save to cache
-                // 3. Archive is opened/closed immediately per image (no persistent locks)
-                foreach (var package in selectedPackages)
+                // Capture necessary data for background processing
+                var gameFolder = _settingsManager?.Settings?.SelectedFolder;
+                
+                // Run heavy processing on background thread
+                await Task.Run(async () => 
                 {
-                    if (cancellationToken.IsCancellationRequested) 
-                        break;
-
-                    var packageKey = !string.IsNullOrEmpty(package.MetadataKey) ? package.MetadataKey : package.Name;
-                    var metadata = GetCachedPackageMetadata(packageKey);
+                    var batch = new List<ImagePreviewItem>();
+                    var batchSize = 50; // Update UI every 50 items
+                    var totalImagesFound = 0;
                     
-                    if (metadata == null || string.IsNullOrEmpty(metadata.FilePath))
-                        continue;
-
-                    // Get the package base name for image index lookup
-                    var packageBase = System.IO.Path.GetFileNameWithoutExtension(metadata.Filename);
-                    
-                    // Check if images are indexed for this package
-                    if (_imageManager.ImageIndex.TryGetValue(packageBase, out var locations) && locations != null && locations.Count > 0)
+                    foreach (var package in selectedPackages)
                     {
-                        // Load images from the indexed locations using cache-first strategy
-                        // LoadImageAsync handles: binary cache check → archive read (if miss) → cache save
-                        foreach (var location in locations)
-                        {
-                            if (cancellationToken.IsCancellationRequested) 
-                                break;
+                        if (cancellationToken.IsCancellationRequested) 
+                            break;
 
-                            try
+                        var packageKey = !string.IsNullOrEmpty(package.MetadataKey) ? package.MetadataKey : package.Name;
+                        var metadata = GetCachedPackageMetadata(packageKey);
+                        
+                        if (metadata == null || string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            continue;
+                        }
+
+                        var packageBase = System.IO.Path.GetFileNameWithoutExtension(metadata.Filename);
+                        
+                        if (_imageManager.ImageIndex.TryGetValue(packageBase, out var locations) && locations != null && locations.Count > 0)
+                        {
+                            // Create brush on UI thread or use a frozen one
+                            // Since we are on a background thread, we must create and freeze it carefully
+                            // However, SolidColorBrush constructor might require STA if not careful with colors
+                            // Safer to just use the color property and let the UI bind to it, or create it on UI thread
+                            
+                            // Option 1: Create on UI thread (slows down loop)
+                            // Option 2: Use pre-frozen brushes (better)
+                            // Option 3: Just pass the color and let the item create the brush (best for MVVM)
+                            
+                            // For now, let's try to create it safely. 
+                            // System.Windows.Media.Color is a struct, so it's safe.
+                            // SolidColorBrush is a DispatcherObject.
+                            
+                            // FIX: Create the brush on the UI thread before the loop or inside Invoke
+                            // But since we are in a background loop, let's just store the color in the item 
+                            // and let the UI converter handle it, OR create a frozen brush.
+                            
+                            // Actually, the error "The calling thread must be STA" happens when creating UI objects.
+                            // We can create a frozen brush on any thread IF we don't access DependencyProperties that require thread affinity.
+                            // But SolidColorBrush constructor IS safe on background threads if frozen immediately? 
+                            // Apparently not always in WPF.
+                            
+                            // Let's move the brush creation to the UI thread dispatch.
+                            // Or better, since all items for a package share the same status color, 
+                            // we can just pass the color to the item and let the item create the brush?
+                            // No, ImagePreviewItem expects a Brush.
+                            
+                            // Let's create a thread-safe way to get the brush.
+                            // We can't easily do it here without Invoke.
+                            
+                            // Workaround: Create a frozen brush using Dispatcher
+                            SolidColorBrush statusBrush = null;
+                            await Dispatcher.InvokeAsync(() => 
                             {
-                                // LoadImageAsync uses binary cache-first strategy:
-                                // 1. Checks binary cache (no archive lock)
-                                // 2. On cache miss: opens archive, reads image, closes archive immediately
-                                // 3. Saves to binary cache for future use
-                                // This prevents persistent archive locks during grid display
-                                var image = await _imageManager.LoadImageAsync(location.VarFilePath, location.InternalPath, 0, 0);
-                                
-                                if (image != null)
+                                statusBrush = new SolidColorBrush(package.StatusColor);
+                                statusBrush.Freeze();
+                            });
+
+                            foreach (var location in locations)
+                            {
+                                if (cancellationToken.IsCancellationRequested) 
+                                    break;
+
+                                totalImagesFound++;
+
+                                // Check file existence in background
+                                bool isExtracted = false;
+                                if (!string.IsNullOrEmpty(gameFolder))
                                 {
-                                    PreviewImages.Add(new ImagePreviewItem
+                                    try
                                     {
-                                        Image = image,
-                                        PackageName = package.Name,
-                                        InternalPath = location.InternalPath,
-                                        StatusBrush = new SolidColorBrush(package.StatusColor),
-                                        PackageItem = package,
-                                        IsExtracted = IsContentExtracted(location.InternalPath)
-                                    });
+                                        var targetPath = System.IO.Path.Combine(gameFolder, location.InternalPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+                                        isExtracted = System.IO.File.Exists(targetPath);
+                                    }
+                                    catch { }
                                 }
-                            }
-                            catch
-                            {
-                                // Skip individual image load failures
+
+                                // Create item with callback instead of loading immediately
+                                var item = new ImagePreviewItem
+                                {
+                                    Image = null, // Will be loaded lazily
+                                    PackageName = package.Name,
+                                    InternalPath = location.InternalPath,
+                                    StatusBrush = statusBrush,
+                                    PackageItem = package,
+                                    IsExtracted = isExtracted,
+                                    ImageWidth = location.Width,
+                                    ImageHeight = location.Height,
+                                    LoadImageCallback = async () => 
+                                    {
+                                        var img = await _imageManager.LoadImageAsync(location.VarFilePath, location.InternalPath, 0, 0);
+                                        return img;
+                                    }
+                                };
+                                
+                                batch.Add(item);
+
+                                // If batch is full, dispatch to UI
+                                if (batch.Count >= batchSize)
+                                {
+                                    var itemsToAdd = new List<ImagePreviewItem>(batch);
+                                    batch.Clear();
+                                    
+                                    await Dispatcher.InvokeAsync(() => 
+                                    {
+                                        if (cancellationToken.IsCancellationRequested) return;
+                                        foreach (var i in itemsToAdd)
+                                        {
+                                            PreviewImages.Add(i);
+                                        }
+                                    }, DispatcherPriority.Background);
+                                }
                             }
                         }
                     }
+
+                    // Add remaining items
+                    if (batch.Count > 0)
+                    {
+                        await Dispatcher.InvokeAsync(() => 
+                        {
+                            if (cancellationToken.IsCancellationRequested) return;
+                            foreach (var i in batch)
+                            {
+                                PreviewImages.Add(i);
+                            }
+                        }, DispatcherPriority.Background);
+                    }
+                    
+
+                }, cancellationToken);
+                
+                // Trigger initial load for visible images
+                if (_virtualizedImageGridManager != null)
+                {
+                    await _virtualizedImageGridManager.LoadInitialVisibleImagesAsync();
                 }
             }
             catch (Exception)
@@ -272,6 +395,12 @@ namespace VPM
                 var metadata = GetCachedPackageMetadata(!string.IsNullOrEmpty(packageItem.MetadataKey) ? packageItem.MetadataKey : packageItem.Name);
                 if (metadata == null || string.IsNullOrEmpty(metadata.FilePath)) return;
                 
+                if (!System.IO.File.Exists(metadata.FilePath))
+                {
+                    MessageBox.Show($"Package file not found: {metadata.FilePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
                 var gameFolder = _settingsManager.Settings.SelectedFolder;
                 if (string.IsNullOrEmpty(gameFolder)) 
                 {
@@ -320,6 +449,12 @@ namespace VPM
 
                 var metadata = GetCachedPackageMetadata(!string.IsNullOrEmpty(packageItem.MetadataKey) ? packageItem.MetadataKey : packageItem.Name);
                 if (metadata == null || string.IsNullOrEmpty(metadata.FilePath)) return;
+
+                if (!System.IO.File.Exists(metadata.FilePath))
+                {
+                    MessageBox.Show($"Package file not found: {metadata.FilePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
 
                 var gameFolder = _settingsManager.Settings.SelectedFolder;
                 if (string.IsNullOrEmpty(gameFolder)) 

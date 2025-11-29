@@ -2895,10 +2895,10 @@ namespace VPM
             // This ensures clicking on a package always loads its images, even if previous loading is in progress
             
             // Skip if already displaying images to prevent concurrent operations
-            if (_isDisplayingImages)
-            {
-                return;
-            }
+            // if (_isDisplayingImages)
+            // {
+            //    return;
+            // }
             
             try
             {

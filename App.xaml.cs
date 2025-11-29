@@ -33,22 +33,31 @@ namespace VPM
             var exception = e.ExceptionObject as Exception;
             LogException("AppDomain.UnhandledException", exception);
             
-            MessageBox.Show(
-                $"A fatal error occurred:\n\n{exception?.Message}\n\nStack Trace:\n{exception?.StackTrace}",
-                "Fatal Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            Debug.WriteLine($"FATAL ERROR: {exception?.Message}");
+            if (exception != null)
+            {
+                Debug.WriteLine(exception.StackTrace);
+            }
+
+            // MessageBox.Show(
+            //     $"A fatal error occurred:\n\n{exception?.Message}\n\nStack Trace:\n{exception?.StackTrace}",
+            //     "Fatal Error",
+            //     MessageBoxButton.OK,
+            //     MessageBoxImage.Error);
         }
 
         private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
             LogException("Dispatcher.UnhandledException", e.Exception);
             
-            MessageBox.Show(
-                $"An unhandled error occurred:\n\n{e.Exception.Message}\n\nStack Trace:\n{e.Exception.StackTrace}",
-                "Unhandled Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            Debug.WriteLine($"UNHANDLED ERROR: {e.Exception.Message}");
+            Debug.WriteLine(e.Exception.StackTrace);
+
+            // MessageBox.Show(
+            //     $"An unhandled error occurred:\n\n{e.Exception.Message}\n\nStack Trace:\n{e.Exception.StackTrace}",
+            //     "Unhandled Error",
+            //     MessageBoxButton.OK,
+            //     MessageBoxImage.Error);
             
             // Mark as handled to prevent crash
             e.Handled = true;

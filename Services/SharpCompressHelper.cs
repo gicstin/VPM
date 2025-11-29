@@ -79,6 +79,7 @@ namespace VPM.Services
         private int _totalCreated = 0;
         private readonly object _creationLock = new();
         private bool _disposed = false;
+        public DateTime LastUsed { get; private set; } = DateTime.UtcNow;
 
         public ArchiveHandlePool(string archivePath, int maxHandles = 4)
         {
@@ -91,6 +92,7 @@ namespace VPM.Services
         /// </summary>
         public IArchive AcquireHandle()
         {
+            LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
 
@@ -145,6 +147,7 @@ namespace VPM.Services
         /// </summary>
         public async Task<IArchive> AcquireHandleAsync()
         {
+            LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
 
