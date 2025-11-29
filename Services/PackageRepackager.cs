@@ -386,7 +386,7 @@ namespace VPM.Services
                             DateTime? originalMetaJsonDate = null;
                             
                             // Read original meta.json
-                            var metaEntry = archive.Entries.FirstOrDefault(e => e.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase));
+                            var metaEntry = archive.Archive.Entries.FirstOrDefault(e => e.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase));
                             if (metaEntry != null)
                             {
                                 using (var stream = metaEntry.OpenEntryStream())
@@ -493,9 +493,9 @@ namespace VPM.Services
                         progressCallback?.Invoke("🔍 Analyzing package contents...", 0, totalOperations);
                         var entriesToProcess = new List<(IArchiveEntry entry, bool needsTextureConversion, bool needsHairModification, bool needsSceneModification)>();
                         int entryIndex = 0;
-                        int totalEntries = sourceArchive.Entries.Count();
+                        int totalEntries = sourceArchive.Archive.Entries.Count();
 
-                        foreach (var entry in sourceArchive.Entries)
+                        foreach (var entry in sourceArchive.Archive.Entries)
                         {
                             // Check if this is meta.json
                             if (entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
@@ -915,7 +915,7 @@ namespace VPM.Services
                                     // Unmodified data: stream directly from source to destination
                                     // This avoids loading large files into memory
                                     // CRITICAL: Always copy, even if it's a failed texture (never skip)
-                                    SharpCompressHelper.CopyEntryDirect(sourceArchive, entry, outputArchive);
+                                    SharpCompressHelper.CopyEntryDirect(sourceArchive.Archive, entry, outputArchive);
                                 }
 
                                 // Note: SharpCompress handles compression type during archive writing, not per-entry
@@ -938,7 +938,7 @@ namespace VPM.Services
                                 // Copy the entry as-is from source to destination
                                 try
                                 {
-                                    SharpCompressHelper.CopyEntryDirect(sourceArchive, entry, outputArchive);
+                                    SharpCompressHelper.CopyEntryDirect(sourceArchive.Archive, entry, outputArchive);
                                     writeIndex++;
                                 }
                                 catch (Exception copyEx)
@@ -981,7 +981,7 @@ namespace VPM.Services
                                 // Try to copy the entry as-is
                                 try
                                 {
-                                    SharpCompressHelper.CopyEntryDirect(sourceArchive, entry, outputArchive);
+                                    SharpCompressHelper.CopyEntryDirect(sourceArchive.Archive, entry, outputArchive);
                                     writeIndex++;
                                 }
                                 catch (InvalidOperationException copyIoEx) when (copyIoEx.Message.Contains("Corrupted archive entry"))

@@ -670,7 +670,7 @@ namespace VPM
                 // Extract the texture from the VAR
                 using (var archive = SharpCompressHelper.OpenForRead(packagePath))
                 {
-                    var entry = SharpCompressHelper.FindEntryByPath(archive, textureInfo.ReferencedPath);
+                    var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, textureInfo.ReferencedPath);
                     if (entry == null)
                     {
                         MessageBox.Show($"Texture not found in package: {textureInfo.ReferencedPath}", "Error", 

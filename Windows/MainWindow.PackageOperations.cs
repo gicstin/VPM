@@ -77,6 +77,9 @@ namespace VPM
                     _imageLoadingCts?.Cancel();
                     _imageLoadingCts = new System.Threading.CancellationTokenSource();
                     
+                    // Clear image preview grid before processing
+                    PreviewImages.Clear();
+                    
                     // Release file locks before operation to prevent conflicts with image grid
                     await _imageManager.ReleasePackagesAsync(packageNames);
 
@@ -128,6 +131,10 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
 
+                    // Re-enable UI BEFORE refreshing image grid
+                    LoadPackagesButton.IsEnabled = true;
+                    UpdatePackageButtonBar();
+
                     // Refresh image grid to show newly loaded packages
                     await RefreshCurrentlyDisplayedImagesAsync();
 
@@ -170,9 +177,12 @@ namespace VPM
                 }
                 finally
                 {
-                    // Re-enable UI
-                    LoadPackagesButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
+                    // Re-enable UI if not already enabled
+                    if (!LoadPackagesButton.IsEnabled)
+                    {
+                        LoadPackagesButton.IsEnabled = true;
+                        UpdatePackageButtonBar();
+                    }
                 }
             }
             catch (Exception)
@@ -279,6 +289,13 @@ namespace VPM
                 {
                     var allPackagesToLoad = new List<string>(packagesToLoad);
                     allPackagesToLoad.AddRange(availableDependencies);
+                    
+                    // Cancel any pending image loading operations to free up file handles
+                    _imageLoadingCts?.Cancel();
+                    _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                    
+                    // Clear image preview grid before processing
+                    PreviewImages.Clear();
 
                     // Release file locks before operation to prevent conflicts with image grid
                     await _imageManager.ReleasePackagesAsync(allPackagesToLoad);
@@ -320,6 +337,11 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
 
+                    // Re-enable UI BEFORE refreshing image grid
+                    LoadPackagesButton.IsEnabled = true;
+                    LoadPackagesWithDepsButton.IsEnabled = true;
+                    UpdatePackageButtonBar();
+
                     // Refresh image grid to show newly loaded packages and dependencies
                     await RefreshCurrentlyDisplayedImagesAsync();
 
@@ -356,9 +378,13 @@ namespace VPM
                 }
                 finally
                 {
-                    LoadPackagesButton.IsEnabled = true;
-                    LoadPackagesWithDepsButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
+                    // Re-enable UI if not already enabled
+                    if (!LoadPackagesButton.IsEnabled)
+                    {
+                        LoadPackagesButton.IsEnabled = true;
+                        LoadPackagesWithDepsButton.IsEnabled = true;
+                        UpdatePackageButtonBar();
+                    }
                 }
             }
             catch (Exception)
@@ -427,6 +453,12 @@ namespace VPM
                     _imageLoadingCts?.Cancel();
                     _imageLoadingCts = new System.Threading.CancellationTokenSource();
                     
+                    // Clear image preview grid before processing
+                    PreviewImages.Clear();
+                    
+                    // Release file locks before operation to prevent conflicts with image grid
+                    await _imageManager.ReleasePackagesAsync(packageNames);
+                    
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {
                         // Update status with progress
@@ -475,6 +507,10 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyUnloaded, "Available");
                     }
 
+                    // Re-enable UI BEFORE refreshing image grid
+                    UnloadPackagesButton.IsEnabled = true;
+                    UpdatePackageButtonBar();
+
                     // Refresh image grid to show updated package status
                     await RefreshCurrentlyDisplayedImagesAsync();
 
@@ -506,9 +542,12 @@ namespace VPM
                 }
                 finally
                 {
-                    // Re-enable UI
-                    UnloadPackagesButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
+                    // Re-enable UI if not already enabled
+                    if (!UnloadPackagesButton.IsEnabled)
+                    {
+                        UnloadPackagesButton.IsEnabled = true;
+                        UpdatePackageButtonBar();
+                    }
                 }
 
             }
@@ -563,6 +602,17 @@ namespace VPM
                 {
                     // Use enhanced batch operation with progress reporting
                     var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
+                    
+                    // Cancel any pending image loading operations to free up file handles
+                    _imageLoadingCts?.Cancel();
+                    _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                    
+                    // Clear image preview grid before processing
+                    PreviewImages.Clear();
+                    
+                    // Release file locks before operation to prevent conflicts with image grid
+                    await _imageManager.ReleasePackagesAsync(dependencyNames);
+                    
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {
                         // Update status with progress
@@ -664,14 +714,27 @@ namespace VPM
         {
             try
             {
-                if (!EnsureVamFolderSelected()) return;
+                Console.WriteLine("[UnloadDependencies] === START ===");
+                
+                if (!EnsureVamFolderSelected()) 
+                {
+                    Console.WriteLine("[UnloadDependencies] VAM folder not selected, returning");
+                    return;
+                }
 
                 var selectedDependencies = DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
                     .Where(d => d.Status == "Loaded")
                     .ToList();
 
+                Console.WriteLine($"[UnloadDependencies] Selected {selectedDependencies.Count} loaded dependencies");
+                foreach (var dep in selectedDependencies)
+                {
+                    Console.WriteLine($"  - {dep.Name} (Status: {dep.Status})");
+                }
+
                 if (selectedDependencies.Count == 0)
                 {
+                    Console.WriteLine("[UnloadDependencies] No loaded dependencies selected");
                     MessageBox.Show("No loaded dependencies selected.", "No Dependencies",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
@@ -680,6 +743,7 @@ namespace VPM
                 // Only show confirmation for large batches (100+ dependencies)
                 if (selectedDependencies.Count >= 100)
                 {
+                    Console.WriteLine($"[UnloadDependencies] Large batch detected ({selectedDependencies.Count}), showing confirmation");
                     var dependencyNames = selectedDependencies.Take(10).Select(d => d.Name).ToList();
                     var displayNames = string.Join("\n", dependencyNames);
                     if (selectedDependencies.Count > 10)
@@ -694,16 +758,36 @@ namespace VPM
                         MessageBoxImage.Question);
 
                     if (result != MessageBoxResult.Yes)
+                    {
+                        Console.WriteLine("[UnloadDependencies] User cancelled unload operation");
                         return;
+                    }
                 }
 
                 // Disable UI during operation
+                Console.WriteLine("[UnloadDependencies] Disabling UI buttons");
                 UnloadDependenciesButton.IsEnabled = false;
 
                 try
                 {
                     // Use enhanced batch operation with progress reporting
                     var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
+                    Console.WriteLine($"[UnloadDependencies] Dependency names to unload: {string.Join(", ", dependencyNames)}");
+                    
+                    // Cancel any pending image loading operations to free up file handles
+                    Console.WriteLine("[UnloadDependencies] Cancelling pending image loading operations");
+                    _imageLoadingCts?.Cancel();
+                    _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                    
+                    // Clear image preview grid before processing
+                    Console.WriteLine("[UnloadDependencies] Clearing image preview grid");
+                    PreviewImages.Clear();
+                    
+                    // Release file locks before operation to prevent conflicts with image grid
+                    Console.WriteLine("[UnloadDependencies] Releasing file locks from image manager");
+                    await _imageManager.ReleasePackagesAsync(dependencyNames);
+                    Console.WriteLine("[UnloadDependencies] File locks released successfully");
+                    
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {
                         // Update status with progress
@@ -712,26 +796,33 @@ namespace VPM
                             : $"Unloading {p.currentPackage}...");
                     });
 
+                    Console.WriteLine("[UnloadDependencies] Starting unload operation via PackageFileManager");
                     var results = await _packageFileManager.UnloadPackagesAsync(dependencyNames, progress);
+                    Console.WriteLine($"[UnloadDependencies] Unload operation completed. Results count: {results.Count}");
 
                     // Update dependency statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
                     foreach ((string packageName, bool success, string error) in results)
                     {
+                        Console.WriteLine($"[UnloadDependencies] Result: {packageName} - Success: {success}, Error: {error}");
+                        
                         var dependency = selectedDependencies.FirstOrDefault(d => d.Name == packageName);
                         if (dependency != null && success)
                         {
+                            Console.WriteLine($"[UnloadDependencies] Updating {packageName} status to Available");
                             dependency.Status = "Available";
                             statusUpdates.Add((packageName, "Available", dependency.StatusColor));
                         }
                         if (!success)
                         {
                             // Unload failed - error handled in status reporting below
+                            Console.WriteLine($"[UnloadDependencies] Unload failed for {packageName}: {error}");
                         }
                     }
 
                     // Update image grid status indicators in batch
+                    Console.WriteLine($"[UnloadDependencies] Updating image grid with {statusUpdates.Count} status updates");
                     if (statusUpdates.Count > 0)
                     {
                         UpdateMultiplePackageStatusInImageGrid(statusUpdates);
@@ -744,14 +835,23 @@ namespace VPM
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
+                    Console.WriteLine($"[UnloadDependencies] Successfully unloaded: {string.Join(", ", successfullyUnloaded)}");
                     if (successfullyUnloaded.Count > 0)
                     {
+                        Console.WriteLine($"[UnloadDependencies] Bulk updating {successfullyUnloaded.Count} packages to Available status");
                         await BulkUpdatePackageStatus(successfullyUnloaded, "Available");
                     }
+
+                    // Refresh image grid to show updated dependency status
+                    Console.WriteLine("[UnloadDependencies] Refreshing image grid");
+                    await RefreshCurrentlyDisplayedImagesAsync();
+                    Console.WriteLine("[UnloadDependencies] Image grid refresh completed");
 
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
                     var failureCount = results.Count(r => !r.success);
+
+                    Console.WriteLine($"[UnloadDependencies] Final status - Success: {successCount}, Failed: {failureCount}");
 
                     if (successCount > 0 && failureCount == 0)
                     {
@@ -772,19 +872,31 @@ namespace VPM
                                           "Unload Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                         }
                     }
+                    
+                    Console.WriteLine("[UnloadDependencies] === END (SUCCESS) ===");
 
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[UnloadDependencies] Exception in try block: {ex.GetType().Name}: {ex.Message}");
+                    Console.WriteLine($"[UnloadDependencies] Stack trace: {ex.StackTrace}");
+                    throw;
                 }
                 finally
                 {
                     // Re-enable UI
+                    Console.WriteLine("[UnloadDependencies] Re-enabling UI buttons");
                     UnloadDependenciesButton.IsEnabled = true;
                     UpdateDependenciesButtonBar();
                 }
 
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                MessageBox.Show("Error unloading dependencies", "Error",
+                Console.WriteLine($"[UnloadDependencies] === END (EXCEPTION) ===");
+                Console.WriteLine($"[UnloadDependencies] Outer exception: {ex.GetType().Name}: {ex.Message}");
+                Console.WriteLine($"[UnloadDependencies] Stack trace: {ex.StackTrace}");
+                MessageBox.Show($"Error unloading dependencies: {ex.Message}\n\nCheck console for details.", "Error",
                                MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -945,6 +1057,17 @@ namespace VPM
                 {
                     // Use enhanced batch operation with progress reporting
                     var dependencyNames = allAvailableDependencies.Select(d => d.Name).ToList();
+                    
+                    // Cancel any pending image loading operations to free up file handles
+                    _imageLoadingCts?.Cancel();
+                    _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                    
+                    // Clear image preview grid before processing
+                    PreviewImages.Clear();
+                    
+                    // Release file locks before operation to prevent conflicts with image grid
+                    await _imageManager.ReleasePackagesAsync(dependencyNames);
+                    
                     var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
                     {
                         // Update status with progress
@@ -989,6 +1112,9 @@ namespace VPM
                     {
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
+
+                    // Refresh image grid to show newly loaded dependencies
+                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);

@@ -143,30 +143,71 @@ namespace VPM.Services
             var pathsToRelease = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var packageNamesList = packageNames.ToList();
             
+            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Starting release for {packageNamesList.Count} packages");
+            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex contains {ImageIndex.Count} entries");
+            
             foreach (var packageName in packageNamesList)
             {
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Processing package: {packageName}");
+                
                 // Invalidate all caches for this package (bitmap, preview index, signatures)
                 InvalidatePackageCache(packageName);
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Invalidated cache for {packageName}");
                 
                 // Try to find path from ImageIndex
-                if (ImageIndex.TryGetValue(packageName, out var locations) && locations.Count > 0)
+                bool foundInIndex = ImageIndex.TryGetValue(packageName, out var locations);
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex lookup: {(foundInIndex ? "FOUND" : "NOT FOUND")}");
+                
+                if (foundInIndex && locations != null && locations.Count > 0)
                 {
-                    pathsToRelease.Add(locations[0].VarFilePath);
+                    var varPath = locations[0].VarFilePath;
+                    pathsToRelease.Add(varPath);
+                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Found in ImageIndex: {varPath}");
+                }
+                else if (foundInIndex)
+                {
+                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex entry exists but has no locations");
                 }
                 
                 // Also check metadata provider if not in index
                 var metadata = _metadataProvider.GetCachedPackageMetadata(packageName);
-                if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath))
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata lookup: {(metadata != null ? "FOUND" : "NOT FOUND")}");
+                
+                if (metadata != null)
                 {
-                    pathsToRelease.Add(metadata.FilePath);
+                    Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata FilePath: {metadata.FilePath}");
+                    if (!string.IsNullOrEmpty(metadata.FilePath))
+                    {
+                        pathsToRelease.Add(metadata.FilePath);
+                        Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Added from metadata: {metadata.FilePath}");
+                    }
                 }
+            }
+            
+            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Total paths to release: {pathsToRelease.Count}");
+            foreach (var path in pathsToRelease)
+            {
+                Console.WriteLine($"  - {path}");
             }
             
             // Release file locks from async pool (handles open streams)
             if (pathsToRelease.Count > 0)
             {
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Calling ReleaseFileLocksAsync");
                 await _asyncPool.ReleaseFileLocksAsync(pathsToRelease);
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ReleaseFileLocksAsync completed");
             }
+            else
+            {
+                Console.WriteLine($"[ImageManager.ReleasePackagesAsync] WARNING: No paths found to release! Dependencies may not be indexed.");
+            }
+            
+            // Only force GC once at the end of the batch operation, not per package
+            // This significantly reduces overhead when releasing many packages
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            
+            Console.WriteLine($"[ImageManager.ReleasePackagesAsync] === COMPLETE ===");
         }
 
         /// <summary>
@@ -345,7 +386,7 @@ namespace VPM.Services
 
                     // Phase 1 Optimization: Use header-only read for dimension detection
                     // This reduces I/O by 95-99% compared to loading full image
-                    var (width, height) = SharpCompressHelper.GetImageDimensionsFromEntry(archive, entry);
+                    var (width, height) = SharpCompressHelper.GetImageDimensionsFromEntry(archive.Archive, entry);
                     
                     // Only index images with valid dimensions
                     if (width <= 0 || height <= 0)
@@ -531,7 +572,7 @@ namespace VPM.Services
             {
                 using var archive = SharpCompressHelper.OpenForRead(varPath);
 
-                var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
+                var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, internalPath);
 
                 if (entry == null) return null;
 
@@ -561,7 +602,7 @@ namespace VPM.Services
                         if (entry.Size > CHUNKED_LOADING_THRESHOLD)
                         {
                             int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
-                            imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
+                            imageData = SharpCompressHelper.ReadEntryChunked(archive.Archive, entry, chunkSize);
                         }
                         else
                         {
@@ -793,7 +834,7 @@ namespace VPM.Services
                 {
                     try
                     {
-                        var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
+                        var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, internalPath);
                         if (entry == null)
                         {
                             continue;
@@ -830,7 +871,7 @@ namespace VPM.Services
                         {
                             // ReadEntryChunked opens a new stream, so it starts from the beginning
                             int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
-                            imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
+                            imageData = SharpCompressHelper.ReadEntryChunked(archive.Archive, entry, chunkSize);
                         }
                         else
                         {
@@ -1170,11 +1211,11 @@ namespace VPM.Services
                 // This prevents file locking issues when packages are moved or modified
                 using (var archive = SharpCompressHelper.OpenForRead(varPath))
                 {
-                    var entry = SharpCompressHelper.FindEntryByPath(archive, internalPath);
+                    var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, internalPath);
                     if (entry != null)
                     {
                         int chunkSize = SharpCompressHelper.GetAdaptiveChunkSize(entry.Size);
-                        imageData = SharpCompressHelper.ReadEntryChunked(archive, entry, chunkSize);
+                        imageData = SharpCompressHelper.ReadEntryChunked(archive.Archive, entry, chunkSize);
                     }
                 }
 
@@ -2272,16 +2313,21 @@ namespace VPM.Services
         {
             if (string.IsNullOrEmpty(varPath)) return;
             
+            // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Starting for: {varPath}");
+            
             try
             {
                 var packageName = Path.GetFileNameWithoutExtension(varPath);
                 
                 // CRITICAL: Cancel any pending image loads for this package
                 // This prevents new file handles from being opened while we try to close existing ones
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Cancelling pending operations for package");
                 _asyncPool.CancelPendingForPackage(varPath);
 
                 // Wait for active file operations to complete
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Releasing file locks from async pool");
                 await _asyncPool.ReleaseFileLocksAsync(new[] { varPath });
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Async pool locks released");
 
                 // CRITICAL: Clear bitmap cache entries for this package to release memory references
                 // This must happen BEFORE the file operation to prevent "file in use" errors
@@ -2342,12 +2388,22 @@ namespace VPM.Services
                 }
                 
                 // Force garbage collection to ensure all references are released
-                // GC.Collect(0, GCCollectionMode.Optimized);
+                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Forcing garbage collection");
+                // GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized);
                 // GC.WaitForPendingFinalizers();
+                // GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized);
+                // GC.WaitForPendingFinalizers();
+                
+                // Wait for file system to release locks (increased to 500ms to allow pending operations to complete)
+                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Waiting for file system to release locks");
+                await Task.Delay(100);
+                
+                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] === COMPLETE ===");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[ImageManager] Error closing file handles for {varPath}: {ex.Message}");
+                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Error: {ex.Message}");
+                Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Stack trace: {ex.StackTrace}");
             }
         }
 

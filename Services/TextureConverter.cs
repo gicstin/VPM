@@ -149,12 +149,12 @@ namespace VPM.Services
                             string texturePath = kvp.Key;
                             var (targetResolution, originalWidth, originalHeight, originalSize) = kvp.Value;
                             
-                            var entry = SharpCompressHelper.FindEntryByPath(archive, texturePath);
+                            var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, texturePath);
                             if (entry == null)
                                 return;
 
                             // Read texture data asynchronously
-                            byte[] textureData = await SharpCompressHelper.ReadEntryAsBytesAsync(archive, entry);
+                            byte[] textureData = await SharpCompressHelper.ReadEntryAsBytesAsync(archive.Archive, entry);
                             if (textureData == null || textureData.Length == 0)
                                 return;
 
@@ -317,7 +317,7 @@ namespace VPM.Services
                             string texturePath = kvp.Key;
                             var (targetResolution, originalWidth, originalHeight, originalSize) = kvp.Value;
                             
-                            var entry = SharpCompressHelper.FindEntryByPath(archive, texturePath);
+                            var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, texturePath);
                             if (entry == null)
                                 return;
 

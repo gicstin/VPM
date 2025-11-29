@@ -447,7 +447,7 @@ namespace VPM
                 {
                     using (var archive = SharpCompressHelper.OpenForRead(packagePath))
                     {
-                        var entry = SharpCompressHelper.FindEntryByPath(archive, texturePath);
+                        var entry = SharpCompressHelper.FindEntryByPath(archive.Archive, texturePath);
                         if (entry != null)
                         {
                             string tempPath = Path.Combine(Path.GetTempPath(), "VAM_Textures", packageName);

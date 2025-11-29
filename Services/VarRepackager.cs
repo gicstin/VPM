@@ -536,7 +536,7 @@ namespace VPM.Services
                 using (var archive = SharpCompressHelper.OpenForRead(varPath))
                 {
                     // Check for meta.json
-                    var metaEntry = SharpCompressHelper.FindEntry(archive, "meta.json");
+                    var metaEntry = SharpCompressHelper.FindEntry(archive.Archive, "meta.json");
                     if (metaEntry == null)
                     {
                         errorMessage = "VAR file is missing meta.json";

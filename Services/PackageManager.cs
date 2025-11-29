@@ -1582,7 +1582,7 @@ namespace VPM.Services
                     }
 
                     // Get image dimensions from header
-                    var (width, height) = SharpCompressHelper.GetImageDimensionsFromEntry(archive, entry);
+                    var (width, height) = SharpCompressHelper.GetImageDimensionsFromEntry(archive.Archive, entry);
                     
                     // Only index images with valid dimensions
                     if (width <= 0 || height <= 0)

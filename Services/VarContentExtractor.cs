@@ -105,14 +105,14 @@ namespace VPM.Services
                 var vajEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase));
                 if (vajEntry != null)
                 {
-                    extractedCount += ExtractVajDependencies(archive, vajEntry, gameFolder, directoryPath);
+                    extractedCount += ExtractVajDependencies(archive.Archive, vajEntry, gameFolder, directoryPath);
                 }
 
                 // Check for .vap files and extract their dependencies
                 var vapEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vap", StringComparison.OrdinalIgnoreCase));
                 if (vapEntry != null)
                 {
-                    extractedCount += ExtractVapDependencies(archive, vapEntry, gameFolder, directoryPath);
+                    extractedCount += ExtractVapDependencies(archive.Archive, vapEntry, gameFolder, directoryPath);
                 }
 
                 return extractedCount;
@@ -185,14 +185,14 @@ namespace VPM.Services
                 var vajEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase));
                 if (vajEntry != null)
                 {
-                    removedCount += RemoveVajDependencies(archive, vajEntry, gameFolder, directoryPath);
+                    removedCount += RemoveVajDependencies(archive.Archive, vajEntry, gameFolder, directoryPath);
                 }
 
                 // Check for .vap files and remove their dependencies
                 var vapEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vap", StringComparison.OrdinalIgnoreCase));
                 if (vapEntry != null)
                 {
-                    removedCount += RemoveVapDependencies(archive, vapEntry, gameFolder, directoryPath);
+                    removedCount += RemoveVapDependencies(archive.Archive, vapEntry, gameFolder, directoryPath);
                 }
 
                 return removedCount;
@@ -574,7 +574,7 @@ namespace VPM.Services
                 if (vajEntry != null)
                 {
                     // Check if dependency files exist
-                    if (!AreDependenciesExtracted(archive, vajEntry, gameFolder, directoryPath))
+                    if (!AreDependenciesExtracted(archive.Archive, vajEntry, gameFolder, directoryPath))
                         return false;
                 }
 
@@ -583,7 +583,7 @@ namespace VPM.Services
                 if (vapEntry != null)
                 {
                     // Check if dependency files exist
-                    if (!AreVapDependenciesExtracted(archive, vapEntry, gameFolder, directoryPath))
+                    if (!AreVapDependenciesExtracted(archive.Archive, vapEntry, gameFolder, directoryPath))
                         return false;
                 }
 

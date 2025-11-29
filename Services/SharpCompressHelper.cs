@@ -12,6 +12,62 @@ using SharpCompress.Writers;
 namespace VPM.Services
 {
     /// <summary>
+    /// Wrapper for IArchive that ensures proper disposal of underlying FileStream
+    /// Prevents file locking issues when archives are not properly disposed
+    /// </summary>
+    public class DisposableArchive : IDisposable
+    {
+        private IArchive _archive;
+        private bool _disposed = false;
+        private readonly string _filePath;
+        private readonly bool _forceGcOnDispose;
+
+        public DisposableArchive(IArchive archive, string filePath, bool forceGcOnDispose = false)
+        {
+            _archive = archive;
+            _filePath = filePath;
+            _forceGcOnDispose = forceGcOnDispose;
+        }
+
+        public IArchive Archive => _archive;
+        
+        // Proxy for common properties to simplify usage
+        public IEnumerable<IArchiveEntry> Entries => _archive?.Entries ?? Enumerable.Empty<IArchiveEntry>();
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            try
+            {
+                // Console.WriteLine($"[DisposableArchive] Disposing archive: {_filePath}");
+                _archive?.Dispose();
+                _archive = null;
+                // Console.WriteLine($"[DisposableArchive] Archive disposed successfully");
+                
+                if (_forceGcOnDispose)
+                {
+                    // Force garbage collection to ensure FileStream is released
+                    // This is critical for the "Rock Solid" solution to prevent file locks
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                }
+                else
+                {
+                    // Lightweight cleanup for normal operations
+                    // Only suppress finalization to reduce GC pressure
+                    GC.SuppressFinalize(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DisposableArchive] Error disposing archive: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Phase 4: Archive handle pool for parallel archive access
     /// Manages reusable archive handles to reduce contention and improve throughput
     /// </summary>
@@ -164,6 +220,10 @@ namespace VPM.Services
             {
                 handle?.Dispose();
             }
+            
+            // Force garbage collection to ensure FileStreams are released
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
         }
     }
 
@@ -176,19 +236,41 @@ namespace VPM.Services
         /// <summary>
         /// Opens a ZIP file for reading
         /// </summary>
-        public static IArchive OpenForRead(string filePath)
+        public static DisposableArchive OpenForRead(string filePath, ImageLoaderAsyncPool asyncPool = null, bool forceGcOnDispose = false)
         {
             FileStream fileStream = null;
             try
             {
+                // Check if path is cancelled (prevents opening files during unload/load operations)
+                if (asyncPool != null)
+                {
+                    // Check full path
+                    if (asyncPool.IsFileCancelled(filePath))
+                    {
+                        Console.WriteLine($"[SharpCompressHelper.OpenForRead] BLOCKED: Full path is cancelled: {filePath}");
+                        throw new OperationCanceledException($"Archive operation cancelled for path: {filePath}");
+                    }
+                    
+                    // Also check by package name (without path) to catch both AddonPackages and AllPackages versions
+                    var fileName = System.IO.Path.GetFileNameWithoutExtension(filePath);
+                    if (!string.IsNullOrEmpty(fileName) && asyncPool.IsFileCancelled(fileName))
+                    {
+                        Console.WriteLine($"[SharpCompressHelper.OpenForRead] BLOCKED: Package name is cancelled: {fileName}");
+                        throw new OperationCanceledException($"Archive operation cancelled for package: {fileName}");
+                    }
+                }
+                
+                // Console.WriteLine($"[SharpCompressHelper.OpenForRead] Opening archive: {filePath}");
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
                 var archive = ZipArchive.Open(fileStream);
                 fileStream = null; // Archive now owns the stream
-                return archive;
+                // Console.WriteLine($"[SharpCompressHelper.OpenForRead] Archive opened successfully");
+                return new DisposableArchive(archive, filePath, forceGcOnDispose);
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[SharpCompressHelper.OpenForRead] ERROR: {ex.Message}");
                 fileStream?.Dispose(); // Dispose stream if archive creation failed
                 throw new InvalidOperationException($"Failed to open archive '{filePath}': {ex.Message}", ex);
             }

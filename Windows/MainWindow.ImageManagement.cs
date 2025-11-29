@@ -512,6 +512,16 @@ namespace VPM
                         var packageItem = imageItem.PackageItem;
                         if (packageItem != null && _packageFileManager != null)
                         {
+                            // Cancel any pending image loading operations to free up file handles
+                            _imageLoadingCts?.Cancel();
+                            _imageLoadingCts = new System.Threading.CancellationTokenSource();
+                            
+                            // Clear image preview grid before processing
+                            PreviewImages.Clear();
+                            
+                            // Release file locks before operation to prevent conflicts with image grid
+                            await _imageManager.ReleasePackagesAsync(new List<string> { packageItem.Name });
+                            
                             // Perform load/unload directly without changing DataGrid selection
                             // This preserves the current selection and only updates the status
                             if (packageItem.Status == "Loaded")
