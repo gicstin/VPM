@@ -26,7 +26,7 @@
         <CollectionViewSource x:Key="ScenesView" />
         <CollectionViewSource x:Key="PreviewImagesView">
             <CollectionViewSource.GroupDescriptions>
-                <PropertyGroupDescription PropertyName="PackageItem" />
+                <PropertyGroupDescription PropertyName="GroupKey" />
             </CollectionViewSource.GroupDescriptions>
         </CollectionViewSource>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -666,7 +666,6 @@
                 <!--  Cancel Button (hidden by default)  -->
                 <Button
                     x:Name="CancelPlayButton"
-                    Click="CancelPlay_Click"
                     Content="✕ Cancel"
                     Style="{StaticResource LaunchButtonStyle}"
                     ToolTip="Cancel and return to main buttons"
@@ -951,12 +950,6 @@
                                                     VerticalAlignment="Center"
                                                     Foreground="{TemplateBinding Foreground}"
                                                     Text="♾️ Mode" />
-                                                <TextBlock
-                                                    Margin="6,0,0,0"
-                                                    VerticalAlignment="Center"
-                                                    FontSize="10"
-                                                    Foreground="{TemplateBinding Foreground}"
-                                                    Text="▼" />
                                             </StackPanel>
                                         </ToggleButton>
                                         <ContentPresenter
@@ -5571,170 +5564,202 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <StackPanel
+                        <Grid
                             x:Name="ImagesToolbarButtonGrid"
                             Margin="0"
                             HorizontalAlignment="Stretch"
                             VerticalAlignment="Top"
-                            Orientation="Horizontal"
                             Visibility="Visible">
-                            <!--  Normal buttons  -->
-                            <Button
-                                x:Name="PackageDownloadsImageButton"
-                                Height="34"
-                                Margin="0,0,3,0"
-                                Padding="6,0"
-                                Click="PackageDownloadsToolbar_Click"
-                                Content="📥 Package Downloads"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Search and download missing packages"
-                                Visibility="Visible">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="60" />
+                                <ColumnDefinition Width="*" MinWidth="60" />
+                                <ColumnDefinition Width="*" MinWidth="60" />
+                                <ColumnDefinition Width="34" />
+                                <ColumnDefinition Width="*" MinWidth="60" />
+                            </Grid.ColumnDefinitions>
 
-                            <Button
-                                x:Name="CheckUpdatesImageButton"
-                                Height="34"
-                                Margin="3,0,3,0"
-                                Padding="8,0"
-                                Click="CheckUpdatesToolbar_Click"
-                                Content="🔄 Check for Updates"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Check for package updates"
+                            <!--  Normal buttons container  -->
+                            <Grid
+                                x:Name="NormalButtonsContainer"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="5"
+                                HorizontalAlignment="Stretch"
                                 Visibility="Visible">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="80" />
+                                    <ColumnDefinition Width="*" MinWidth="80" />
+                                    <ColumnDefinition Width="*" MinWidth="80" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" MinWidth="60" />
+                                </Grid.ColumnDefinitions>
+                                <!--  Normal buttons  -->
+                                <Button
+                                    x:Name="PackageDownloadsImageButton"
+                                    Grid.Column="0"
+                                    Height="34"
+                                    Margin="0,0,3,0"
+                                    Padding="6,0"
+                                    Click="PackageDownloadsToolbar_Click"
+                                    Content="📥 Downloads"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    ToolTip="Search and download missing packages"
+                                    Visibility="Visible">
+                                    <Button.Style>
+                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border
+                                                            Padding="{TemplateBinding Padding}"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="3">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="Visibility" Value="Visible">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="Opacity"
+                                                                    From="0.0"
+                                                                    To="1.0"
+                                                                    Duration="0:0:0.15">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
 
-                            <Button
-                                x:Name="PlayVAMImageButton"
-                                Height="34"
-                                Margin="3,0,0,0"
-                                Padding="8,0"
-                                Click="PlayVaM_Click"
-                                Content="🎮 Play VAM"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Launch VAM"
-                                Visibility="Visible">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
+                                <Button
+                                    x:Name="CheckUpdatesImageButton"
+                                    Grid.Column="1"
+                                    Height="34"
+                                    Margin="3,0,3,0"
+                                    Padding="6,0"
+                                    Click="CheckUpdatesToolbar_Click"
+                                    Content="🔄 Updates"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    ToolTip="Check for package updates"
+                                    Visibility="Visible">
+                                    <Button.Style>
+                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border
+                                                            Padding="{TemplateBinding Padding}"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="3">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="Visibility" Value="Visible">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="Opacity"
+                                                                    From="0.0"
+                                                                    To="1.0"
+                                                                    Duration="0:0:0.15">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
 
-                            <!--  Content Type Filter Dropdown  -->
-                            <StackPanel Margin="3,0,0,0" Orientation="Horizontal">
+                                <Button
+                                    x:Name="PlayVAMImageButton"
+                                    Grid.Column="2"
+                                    Height="34"
+                                    Margin="3,0,3,0"
+                                    Padding="6,0"
+                                    Click="PlayVAMButton_Click"
+                                    Content="🎮 Play VaM"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    ToolTip="Launch VAM - click for options"
+                                    Visibility="Visible">
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Click="LaunchDesktop_Click" Header="🖥️ Desktop" />
+                                            <MenuItem Click="LaunchVR_Click" Header="🥽 VR" />
+                                            <MenuItem Click="LaunchConfig_Click" Header="⚙️ Config" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <Button.Style>
+                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border
+                                                            Padding="{TemplateBinding Padding}"
+                                                            Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            CornerRadius="3">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="Visibility" Value="Visible">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation
+                                                                    Storyboard.TargetProperty="Opacity"
+                                                                    From="0.0"
+                                                                    To="1.0"
+                                                                    Duration="0:0:0.15">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <QuadraticEase EasingMode="EaseOut" />
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+
+                                <!--  Content Type Filter Dropdown  -->
                                 <Button
                                     x:Name="ContentTypeFilterButton"
+                                    Grid.Column="4"
                                     Height="34"
-                                    Padding="8,0"
+                                    Margin="3,0,3,0"
+                                    Padding="6,0"
                                     Click="ContentTypeFilterButton_Click"
                                     Content="🔽 Filter"
                                     FontSize="12"
@@ -5761,9 +5786,10 @@
                                 </Button>
                                 <Button
                                     x:Name="ClearFiltersButton"
+                                    Grid.Column="3"
                                     Width="34"
                                     Height="34"
-                                    Margin="3,0,0,0"
+                                    Margin="3,0,3,0"
                                     Padding="0,0"
                                     Click="ClearFilters_Click"
                                     Content="✕"
@@ -5773,10 +5799,10 @@
                                     Visibility="Collapsed">
                                     <Button.Style>
                                         <Style TargetType="Button">
-                                            <Setter Property="Background" Value="#FF6B6B" />
+                                            <Setter Property="Background" Value="#3E3E3E" />
                                             <Setter Property="Foreground" Value="White" />
                                             <Setter Property="BorderThickness" Value="1" />
-                                            <Setter Property="BorderBrush" Value="#FF5252" />
+                                            <Setter Property="BorderBrush" Value="#3E3E3E" />
                                             <Setter Property="Template">
                                                 <Setter.Value>
                                                     <ControlTemplate TargetType="Button">
@@ -5789,12 +5815,12 @@
                                                         </Border>
                                                         <ControlTemplate.Triggers>
                                                             <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter Property="Background" Value="#FF5252" />
-                                                                <Setter Property="BorderBrush" Value="#FF3333" />
+                                                                <Setter Property="Background" Value="#3E3E3E" />
+                                                                <Setter Property="BorderBrush" Value="#00D4FF" />
                                                             </Trigger>
                                                             <Trigger Property="IsPressed" Value="True">
-                                                                <Setter Property="Background" Value="#FF3333" />
-                                                                <Setter Property="BorderBrush" Value="#FF1111" />
+                                                                <Setter Property="Background" Value="#2D2D2D" />
+                                                                <Setter Property="BorderBrush" Value="#00D4FF" />
                                                             </Trigger>
                                                         </ControlTemplate.Triggers>
                                                     </ControlTemplate>
@@ -5873,209 +5899,8 @@
                                         </StackPanel>
                                     </Border>
                                 </Popup>
-                            </StackPanel>
-
-                            <!--  Play mode buttons (Desktop/VR/Custom/Cancel)  -->
-                            <Button
-                                x:Name="DesktopImageButton"
-                                Height="36"
-                                Margin="0,0,3,0"
-                                Padding="8,0"
-                                Click="LaunchDesktop_Click"
-                                Content="🖥️ Desktop"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Launch VirtAMate in Desktop mode"
-                                Visibility="Collapsed">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-
-                            <Button
-                                x:Name="VRImageButton"
-                                Height="36"
-                                Margin="3,0,3,0"
-                                Padding="8,0"
-                                Click="LaunchVR_Click"
-                                Content="🥽 VR"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Launch VirtAMate in VR mode"
-                                Visibility="Collapsed">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-
-                            <Button
-                                x:Name="CustomImageButton"
-                                Height="36"
-                                Margin="3,0,3,0"
-                                Padding="8,0"
-                                Click="LaunchConfig_Click"
-                                Content="⚙️ Custom"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Launch VirtAMate with screen selector"
-                                Visibility="Collapsed">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-
-                            <Button
-                                x:Name="CancelImageButton"
-                                Height="36"
-                                Margin="3,0,0,0"
-                                Padding="8,0"
-                                Click="CancelPlay_Click"
-                                Content="✕ Cancel"
-                                FontSize="12"
-                                FontWeight="SemiBold"
-                                ToolTip="Cancel and return to main buttons"
-                                Visibility="Collapsed">
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border
-                                                        Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="3">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <Trigger Property="Visibility" Value="Visible">
-                                                <Trigger.EnterActions>
-                                                    <BeginStoryboard>
-                                                        <Storyboard>
-                                                            <DoubleAnimation
-                                                                Storyboard.TargetProperty="Opacity"
-                                                                From="0.0"
-                                                                To="1.0"
-                                                                Duration="0:0:0.15">
-                                                                <DoubleAnimation.EasingFunction>
-                                                                    <QuadraticEase EasingMode="EaseOut" />
-                                                                </DoubleAnimation.EasingFunction>
-                                                            </DoubleAnimation>
-                                                        </Storyboard>
-                                                    </BeginStoryboard>
-                                                </Trigger.EnterActions>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                        </StackPanel>
+                            </Grid>
+                        </Grid>
                     </Border>
 
                     <!--  Main images area with overlay controls  -->
@@ -6159,7 +5984,7 @@
                                                                         <ColumnDefinition Width="Auto" />
                                                                     </Grid.ColumnDefinitions>
 
-                                                                    <!--  Load/Unload button  -->
+                                                                    <!--  Load/Unload button (hidden in Custom mode)  -->
                                                                     <Button
                                                                         x:Name="PackageHeaderLoadUnloadButton"
                                                                         Grid.Column="0"
@@ -6175,13 +6000,15 @@
                                                                         FontSize="11"
                                                                         FontWeight="SemiBold"
                                                                         Foreground="White"
-                                                                        ToolTip="Load/Unload package">
+                                                                        ToolTip="Load/Unload package"
+                                                                        Visibility="{Binding Items[0].ShowLoadButton, Converter={StaticResource BoolToVis}}">
                                                                         <Button.Style>
                                                                             <Style TargetType="Button">
                                                                                 <Setter Property="Template">
                                                                                     <Setter.Value>
                                                                                         <ControlTemplate TargetType="Button">
                                                                                             <Border
+                                                                                                x:Name="ButtonBorder"
                                                                                                 Background="{TemplateBinding Background}"
                                                                                                 BorderBrush="{TemplateBinding BorderBrush}"
                                                                                                 BorderThickness="{TemplateBinding BorderThickness}"
@@ -6190,7 +6017,8 @@
                                                                                             </Border>
                                                                                             <ControlTemplate.Triggers>
                                                                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                                                                    <Setter Property="Background" Value="#30FFFFFF" />
+                                                                                                    <Setter TargetName="ButtonBorder" Property="Background" Value="#30FFFFFF" />
+                                                                                                    <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FF0078D7" />
                                                                                                 </Trigger>
                                                                                             </ControlTemplate.Triggers>
                                                                                         </ControlTemplate>
@@ -6199,6 +6027,7 @@
                                                                             </Style>
                                                                         </Button.Style>
                                                                     </Button>
+
 
                                                                     <!--  Status line  -->
                                                                     <Border
@@ -6224,7 +6053,7 @@
                                                                             TextTrimming="CharacterEllipsis" />
                                                                     </StackPanel>
 
-                                                                    <!--  Delete extracted items button  -->
+                                                                    <!--  Delete extracted items button (hidden in Custom mode)  -->
                                                                     <Button
                                                                         x:Name="DeletePackageButton"
                                                                         Grid.Column="3"
@@ -6242,6 +6071,7 @@
                                                                         <Button.Visibility>
                                                                             <MultiBinding Converter="{StaticResource HasExtractedItemsConverter}">
                                                                                 <Binding Path="Items" />
+                                                                                <Binding Path="Items[0].ShowLoadButton" />
                                                                             </MultiBinding>
                                                                         </Button.Visibility>
                                                                         <TextBlock
@@ -6279,7 +6109,7 @@
                                                                         VerticalAlignment="Center"
                                                                         FontSize="16"
                                                                         Foreground="#AAAAAA"
-                                                                        Text="{Binding Items[0].PackageItem.FileSizeFormatted}" />
+                                                                        Text="{Binding Items[0].ItemFileSizeFormatted}" />
                                                                 </Grid>
                                                             </Border>
                                                             <!--  Items container  -->
@@ -6303,10 +6133,12 @@
                                             ImageHeight="{Binding ImageHeight}"
                                             ImageWidth="{Binding ImageWidth}"
                                             InternalImagePath="{Binding InternalPath}"
+                                            IsExtracted="{Binding IsExtracted}"
                                             LoadImageCallback="{Binding LoadImageCallback}"
                                             Loaded="LazyLoadImage_Loaded"
                                             PackageKey="{Binding PackageName}"
-                                            Unloaded="LazyLoadImage_Unloaded">
+                                            Unloaded="LazyLoadImage_Unloaded"
+                                            VarFilePath="{Binding VarFilePath}">
                                             <windows:LazyLoadImage.Width>
                                                 <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
                                                     <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
@@ -6330,103 +6162,6 @@
                                             </windows:LazyLoadImage.Height>
                                             <windows:LazyLoadImage.CornerRadius>3</windows:LazyLoadImage.CornerRadius>
                                         </windows:LazyLoadImage>
-
-                                        <!--  Delete button (only visible when extracted)  -->
-                                        <Button
-                                            Width="28"
-                                            Height="28"
-                                            Margin="6,0,0,6"
-                                            Padding="18,5"
-                                            HorizontalAlignment="Left"
-                                            VerticalAlignment="Bottom"
-                                            Background="#CC803030"
-                                            BorderBrush="Transparent"
-                                            BorderThickness="1"
-                                            Click="DeleteExtractedContent_Click"
-                                            Cursor="Hand"
-                                            Foreground="White"
-                                            ToolTip="Delete extracted files"
-                                            Visibility="{Binding IsExtracted, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock
-                                                FontSize="12"
-                                                FontWeight="Bold"
-                                                Text="✕" />
-                                            <Button.Style>
-                                                <Style TargetType="Button">
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="Button">
-                                                                <Border
-                                                                    Background="{TemplateBinding Background}"
-                                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                                    CornerRadius="3">
-                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                </Border>
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                        <Setter Property="Opacity" Value="0.9" />
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-
-                                        <!--  Extract button  -->
-                                        <Button
-                                            Height="28"
-                                            Margin="0,0,6,6"
-                                            Padding="18,5"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Bottom"
-                                            Background="{Binding ExtractionButtonBackground}"
-                                            BorderBrush="Transparent"
-                                            BorderThickness="1"
-                                            Click="ExtractContent_Click"
-                                            Cursor="Hand"
-                                            Foreground="White"
-                                            ToolTip="Extract files from archive">
-                                            <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                                                <TextBlock
-                                                    Margin="6,0,6,0"
-                                                    VerticalAlignment="Center"
-                                                    FontFamily="Segoe UI Emoji, Segoe UI Symbol"
-                                                    FontSize="12"
-                                                    FontWeight="Bold"
-                                                    Text="{Binding ExtractionStatusIcon}" />
-                                                <TextBlock
-                                                    Margin="0,0,6,0"
-                                                    VerticalAlignment="Center"
-                                                    FontSize="12"
-                                                    FontWeight="SemiBold"
-                                                    Text="{Binding ExtractionStatusText}" />
-                                            </StackPanel>
-                                            <Button.Style>
-                                                <Style TargetType="Button">
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="Button">
-                                                                <Border
-                                                                    Background="{TemplateBinding Background}"
-                                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                                    CornerRadius="3">
-                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                </Border>
-                                                                <ControlTemplate.Triggers>
-                                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                                        <Setter Property="Opacity" Value="0.9" />
-                                                                    </Trigger>
-                                                                </ControlTemplate.Triggers>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
                                     </Grid>
                                 </DataTemplate>
                             </windows:ImageListView.ItemTemplate>
@@ -6478,23 +6213,23 @@
                                         Text="0 extracted items" />
                                 </StackPanel>
 
-                                <!--  Filter buttons in the middle - stretch to fill space  -->
+                                <!--  Filter button in the middle - stretch to fill space  -->
                                 <StackPanel
                                     Grid.Column="1"
                                     HorizontalAlignment="Stretch"
                                     VerticalAlignment="Center"
                                     Orientation="Horizontal">
                                     <Button
-                                        x:Name="ShowExtractedButton"
+                                        x:Name="ToggleExtractedFilterButton"
                                         Height="26"
-                                        Margin="0,0,3,0"
+                                        Margin="0,0,16,0"
                                         Padding="0,0"
                                         HorizontalAlignment="Stretch"
-                                        Click="ShowExtractedImages_Click"
+                                        Click="ToggleExtractedFilter_Click"
                                         Content="  Extracted  "
                                         FontSize="10"
                                         FontWeight="Regular"
-                                        ToolTip="Show only extracted items">
+                                        ToolTip="Toggle: Show only extracted items (pressed) or all images (released)">
                                         <Button.Style>
                                             <Style TargetType="Button">
                                                 <Setter Property="Background" Value="#40FFFFFF" />
@@ -6524,49 +6259,12 @@
                                                         </ControlTemplate>
                                                     </Setter.Value>
                                                 </Setter>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                    <Button
-                                        x:Name="ShowAllImagesButton"
-                                        Height="26"
-                                        Margin="3,0,16,0"
-                                        Padding="0,0"
-                                        HorizontalAlignment="Stretch"
-                                        Click="ShowAllImages_Click"
-                                        Content="  All  "
-                                        FontSize="10"
-                                        FontWeight="Regular"
-                                        ToolTip="Show all images">
-                                        <Button.Style>
-                                            <Style TargetType="Button">
-                                                <Setter Property="Background" Value="#40FFFFFF" />
-                                                <Setter Property="Foreground" Value="White" />
-                                                <Setter Property="BorderThickness" Value="1" />
-                                                <Setter Property="BorderBrush" Value="#60FFFFFF" />
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="3">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#80FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter Property="Background" Value="#A0FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ImageShowOnlyExtracted, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                        <Setter Property="Background" Value="#80FFFFFF" />
+                                                        <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
                                             </Style>
                                         </Button.Style>
                                     </Button>

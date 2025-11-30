@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -80,6 +81,24 @@ namespace VPM.Windows
             // Reset loading flag
             _isLoadingInProgress = false;
             
+            // Ensure the grid structure is correct (only one instance of each button)
+            EnsureSingleButtonInstances();
+
+            // Clear button content and state to prevent stacking when control is reused
+            if (_extractButton != null)
+            {
+                _extractButton.Content = null;
+                _extractButton.Visibility = Visibility.Collapsed; // Start hidden, will be shown by SetExtractionState
+                _extractButton.Background = new SolidColorBrush(Color.FromArgb(140, 51, 51, 51));
+                _isCurrentlyExtracted = false;
+            }
+            if (_removeButton != null)
+            {
+                _removeButton.Content = "✕";
+                _removeButton.Visibility = Visibility.Collapsed;
+                _removeButton.Background = new SolidColorBrush(Color.FromArgb(160, 180, 40, 40));
+            }
+            
             // Clear existing image source if any
             // This will trigger OnImageSourceChanged -> UnloadImage
             if (ImageSource != null)
@@ -92,8 +111,10 @@ namespace VPM.Windows
                 UnloadImage();
             }
             
-            // Ensure _isLoaded is false (in case UnloadImage didn't run because it thought it wasn't loaded)
             _isLoaded = false;
+            
+            // Don't call SetExtractionState here - let the binding update it
+            // SetExtractionState will be called by OnIsExtractedChanged when the binding updates
         }
 
         public static readonly DependencyProperty ImageWidthProperty =
@@ -150,6 +171,22 @@ namespace VPM.Windows
             set { SetValue(GameFolderProperty, value); }
         }
 
+        public static readonly DependencyProperty IsExtractedProperty =
+            DependencyProperty.Register("IsExtracted", typeof(bool), typeof(LazyLoadImage), new PropertyMetadata(false, OnIsExtractedChanged));
+
+        public bool IsExtracted
+        {
+            get { return (bool)GetValue(IsExtractedProperty); }
+            set { SetValue(IsExtractedProperty, value); }
+        }
+
+        private static void OnIsExtractedChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            var control = (LazyLoadImage)d;
+            var newValue = (bool)e.NewValue;
+            control.SetExtractionState(newValue);
+        }
+
         #endregion
         
         // Events
@@ -170,65 +207,64 @@ namespace VPM.Windows
             
             // Create overlay grid for buttons
             _overlayGrid = new Grid();
+            _overlayGrid.Children.Clear();
             _overlayGrid.Children.Add(_imageControl);
             
             // Apply clipping to respect the CornerRadius
             this.ClipToBounds = true;
             
-            // Create extract button at bottom-right
+            // Create extract button at bottom-right with binding support
             _extractButton = new Button
             {
-                Padding = new Thickness(8, 5, 8, 5),
-                Height = 28,
-                Background = new SolidColorBrush(Color.FromArgb(200, 51, 51, 51)), // #FF333333 with slight transparency
+                Name = "ExtractButton",
+                Padding = new Thickness(12, 6, 12, 6),
+                Height = 30,
+                Background = new SolidColorBrush(Color.FromArgb(140, 51, 51, 51)),
                 Foreground = new SolidColorBrush(Colors.White),
-                FontSize = 11,
+                FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 0, 6, 6),
-                Visibility = Visibility.Collapsed,
+                Margin = new Thickness(0, 0, 12, 12),
+                Visibility = Visibility.Collapsed, // Start hidden, will be shown by SetExtractionState
                 ToolTip = "Extract files from archive",
                 BorderThickness = new Thickness(1),
                 BorderBrush = new SolidColorBrush(Colors.Transparent),
                 Cursor = System.Windows.Input.Cursors.Hand,
-                IsHitTestVisible = true // Keep button responsive to mouse even when disabled
+                IsHitTestVisible = true
             };
             
-            // Style the button with rounded corners and hover effects
-            var buttonStyle = new System.Windows.Style(typeof(Button));
-            buttonStyle.Setters.Add(new System.Windows.Setter(Button.TemplateProperty, CreateButtonTemplate()));
-            _extractButton.Style = buttonStyle;
-            
-            // Use named method for click handler so we can swap it later
+            // Apply button template
+            _extractButton.Template = CreateButtonTemplate();
             _extractButton.Click += ExtractButton_Click;
+            
+            // Note: SetExtractionState will be called by OnIsExtractedChanged when IsExtracted property changes
             
             _overlayGrid.Children.Add(_extractButton);
 
             // Create remove button at bottom-left
             _removeButton = new Button
             {
-                Padding = new Thickness(8, 5, 8, 5),
-                Height = 28,
-                Background = new SolidColorBrush(Color.FromArgb(200, 180, 40, 40)), // Semi-transparent red with better opacity
+                Name = "RemoveButton",
+                Padding = new Thickness(12, 6, 12, 6),
+                Height = 30,
+                Background = new SolidColorBrush(Color.FromArgb(160, 180, 40, 40)),
                 Foreground = new SolidColorBrush(Colors.White),
-                FontSize = 11,
+                FontSize = 12,
                 FontWeight = FontWeights.SemiBold,
                 VerticalAlignment = VerticalAlignment.Bottom,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(6, 0, 0, 6),
+                Margin = new Thickness(12, 0, 0, 12),
                 Visibility = Visibility.Collapsed,
                 ToolTip = "Remove extracted files",
                 BorderThickness = new Thickness(1),
                 BorderBrush = new SolidColorBrush(Colors.Transparent),
                 Cursor = System.Windows.Input.Cursors.Hand,
-                Content = "X",
-                IsHitTestVisible = true // Keep button responsive to mouse even when disabled
+                Content = "✕",
+                IsHitTestVisible = true
             };
 
-            // Style the button with rounded corners
-            _removeButton.Style = buttonStyle;
-
+            _removeButton.Template = CreateButtonTemplate();
             _removeButton.Click += (s, e) =>
             {
                 e.Handled = true;
@@ -239,7 +275,6 @@ namespace VPM.Windows
                     IsRemoval = true
                 });
             };
-
             _overlayGrid.Children.Add(_removeButton);
             
             // Set child to overlay grid
@@ -247,7 +282,7 @@ namespace VPM.Windows
             
             // Light background visible until image loads
             this.Background = new SolidColorBrush(Color.FromArgb(15, 100, 149, 237));
-            this.Cursor = System.Windows.Input.Cursors.Hand;
+            this.Cursor = System.Windows.Input.Cursors.Arrow;
         }
         
         protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
@@ -268,6 +303,18 @@ namespace VPM.Windows
                 );
                 
                 this.Clip = clipGeometry;
+            }
+        }
+        
+        protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+        {
+            base.OnMouseLeftButtonDown(e);
+            
+            // Detect double-click by checking click count
+            if (e.ClickCount == 2)
+            {
+                e.Handled = true;
+                OpenImageInDefaultViewer();
             }
         }
         
@@ -413,6 +460,24 @@ namespace VPM.Windows
                 {
                     _imageControl.Source = null;
                     _isLoaded = false;
+                    
+                    // Ensure clean grid state
+                    EnsureSingleButtonInstances();
+
+                    // Clear button content and state to prevent stacking
+                    if (_extractButton != null)
+                    {
+                        _extractButton.Content = null;
+                        _extractButton.Visibility = Visibility.Collapsed;
+                        _extractButton.Background = new SolidColorBrush(Color.FromArgb(140, 51, 51, 51));
+                        _isCurrentlyExtracted = false;
+                    }
+                    if (_removeButton != null)
+                    {
+                        _removeButton.Content = "✕";
+                        _removeButton.Visibility = Visibility.Collapsed;
+                        _removeButton.Background = new SolidColorBrush(Color.FromArgb(160, 180, 40, 40));
+                    }
                 });
                 
                 ImageUnloaded?.Invoke(this, EventArgs.Empty);
@@ -458,7 +523,40 @@ namespace VPM.Windows
         /// </summary>
         public bool IsImageLoaded => _isLoaded;
         
-        public bool IsExtracted { get; private set; }
+        // IsExtracted is now a Dependency Property
+
+        /// <summary>
+        /// Ensures that the overlay grid contains exactly one instance of each control
+        /// explicitly clearing and rebuilding the children collection.
+        /// </summary>
+        private void EnsureSingleButtonInstances()
+        {
+            try
+            {
+                // Completely clear the grid to remove any stale or duplicate references
+                _overlayGrid.Children.Clear();
+                
+                // Re-add the core controls in the correct order (Image first, then buttons on top)
+                if (_imageControl != null)
+                {
+                    _overlayGrid.Children.Add(_imageControl);
+                }
+                
+                if (_extractButton != null)
+                {
+                    _overlayGrid.Children.Add(_extractButton);
+                }
+                
+                if (_removeButton != null)
+                {
+                    _overlayGrid.Children.Add(_removeButton);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore errors
+            }
+        }
 
         /// <summary>
         /// Updates the extract button state (shows button or checkmark)
@@ -467,11 +565,20 @@ namespace VPM.Windows
         {
             try
             {
-                IsExtracted = isExtracted;
+                // Don't set IsExtracted here - it's already set by the binding or caller
+                // Setting it again would cause a loop
                 Dispatcher.Invoke(() =>
                 {
-                    // Get category name
-                    var category = VarContentExtractor.GetCategoryFromPath(InternalImagePath);
+                    // Ensure clean state by rebuilding the grid children
+                    EnsureSingleButtonInstances();
+                    
+                    // Get category name - handle null path
+                    var category = string.IsNullOrEmpty(InternalImagePath) 
+                        ? "Content" 
+                        : VarContentExtractor.GetCategoryFromPath(InternalImagePath);
+                    
+                    // Clear previous content to prevent button duplication
+                    _extractButton.Content = null;
                     
                     // Create content with icon and text
                     var stackPanel = new StackPanel 
@@ -508,7 +615,7 @@ namespace VPM.Windows
                         iconBlock.Text = "✓";
                         _extractButton.Content = stackPanel;
                         // Neutral green for extracted state (not too bright)
-                        _extractButton.Background = new SolidColorBrush(Color.FromArgb(160, 60, 120, 70)); 
+                        _extractButton.Background = new SolidColorBrush(Color.FromArgb(140, 60, 120, 70)); 
                         _extractButton.ToolTip = $"Click to open extracted {category} files in Explorer";
                         _extractButton.IsEnabled = true; // Enable button to allow opening in Explorer
 
@@ -526,12 +633,13 @@ namespace VPM.Windows
                         else if (string.Equals(category, "Skin", StringComparison.OrdinalIgnoreCase)) iconText = "🎨";
                         else if (string.Equals(category, "Appearance", StringComparison.OrdinalIgnoreCase)) iconText = "👤";
                         else if (string.Equals(category, "Scene", StringComparison.OrdinalIgnoreCase)) iconText = "🎬";
+                        else if (string.Equals(category, "Pose", StringComparison.OrdinalIgnoreCase)) iconText = "🧍";
                         
                         // Show extract button with icon and label
                         iconBlock.Text = iconText; 
                         _extractButton.Content = stackPanel;
                         // Transparent gray for available state
-                        _extractButton.Background = new SolidColorBrush(Color.FromArgb(120, 80, 80, 80)); 
+                        _extractButton.Background = new SolidColorBrush(Color.FromArgb(100, 80, 80, 80)); 
                         _extractButton.ToolTip = $"Extract {category} files";
                         _extractButton.IsEnabled = true;
 
@@ -540,11 +648,11 @@ namespace VPM.Windows
                     }
                     
                     // Update padding for a more stylish look
-                    _extractButton.Padding = new Thickness(8, 5, 8, 5);
+                    _extractButton.Padding = new Thickness(12, 6, 12, 6);
                     _extractButton.Visibility = Visibility.Visible;
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Ignore errors during state update
             }
@@ -671,20 +779,139 @@ namespace VPM.Windows
         {
             e.Handled = true;
             
-            if (_isCurrentlyExtracted)
+            // Always delegate to parent via event
+            // The parent handler will check IsExtracted state and decide whether to extract or open folder
+            ExtractionRequested?.Invoke(this, new ExtractionRequestedEventArgs
             {
-                // Open extracted files in Explorer
-                OpenExtractedFilesInExplorer();
-            }
-            else
+                VarFilePath = this.VarFilePath,
+                InternalImagePath = this.InternalImagePath,
+                IsRemoval = false
+            });
+        }
+        
+        /// <summary>
+        /// Opens the image in the default image viewer
+        /// Extracts the image to a temporary location if it's in an archive
+        /// </summary>
+        private void OpenImageInDefaultViewer()
+        {
+            try
             {
-                // Request extraction
-                ExtractionRequested?.Invoke(this, new ExtractionRequestedEventArgs
+                if (string.IsNullOrWhiteSpace(InternalImagePath) || string.IsNullOrWhiteSpace(VarFilePath))
                 {
-                    VarFilePath = this.VarFilePath,
-                    InternalImagePath = this.InternalImagePath,
-                    IsRemoval = false
-                });
+                    MessageBox.Show("Cannot determine image location.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Get the file extension from the internal path
+                var fileExtension = Path.GetExtension(InternalImagePath);
+                if (string.IsNullOrWhiteSpace(fileExtension))
+                {
+                    fileExtension = ".png"; // Default to PNG if no extension found
+                }
+
+                // Create a temporary file path with a unique name to avoid conflicts
+                var tempFileName = Path.GetFileNameWithoutExtension(InternalImagePath);
+                var uniqueSuffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+                tempFileName = $"{tempFileName}_{uniqueSuffix}{fileExtension}";
+                
+                var tempDirectory = Path.Combine(Path.GetTempPath(), "VPM_Images");
+                var tempFilePath = Path.Combine(tempDirectory, tempFileName);
+
+                // Ensure temp directory exists
+                if (!Directory.Exists(tempDirectory))
+                {
+                    try
+                    {
+                        Directory.CreateDirectory(tempDirectory);
+                    }
+                    catch (Exception dirEx)
+                    {
+                        MessageBox.Show($"Cannot create temporary directory: {dirEx.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+
+                // If image is already loaded, save it to temp location
+                if (_imageControl?.Source is BitmapImage bitmapImage)
+                {
+                    // Save the bitmap to the temp file
+                    var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmapImage));
+                    
+                    try
+                    {
+                        using (var fileStream = new FileStream(tempFilePath, FileMode.Create))
+                        {
+                            encoder.Save(fileStream);
+                        }
+                    }
+                    catch (Exception saveEx)
+                    {
+                        MessageBox.Show($"Failed to save image to temporary location: {saveEx.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+                else if (LoadImageCallback != null)
+                {
+                    // Load the image first, then save it
+                    var loadTask = LoadImageAsync();
+                    loadTask.Wait(5000); // Wait up to 5 seconds for image to load
+                    
+                    if (_imageControl?.Source is BitmapImage loadedBitmap)
+                    {
+                        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(loadedBitmap));
+                        
+                        try
+                        {
+                            using (var fileStream = new FileStream(tempFilePath, FileMode.Create))
+                            {
+                                encoder.Save(fileStream);
+                            }
+                        }
+                        catch (Exception saveEx)
+                        {
+                            MessageBox.Show($"Failed to save image to temporary location: {saveEx.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to load image.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Cannot load image.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Verify the file was created before trying to open it
+                if (!File.Exists(tempFilePath))
+                {
+                    MessageBox.Show($"Failed to create temporary image file at: {tempFilePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Open the image with the default viewer
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = tempFilePath,
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception processEx)
+                {
+                    MessageBox.Show($"Failed to open image viewer: {processEx.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to open image: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
     }

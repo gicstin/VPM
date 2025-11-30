@@ -49,6 +49,20 @@ namespace VPM.Models
             }
         }
 
+        private string _varFilePath;
+        public string VarFilePath
+        {
+            get => _varFilePath;
+            set
+            {
+                if (_varFilePath != value)
+                {
+                    _varFilePath = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         private Brush _statusBrush;
         public Brush StatusBrush
         {
@@ -159,6 +173,7 @@ namespace VPM.Models
                 else if (string.Equals(category, "Skin", System.StringComparison.OrdinalIgnoreCase)) iconText = "🎨";
                 else if (string.Equals(category, "Appearance", System.StringComparison.OrdinalIgnoreCase)) iconText = "👤";
                 else if (string.Equals(category, "Scene", System.StringComparison.OrdinalIgnoreCase)) iconText = "🎬";
+                else if (string.Equals(category, "Pose", System.StringComparison.OrdinalIgnoreCase)) iconText = "🧍";
                 
                 // Show extract button with icon and label
                 ExtractionStatusIcon = iconText; 
@@ -232,6 +247,65 @@ namespace VPM.Models
                     OnPropertyChanged();
                 }
             }
+        }
+
+        private bool _showLoadButton = true;
+        public bool ShowLoadButton
+        {
+            get => _showLoadButton;
+            set
+            {
+                if (_showLoadButton != value)
+                {
+                    _showLoadButton = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private string _groupKey;
+        public string GroupKey
+        {
+            get => _groupKey;
+            set
+            {
+                if (_groupKey != value)
+                {
+                    _groupKey = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private long _itemFileSize;
+        public long ItemFileSize
+        {
+            get => _itemFileSize;
+            set
+            {
+                if (_itemFileSize != value)
+                {
+                    _itemFileSize = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(ItemFileSizeFormatted));
+                }
+            }
+        }
+
+        public string ItemFileSizeFormatted => FormatFileSize(ItemFileSize);
+
+        private static string FormatFileSize(long bytes)
+        {
+            if (bytes == 0) return "0 B";
+            string[] sizes = { "B", "KB", "MB", "GB" };
+            int order = 0;
+            double size = bytes;
+            while (size >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                size /= 1024;
+            }
+            return $"{size:0.#} {sizes[order]}";
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

@@ -4701,27 +4701,14 @@ namespace VPM
         }
         
         /// <summary>
-        /// Toggles between single Play button and Desktop/VR/Config buttons
+        /// Opens the Play VAM dropdown menu
         /// </summary>
-        private void PlayVaM_Click(object sender, RoutedEventArgs e)
+        private void PlayVAMButton_Click(object sender, RoutedEventArgs e)
         {
-            // Toggle the image toolbar buttons to show Desktop/VR/Custom/Cancel
-            PackageDownloadsImageButton.Visibility = Visibility.Collapsed;
-            CheckUpdatesImageButton.Visibility = Visibility.Collapsed;
-            PlayVAMImageButton.Visibility = Visibility.Collapsed;
-            
-            DesktopImageButton.Visibility = Visibility.Visible;
-            VRImageButton.Visibility = Visibility.Visible;
-            CustomImageButton.Visibility = Visibility.Visible;
-            CancelImageButton.Visibility = Visibility.Visible;
-        }
-        
-        /// <summary>
-        /// Cancels the Play mode and returns to normal buttons
-        /// </summary>
-        private void CancelPlay_Click(object sender, RoutedEventArgs e)
-        {
-            ReturnToPlayButton();
+            if (sender is Button button && button.ContextMenu != null)
+            {
+                button.ContextMenu.IsOpen = true;
+            }
         }
         
         /// <summary>
@@ -4730,7 +4717,6 @@ namespace VPM
         private void LaunchDesktop_Click(object sender, RoutedEventArgs e)
         {
             LaunchVirtAMate("Desktop", "-vrmode None");
-            ReturnToPlayButton();
         }
         
         /// <summary>
@@ -4739,7 +4725,6 @@ namespace VPM
         private void LaunchVR_Click(object sender, RoutedEventArgs e)
         {
             LaunchVirtAMate("VR", "-vrmode OpenVR");
-            ReturnToPlayButton();
         }
         
         /// <summary>
@@ -4748,24 +4733,6 @@ namespace VPM
         private void LaunchConfig_Click(object sender, RoutedEventArgs e)
         {
             LaunchVirtAMate("Config", "-show-screen-selector");
-            ReturnToPlayButton();
-        }
-        
-        /// <summary>
-        /// Returns to single Play button after launching or canceling
-        /// </summary>
-        private void ReturnToPlayButton()
-        {
-            // Hide the play mode image buttons
-            DesktopImageButton.Visibility = Visibility.Collapsed;
-            VRImageButton.Visibility = Visibility.Collapsed;
-            CustomImageButton.Visibility = Visibility.Collapsed;
-            CancelImageButton.Visibility = Visibility.Collapsed;
-            
-            // Show the normal image buttons again
-            PackageDownloadsImageButton.Visibility = Visibility.Visible;
-            CheckUpdatesImageButton.Visibility = Visibility.Visible;
-            PlayVAMImageButton.Visibility = Visibility.Visible;
         }
         
         /// <summary>

@@ -72,7 +72,10 @@ namespace VPM.Services
                         .Where(e =>
                         {
                             var entryBaseName = Path.GetFileNameWithoutExtension(e.Key);
-                            var entryDir = Path.GetDirectoryName(e.Key)?.Replace('\\', '/') ?? "";
+                            // Use forward slash for archive paths (they always use forward slashes)
+                            var entryDir = e.Key.Contains('/') 
+                                ? e.Key.Substring(0, e.Key.LastIndexOf('/'))
+                                : "";
 
                             // Match if same base name and same directory
                             return entryBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase) &&
@@ -179,7 +182,10 @@ namespace VPM.Services
                         .Where(e =>
                         {
                             var entryBaseName = Path.GetFileNameWithoutExtension(e.Key);
-                            var entryDir = Path.GetDirectoryName(e.Key)?.Replace('\\', '/') ?? "";
+                            // Use forward slash for archive paths (they always use forward slashes)
+                            var entryDir = e.Key.Contains('/') 
+                                ? e.Key.Substring(0, e.Key.LastIndexOf('/'))
+                                : "";
                             return entryBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase) &&
                                    entryDir.Equals(directoryPath, StringComparison.OrdinalIgnoreCase);
                         })
@@ -293,8 +299,10 @@ namespace VPM.Services
 
                 // Get the base name without extension
                 var baseName = Path.GetFileNameWithoutExtension(internalImagePath);
-                var directoryPath = Path.GetDirectoryName(internalImagePath);
-                directoryPath = directoryPath?.Replace('\\', '/') ?? "";
+                // For archive paths, use forward slash extraction
+                var directoryPath = internalImagePath.Contains('/') 
+                    ? internalImagePath.Substring(0, internalImagePath.LastIndexOf('/'))
+                    : "";
 
                 // Find all files in the archive with the same base name
                 List<IArchiveEntry> relatedEntries;
@@ -305,7 +313,10 @@ namespace VPM.Services
                         .Where(e =>
                         {
                             var entryBaseName = Path.GetFileNameWithoutExtension(e.Key);
-                            var entryDir = Path.GetDirectoryName(e.Key)?.Replace('\\', '/') ?? "";
+                            // Use forward slash for archive paths (they always use forward slashes)
+                            var entryDir = e.Key.Contains('/') 
+                                ? e.Key.Substring(0, e.Key.LastIndexOf('/'))
+                                : "";
 
                             return entryBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase) &&
                                    entryDir.Equals(directoryPath, StringComparison.OrdinalIgnoreCase);
@@ -400,17 +411,19 @@ namespace VPM.Services
             {
                 string vapContent;
                 using (var stream = vapEntry.OpenEntryStream())
-                using (var reader = new StreamReader(stream))
                 {
+                    using var reader = new StreamReader(stream);
                     vapContent = reader.ReadToEnd();
                 }
 
                 var dependencies = ExtractFileDependenciesFromVap(vapContent);
+                
                 foreach (var dependency in dependencies)
                 {
                     // Skip removing parent items (.vaj, .vab, .vam) if we are just removing a preset
                     // The user requirement: "if only preset is removed then dont remove parent item"
                     // We can identify parent items by extension
+                    // NOTE: Do NOT skip .vap files - they should be removed as dependencies
                     if (dependency.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase) ||
                         dependency.EndsWith(".vab", StringComparison.OrdinalIgnoreCase) ||
                         dependency.EndsWith(".vam", StringComparison.OrdinalIgnoreCase))
@@ -444,27 +457,6 @@ namespace VPM.Services
                             File.Delete(targetPath);
                             removedCount++;
                         }
-                    }
-                    else
-                    {
-                         // Try sibling check
-                         if (!dependencyPath.StartsWith(directoryPath))
-                         {
-                            var siblingPath = string.IsNullOrEmpty(directoryPath) 
-                                ? Path.GetFileName(dependency)
-                                : $"{directoryPath}/{Path.GetFileName(dependency)}";
-                            
-                            depEntry = archive.Entries.FirstOrDefault(e => e.Key.Equals(siblingPath, StringComparison.OrdinalIgnoreCase));
-                            if (depEntry != null)
-                            {
-                                var targetPath = Path.Combine(gameFolder, depEntry.Key.Replace('/', Path.DirectorySeparatorChar));
-                                if (File.Exists(targetPath))
-                                {
-                                    File.Delete(targetPath);
-                                    removedCount++;
-                                }
-                            }
-                         }
                     }
                 }
             }
@@ -694,8 +686,10 @@ namespace VPM.Services
 
                 // Get the base name without extension
                 var baseName = Path.GetFileNameWithoutExtension(internalImagePath);
-                var directoryPath = Path.GetDirectoryName(internalImagePath);
-                directoryPath = directoryPath?.Replace('\\', '/') ?? "";
+                // For archive paths, use forward slash extraction
+                var directoryPath = internalImagePath.Contains('/') 
+                    ? internalImagePath.Substring(0, internalImagePath.LastIndexOf('/'))
+                    : "";
 
                 // Find all files in the archive with the same base name
                 List<IArchiveEntry> relatedEntries;
@@ -706,7 +700,10 @@ namespace VPM.Services
                         .Where(e =>
                         {
                             var entryBaseName = Path.GetFileNameWithoutExtension(e.Key);
-                            var entryDir = Path.GetDirectoryName(e.Key)?.Replace('\\', '/') ?? "";
+                            // Use forward slash for archive paths (they always use forward slashes)
+                            var entryDir = e.Key.Contains('/') 
+                                ? e.Key.Substring(0, e.Key.LastIndexOf('/'))
+                                : "";
 
                             return entryBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase) &&
                                    entryDir.Equals(directoryPath, StringComparison.OrdinalIgnoreCase);
@@ -722,33 +719,46 @@ namespace VPM.Services
                 if (relatedEntries.Count == 0)
                     return false;
 
-                // Check if all related files exist in the game folder
-                foreach (var entry in relatedEntries)
+                // For extraction status, we only need to check if the main content file exists
+                // (not all related files, since previews might not be extracted)
+                // Priority: .json (Scene) > .vap (Appearance) > .vaj (Hair/Clothing) > .jpg (Preview)
+                
+                // Check for .json (Scene files)
+                var jsonEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
+                if (jsonEntry != null)
                 {
-                    var targetPath = Path.Combine(gameFolder, entry.Key.Replace('/', Path.DirectorySeparatorChar));
-                    if (!File.Exists(targetPath))
-                        return false;
+                    var targetPath = Path.Combine(gameFolder, jsonEntry.Key.Replace('/', Path.DirectorySeparatorChar));
+                    return File.Exists(targetPath);
                 }
 
-                // Also check for .vaj dependencies
-                var vajEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase));
-                if (vajEntry != null)
-                {
-                    // Check if dependency files exist
-                    if (!AreDependenciesExtracted(archive.Archive, vajEntry, gameFolder, directoryPath))
-                        return false;
-                }
-
-                // Also check for .vap dependencies
+                // Check for .vap (Appearance files)
                 var vapEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vap", StringComparison.OrdinalIgnoreCase));
                 if (vapEntry != null)
                 {
-                    // Check if dependency files exist
-                    if (!AreVapDependenciesExtracted(archive.Archive, vapEntry, gameFolder, directoryPath))
-                        return false;
+                    var targetPath = Path.Combine(gameFolder, vapEntry.Key.Replace('/', Path.DirectorySeparatorChar));
+                    return File.Exists(targetPath);
                 }
 
-                return true;
+                // Check for .vaj (Hair/Clothing files)
+                var vajEntry = relatedEntries.FirstOrDefault(e => e.Key.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase));
+                if (vajEntry != null)
+                {
+                    var targetPath = Path.Combine(gameFolder, vajEntry.Key.Replace('/', Path.DirectorySeparatorChar));
+                    return File.Exists(targetPath);
+                }
+
+                // Check for .jpg (Preview image)
+                var jpgEntry = relatedEntries.FirstOrDefault(e => 
+                    e.Key.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                    e.Key.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                    e.Key.EndsWith(".png", StringComparison.OrdinalIgnoreCase));
+                if (jpgEntry != null)
+                {
+                    var targetPath = Path.Combine(gameFolder, jpgEntry.Key.Replace('/', Path.DirectorySeparatorChar));
+                    return File.Exists(targetPath);
+                }
+
+                return false;
             }
             catch (SharpCompress.Common.ArchiveException ex)
             {
@@ -861,6 +871,14 @@ namespace VPM.Services
                     parts[1].Equals("scene", StringComparison.OrdinalIgnoreCase))
                 {
                     return "Scene";
+                }
+
+                // Handle VaM pose preview path: Saves/Person/pose/... -> label should be "Pose"
+                if (parts[0].Equals("Saves", StringComparison.OrdinalIgnoreCase) && parts.Length > 2 &&
+                    parts[1].Equals("Person", StringComparison.OrdinalIgnoreCase) &&
+                    parts[2].Equals("pose", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Pose";
                 }
             }
 

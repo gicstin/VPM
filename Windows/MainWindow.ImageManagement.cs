@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -58,6 +59,18 @@ namespace VPM
             set 
             { 
                 SetValue(ImageMatchWidthProperty, value); 
+            }
+        }
+
+        public static readonly DependencyProperty ImageShowOnlyExtractedProperty = DependencyProperty.Register(
+            "ImageShowOnlyExtracted", typeof(bool), typeof(MainWindow), new PropertyMetadata(false));
+
+        public bool ImageShowOnlyExtracted
+        {
+            get { return (bool)GetValue(ImageShowOnlyExtractedProperty); }
+            set 
+            { 
+                SetValue(ImageShowOnlyExtractedProperty, value); 
             }
         }
         
@@ -278,33 +291,36 @@ namespace VPM
         }
 
         /// <summary>
-        /// Shows only extracted images
+        /// Toggles between showing only extracted images and showing all images
         /// </summary>
-        private void ShowExtractedImages_Click(object sender, RoutedEventArgs e)
+        private void ToggleExtractedFilter_Click(object sender, RoutedEventArgs e)
         {
             try
             {
-                FilterImagesByExtractionStatus(true);
-                UpdateImageStatisticsDisplay();
-            }
-            catch (Exception ex)
-            {
-            }
-        }
-
-        /// <summary>
-        /// Shows all images (clears filter)
-        /// </summary>
-        private void ShowAllImages_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Reload all images for currently selected packages
-                var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList();
-                if (selectedPackages != null && selectedPackages.Count > 0)
+                ImageShowOnlyExtracted = !ImageShowOnlyExtracted;
+                
+                // Clear the virtualized image manager to reset lazy loading for new filtered collection
+                if (_virtualizedImageGridManager != null)
                 {
-                    _ = DisplayMultiplePackageImagesAsync(selectedPackages);
+                    _virtualizedImageGridManager.Clear();
                 }
+                
+                if (ImageShowOnlyExtracted)
+                {
+                    // Show only extracted images
+                    FilterImagesByExtractionStatus(true);
+                }
+                else
+                {
+                    // Show all images - reload for currently selected packages
+                    var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList();
+                    if (selectedPackages != null && selectedPackages.Count > 0)
+                    {
+                        _ = DisplayMultiplePackageImagesAsync(selectedPackages);
+                    }
+                }
+                
+                UpdateImageStatisticsDisplay();
             }
             catch (Exception ex)
             {
@@ -595,6 +611,12 @@ namespace VPM
         {
             try
             {
+                // Clear the virtualized image manager to reset lazy loading for new filtered collection
+                if (_virtualizedImageGridManager != null)
+                {
+                    _virtualizedImageGridManager.Clear();
+                }
+
                 // If no types selected, show all
                 if (_selectedContentTypes.Count == 0)
                 {
@@ -639,6 +661,14 @@ namespace VPM
         {
             if (sender is VPM.Windows.LazyLoadImage lazyImage)
             {
+                // Subscribe to extraction events from the internal buttons
+                lazyImage.ExtractionRequested -= OnLazyImageExtractionRequested; // Prevent duplicate subscription
+                lazyImage.ExtractionRequested += OnLazyImageExtractionRequested;
+
+                // Initialize button state based on current IsExtracted value
+                // This ensures buttons show even if the property doesn't change
+                lazyImage.SetExtractionState(lazyImage.IsExtracted);
+
                 // Ensure manager is initialized
                 if (_virtualizedImageGridManager == null)
                 {
@@ -714,6 +744,9 @@ namespace VPM
                 _allPreviewImages.Clear();
                 _selectedContentTypes.Clear();
                 
+                // Reset the extracted filter when displaying new packages
+                ImageShowOnlyExtracted = false;
+                
                 // Stop and reset batch registration timer to prevent stale registrations
                 if (_batchRegistrationTimer != null)
                 {
@@ -781,11 +814,21 @@ namespace VPM
                                 {
                                     try
                                     {
-                                        var targetPath = System.IO.Path.Combine(gameFolder, location.InternalPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
-                                        isExtracted = System.IO.File.Exists(targetPath);
+                                        // Use VarContentExtractor to determine extraction status
+                                        // This ensures consistency with the deletion logic
+                                        isExtracted = VPM.Services.VarContentExtractor.AreRelatedFilesExtracted(
+                                            location.VarFilePath, 
+                                            location.InternalPath, 
+                                            gameFolder);
                                     }
-                                    catch { }
+                                    catch (Exception ex)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[ExtCheck-ERROR] {ex.Message}");
+                                    }
                                 }
+
+                                // Calculate total size including sister files (e.g., Scene.jpg + Scene.vaj + Scene.vap + Scene.json + Scene.vam)
+                                var totalItemSize = CalculateTotalItemSizeWithSisterFiles(location.VarFilePath, location.InternalPath);
 
                                 // Create item with callback instead of loading immediately
                                 var item = new ImagePreviewItem
@@ -793,11 +836,14 @@ namespace VPM
                                     Image = null, // Will be loaded lazily
                                     PackageName = package.Name,
                                     InternalPath = location.InternalPath,
+                                    VarFilePath = location.VarFilePath,
                                     StatusBrush = statusBrush,
                                     PackageItem = package,
                                     IsExtracted = isExtracted,
                                     ImageWidth = location.Width,
                                     ImageHeight = location.Height,
+                                    ItemFileSize = totalItemSize, // Set total size including sister files
+                                    GroupKey = package.Name, // Group by package name in Packages mode
                                     LoadImageCallback = async () => 
                                     {
                                         try
@@ -907,6 +953,88 @@ namespace VPM
             }
         }
 
+        private async void OnLazyImageExtractionRequested(object sender, VPM.Windows.ExtractionRequestedEventArgs e)
+        {
+            try
+            {
+                if (!(sender is VPM.Windows.LazyLoadImage lazyImage)) return;
+                
+                var imageItem = lazyImage.DataContext as ImagePreviewItem;
+                if (imageItem == null) return;
+
+                var packageItem = imageItem.PackageItem;
+                if (packageItem == null) return;
+                
+                var metadata = GetCachedPackageMetadata(!string.IsNullOrEmpty(packageItem.MetadataKey) ? packageItem.MetadataKey : packageItem.Name);
+                if (metadata == null || string.IsNullOrEmpty(metadata.FilePath)) return;
+                
+                if (!System.IO.File.Exists(metadata.FilePath))
+                {
+                    MessageBox.Show($"Package file not found: {metadata.FilePath}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                var gameFolder = _settingsManager.Settings.SelectedFolder;
+                if (string.IsNullOrEmpty(gameFolder)) 
+                {
+                    MessageBox.Show("Game folder not set in settings.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                if (e.IsRemoval)
+                {
+                    // Use the extractor service to remove related files
+                    await VPM.Services.VarContentExtractor.RemoveRelatedFilesAsync(metadata.FilePath, imageItem.InternalPath, gameFolder);
+                    
+                    imageItem.IsExtracted = false;
+                    
+                    // Update only the affected item's button state
+                    UpdateImageItemButtonState(imageItem);
+                    
+                    // Update statistics display to show new extracted count
+                    UpdateImageStatisticsDisplay();
+                }
+                else
+                {
+                    if (imageItem.IsExtracted)
+                    {
+                        // Open in explorer
+                        OpenExtractedFilesInExplorer(imageItem.InternalPath);
+                    }
+                    else
+                    {
+                        // Extract and track parent items that were automatically extracted
+                        var (extractedCount, extractedParentPaths) = await VPM.Services.VarContentExtractor.ExtractRelatedFilesWithParentsAsync(metadata.FilePath, imageItem.InternalPath, gameFolder);
+                        
+                        if (extractedCount > 0)
+                        {
+                            imageItem.IsExtracted = true;
+                            
+                            // Update only the affected item's button state
+                            UpdateImageItemButtonState(imageItem);
+                            
+                            // Update parent items that were automatically extracted
+                            if (extractedParentPaths.Count > 0)
+                            {
+                                UpdateExtractedParentItems(extractedParentPaths);
+                            }
+                            
+                            // Update statistics display to show new extracted count
+                            UpdateImageStatisticsDisplay();
+                        }
+                        else
+                        {
+                            MessageBox.Show($"Failed to extract files from {Path.GetFileName(metadata.FilePath)}. The file may be corrupted or invalid.", "Extraction Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during content operation: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private async void ExtractContent_Click(object sender, RoutedEventArgs e)
         {
             Button button = null;
@@ -1013,15 +1141,23 @@ namespace VPM
                     return;
                 
                 // Use the extractor service to remove related files
-                await VPM.Services.VarContentExtractor.RemoveRelatedFilesAsync(metadata.FilePath, imageItem.InternalPath, gameFolder);
+                int removedCount = await VPM.Services.VarContentExtractor.RemoveRelatedFilesAsync(metadata.FilePath, imageItem.InternalPath, gameFolder);
                 
-                imageItem.IsExtracted = false;
-                
-                // Update only the affected item's button state
-                UpdateImageItemButtonState(imageItem);
-                
-                // Update statistics display to show new extracted count
-                UpdateImageStatisticsDisplay();
+                // Only update UI if files were actually removed
+                if (removedCount > 0)
+                {
+                    imageItem.IsExtracted = false;
+                    
+                    // Update only the affected item's button state
+                    UpdateImageItemButtonState(imageItem);
+                    
+                    // Update statistics display to show new extracted count
+                    UpdateImageStatisticsDisplay();
+                }
+                else
+                {
+                    MessageBox.Show($"No files were deleted. The files may not exist or there was an error during deletion.", "Deletion Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
             catch (Exception ex)
             {
@@ -1160,7 +1296,12 @@ namespace VPM
                 if (_settingsManager == null || string.IsNullOrEmpty(_settingsManager.Settings.SelectedFolder))
                     return;
 
-                var targetPath = System.IO.Path.Combine(_settingsManager.Settings.SelectedFolder, internalPath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+                var cleanPath = internalPath
+                    .TrimStart('/', '\\')
+                    .Replace('/', System.IO.Path.DirectorySeparatorChar)
+                    .Replace('\\', System.IO.Path.DirectorySeparatorChar);
+
+                var targetPath = System.IO.Path.Combine(_settingsManager.Settings.SelectedFolder, cleanPath);
                 
                 if (System.IO.File.Exists(targetPath))
                 {
@@ -1350,9 +1491,6 @@ namespace VPM
                             _imageLoadingCts?.Cancel();
                             _imageLoadingCts = new System.Threading.CancellationTokenSource();
                             
-                            // Clear image preview grid before processing
-                            PreviewImages.Clear();
-                            
                             // Release file locks before operation to prevent conflicts with image grid
                             await _imageManager.ReleasePackagesAsync(new List<string> { packageItem.Name });
                             
@@ -1365,6 +1503,8 @@ namespace VPM
                                 if (success)
                                 {
                                     packageItem.Status = "Available";
+                                    // Update status color for all images in this package group without redrawing grid
+                                    UpdatePackageStatusColorInGrid(group, packageItem);
                                 }
                             }
                             else if (packageItem.Status == "Available")
@@ -1374,16 +1514,39 @@ namespace VPM
                                 if (success)
                                 {
                                     packageItem.Status = "Loaded";
+                                    // Update status color for all images in this package group without redrawing grid
+                                    UpdatePackageStatusColorInGrid(group, packageItem);
                                 }
                             }
-                            
-                            // Refresh images to show updated status
-                            await RefreshCurrentlyDisplayedImagesAsync();
                         }
                     }
                 }
             }
             catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// Updates the status color for all images in a package group without redrawing the entire grid
+        /// </summary>
+        private void UpdatePackageStatusColorInGrid(CollectionViewGroup group, PackageItem packageItem)
+        {
+            try
+            {
+                // Update status brush for all items in the group
+                var newStatusBrush = new SolidColorBrush(packageItem.StatusColor);
+                newStatusBrush.Freeze();
+
+                foreach (var item in group.Items)
+                {
+                    if (item is ImagePreviewItem imageItem)
+                    {
+                        imageItem.StatusBrush = newStatusBrush;
+                    }
+                }
+            }
+            catch (Exception ex)
             {
             }
         }
@@ -1428,6 +1591,8 @@ namespace VPM
                     return;
 
                 // Update all matching items in both PreviewImages and _allPreviewImages collections
+                var itemsToUpdateUI = new List<ImagePreviewItem>();
+                
                 foreach (var parentPath in extractedParentPaths)
                 {
                     var normalizedParentPath = parentPath.Replace('\\', '/').ToLower();
@@ -1440,6 +1605,7 @@ namespace VPM
                     foreach (var item in matchingItems)
                     {
                         item.IsExtracted = true;
+                        itemsToUpdateUI.Add(item); // Track for UI update
                     }
                     
                     // Also update in _allPreviewImages (master list for filtering)
@@ -1453,46 +1619,48 @@ namespace VPM
                     }
                 }
 
-                // Then, update the visual LazyLoadImage controls if they're loaded
-                var imageListView = this.FindName("ImagesListView") as ImageListView;
-                if (imageListView == null) return;
-
-                var lazyLoadImages = FindAllVisualChildren<LazyLoadImage>(imageListView);
-                if (lazyLoadImages.Count == 0) return;
-
-                // For each extracted parent path, find and update matching LazyLoadImage controls
-                foreach (var parentPath in extractedParentPaths)
+                // Update UI for items that are currently visible
+                // Use dispatcher to ensure UI updates happen on the UI thread with a small delay
+                Dispatcher.InvokeAsync(() =>
                 {
-                    var normalizedParentPath = parentPath.Replace('\\', '/').ToLower();
-
-                    // Find all LazyLoadImage controls that match this parent image path
-                    var found = false;
-                    foreach (var lazyImage in lazyLoadImages)
+                    foreach (var item in itemsToUpdateUI)
                     {
-                        if (string.IsNullOrEmpty(lazyImage.InternalImagePath)) continue;
+                        UpdateImageItemButtonState(item);
+                    }
 
-                        var normalizedImagePath = lazyImage.InternalImagePath.Replace('\\', '/').ToLower();
+                    // Then, update the visual LazyLoadImage controls if they're loaded
+                    var imageListView = this.FindName("ImagesListView") as ImageListView;
+                    if (imageListView == null) return;
 
-                        // Match if paths are the same
-                        if (normalizedImagePath == normalizedParentPath)
+                    var lazyLoadImages = FindAllVisualChildren<LazyLoadImage>(imageListView);
+                    if (lazyLoadImages.Count == 0) return;
+
+                    // For each extracted parent path, find and update matching LazyLoadImage controls
+                    foreach (var parentPath in extractedParentPaths)
+                    {
+                        var normalizedParentPath = parentPath.Replace('\\', '/').ToLower();
+
+                        // Find all LazyLoadImage controls that match this parent image path
+                        foreach (var lazyImage in lazyLoadImages)
                         {
-                            // Update the extraction state which updates the button UI
-                            lazyImage.SetExtractionState(true);
-                            found = true;
-                            break; // Found the match, move to next parent path
+                            if (string.IsNullOrEmpty(lazyImage.InternalImagePath)) continue;
+
+                            var normalizedImagePath = lazyImage.InternalImagePath.Replace('\\', '/').ToLower();
+
+                            // Match if paths are the same
+                            if (normalizedImagePath == normalizedParentPath)
+                            {
+                                // Update the extraction state which updates the button UI
+                                lazyImage.SetExtractionState(true);
+                            }
                         }
                     }
-                    
-                    // If not found in current view, it means the parent item is not displayed
-                    // This is normal - the parent might be in a different package or scrolled out of view
-                    if (!found)
-                    {
-                        // The data model was already updated above, so when the user scrolls to it, it will show as extracted
-                    }
-                }
+                }, System.Windows.Threading.DispatcherPriority.Normal);
+
             }
             catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[UpdateExtractedParentItems-ERROR] {ex.Message}");
             }
         }
 
@@ -1538,6 +1706,66 @@ namespace VPM
                 children.AddRange(FindAllVisualChildren<T>(child));
             }
             return children;
+        }
+
+        /// <summary>
+        /// Calculates the total size of an image item including all sister files with the same base name.
+        /// For example, Scene.jpg includes Scene.vaj, Scene.vap, Scene.json, Scene.vam, etc.
+        /// </summary>
+        private long CalculateTotalItemSizeWithSisterFiles(string varFilePath, string internalImagePath)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(varFilePath) || string.IsNullOrEmpty(internalImagePath))
+                    return 0;
+
+                // Get the base name without extension (e.g., "Scene" from "Scene.jpg")
+                var baseName = System.IO.Path.GetFileNameWithoutExtension(internalImagePath);
+                var directoryPath = System.IO.Path.GetDirectoryName(internalImagePath);
+
+                // Normalize paths to use forward slashes for consistency
+                directoryPath = directoryPath?.Replace('\\', '/') ?? "";
+
+                long totalSize = 0;
+
+                try
+                {
+                    using var archive = VPM.Services.SharpCompressHelper.OpenForRead(varFilePath);
+
+                    // Find all files in the archive with the same base name in the same directory
+                    var relatedEntries = archive.Entries
+                        .Where(e => !e.Key.EndsWith("/"))
+                        .Where(e =>
+                        {
+                            var entryBaseName = System.IO.Path.GetFileNameWithoutExtension(e.Key);
+                            var entryDir = System.IO.Path.GetDirectoryName(e.Key)?.Replace('\\', '/') ?? "";
+
+                            // Match if same base name and same directory
+                            return entryBaseName.Equals(baseName, StringComparison.OrdinalIgnoreCase) &&
+                                   entryDir.Equals(directoryPath, StringComparison.OrdinalIgnoreCase);
+                        })
+                        .ToList();
+
+                    // Sum up the sizes of all related files
+                    foreach (var entry in relatedEntries)
+                    {
+                        totalSize += entry.Size;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[SisterFileSize-ERROR] Failed to calculate sister file sizes: {ex.Message}");
+                    // Return 0 on error - the image location's FileSize will be used as fallback
+                    return 0;
+                }
+
+                return totalSize;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[SisterFileSize-ERROR] {ex.Message}");
+                return 0;
+            }
         }
     }
 }

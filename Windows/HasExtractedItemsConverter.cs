@@ -42,6 +42,12 @@ namespace VPM
         // IMultiValueConverter implementation for MultiBinding support
         public object Convert(object[] values, Type targetType, object parameter, CultureInfo culture)
         {
+            // Check if ShowLoadButton is false (Custom mode) - hide delete button in Custom mode
+            if (values.Length > 1 && values[1] is bool showLoadButton && !showLoadButton)
+            {
+                return Visibility.Collapsed;
+            }
+
             if (values.Length > 0 && values[0] is IEnumerable collection)
             {
                 // Check if any item in the collection has IsExtracted = true

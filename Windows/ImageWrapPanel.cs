@@ -45,9 +45,13 @@ namespace VPM.Windows
 
             double itemMargin = 3.0; // Must match the Grid Margin in the template
             
-            // Calculate available width (accounting for margins on both sides)
-            double totalMarginWidth = (Columns + 1) * itemMargin;
-            double availableRowWidth = availableSize.Width - totalMarginWidth;
+            // Account for scrollbar width (typically 17 pixels in WPF)
+            double scrollbarWidth = SystemParameters.VerticalScrollBarWidth;
+            
+            // Calculate available width (accounting for margins on both sides and scrollbar)
+            // Only account for left and right margins, not column-based margins
+            double totalMarginWidth = 2 * itemMargin;
+            double availableRowWidth = availableSize.Width - totalMarginWidth - scrollbarWidth;
             
             // First pass: determine how many items are in each row
             // We need to know the row distribution before we can calculate actual item widths
@@ -66,7 +70,7 @@ namespace VPM.Windows
                 double itemTotalWidth = estimatedItemWidth + itemMargin;  // Item width + right margin
                 
                 // Check if this item fits in the current row
-                if (currentRowWidth + itemTotalWidth > availableSize.Width && itemsInCurrentRow > 0)
+                if (currentRowWidth + itemTotalWidth > availableRowWidth && itemsInCurrentRow > 0)
                 {
                     // Row is full, start a new row
                     rowItemCounts.Add(itemsInCurrentRow);
@@ -85,7 +89,7 @@ namespace VPM.Windows
             }
 
             // Second pass: calculate total height based on rows
-            double totalHeight = 0;
+            double totalHeight = itemMargin;  // Start with top margin
             int childIndex = 0;
             
             foreach (int itemsInRow in rowItemCounts)
@@ -111,7 +115,7 @@ namespace VPM.Windows
                     childIndex++;
                 }
                 
-                totalHeight += rowHeight + itemMargin;  // Add row height plus bottom margin
+                totalHeight += rowHeight + itemMargin;  // Add row height plus margin after row
             }
 
             return new Size(availableSize.Width, totalHeight);
@@ -131,9 +135,13 @@ namespace VPM.Windows
 
             double itemMargin = 3.0; // Must match the Grid Margin in the template
             
-            // Calculate available width (accounting for margins on both sides)
-            double totalMarginWidth = (Columns + 1) * itemMargin;
-            double availableRowWidth = finalSize.Width - totalMarginWidth;
+            // Account for scrollbar width (typically 17 pixels in WPF)
+            double scrollbarWidth = SystemParameters.VerticalScrollBarWidth;
+            
+            // Calculate available width (accounting for margins on both sides and scrollbar)
+            // Only account for left and right margins, not column-based margins
+            double totalMarginWidth = 2 * itemMargin;
+            double availableRowWidth = finalSize.Width - totalMarginWidth - scrollbarWidth;
             
             // First pass: determine how many items are in each row by simulating layout
             List<int> rowItemCounts = new List<int>();
@@ -149,7 +157,7 @@ namespace VPM.Windows
                 double itemTotalWidth = childSize.Width + itemMargin;  // Item width + right margin
                 
                 // Check if this item fits in the current row
-                if (currentRowWidth + itemTotalWidth > finalSize.Width && itemsInCurrentRow > 0)
+                if (currentRowWidth + itemTotalWidth > availableRowWidth && itemsInCurrentRow > 0)
                 {
                     // Row is full, start a new row
                     rowItemCounts.Add(itemsInCurrentRow);
@@ -169,7 +177,7 @@ namespace VPM.Windows
 
             // Second pass: arrange items with proper widths based on items per row
             double x = 0;
-            double y = 0;
+            double y = itemMargin;  // Start with top margin
             double rowHeight = 0;
             int rowIndex = 0;
             int itemsProcessedInRow = 0;
@@ -182,7 +190,7 @@ namespace VPM.Windows
                 // Check if we're starting a new row
                 if (rowIndex < rowItemCounts.Count && itemsProcessedInRow >= rowItemCounts[rowIndex])
                 {
-                    y += rowHeight;
+                    y += rowHeight + itemMargin;  // Add row height plus margin between rows
                     x = 0;
                     rowHeight = 0;
                     rowIndex++;

@@ -226,6 +226,9 @@ namespace VPM
                         InternalPath = item.ThumbnailPath ?? "",
                         StatusBrush = System.Windows.Media.Brushes.Transparent,
                         PackageItem = customItemsPackage,
+                        ItemFileSize = item.FileSize, // Set individual item size for banner display
+                        ShowLoadButton = false, // Hide Load button in Custom mode
+                        GroupKey = item.Name, // Each item gets its own group/banner in Custom mode
                         
                         // Use LoadImageCallback for async lazy loading
                         LoadImageCallback = async () => 
