@@ -186,10 +186,11 @@ namespace VPM.Services
                 // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Processing package: {packageName}");
                 
                 // Invalidate all caches for this package (bitmap, preview index, signatures)
+                // This now handles both exact matches and base name prefix matches
                 InvalidatePackageCache(packageName);
                 // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Invalidated cache for {packageName}");
                 
-                // Try to find path from ImageIndex
+                // Try to find path from ImageIndex - first try exact match
                 bool foundInIndex = ImageIndex.TryGetValue(packageName, out var locations);
                 // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex lookup: {(foundInIndex ? "FOUND" : "NOT FOUND")}");
                 
@@ -199,9 +200,32 @@ namespace VPM.Services
                     pathsToRelease.Add(varPath);
                     // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Found in ImageIndex: {varPath}");
                 }
-                else if (foundInIndex)
+                else
                 {
-                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex entry exists but has no locations");
+                    // If exact match failed, try prefix match for base names (e.g., "Creator.Package" matches "Creator.Package.1")
+                    // This is important for dependents which use base names without version numbers
+                    _varArchiveLock.EnterReadLock();
+                    try
+                    {
+                        var matchingKeys = ImageIndex.Keys
+                            .Where(k => k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        
+                        foreach (var matchingKey in matchingKeys)
+                        {
+                            if (ImageIndex.TryGetValue(matchingKey, out var matchingLocations) && 
+                                matchingLocations != null && matchingLocations.Count > 0)
+                            {
+                                pathsToRelease.Add(matchingLocations[0].VarFilePath);
+                                // Also invalidate cache for the full package name
+                                InvalidatePackageCacheInternal(matchingKey);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _varArchiveLock.ExitReadLock();
+                    }
                 }
                 
                 // Also check metadata provider if not in index
@@ -2457,8 +2481,93 @@ namespace VPM.Services
         /// <summary>
         /// Invalidates all caches for a specific package name
         /// Call this before unloading/removing a package to ensure clean state
+        /// Handles both exact matches and base name prefix matches (e.g., "Creator.Package" matches "Creator.Package.1")
         /// </summary>
         public void InvalidatePackageCache(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName)) return;
+            
+            try
+            {
+                _bitmapCacheLock.EnterWriteLock();
+                try
+                {
+                    // Remove all bitmap cache entries for this package (handles both exact and prefix matches)
+                    // Pattern: "packageName:" for exact, "packageName.X:" for versioned packages
+                    var keysToRemove = _bitmapCache.Keys
+                        .Where(k => k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase) ||
+                                   k.StartsWith($"{packageName}.", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in keysToRemove)
+                    {
+                        _bitmapCache.Remove(key);
+                        _cacheAccessTimes.Remove(key);
+                    }
+                    
+                    // Remove strong cache entries (same pattern)
+                    var strongKeysToRemove = _strongCache.Keys
+                        .Where(k => k.StartsWith($"{packageName}:", StringComparison.OrdinalIgnoreCase) ||
+                                   k.StartsWith($"{packageName}.", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in strongKeysToRemove)
+                    {
+                        if (_strongCacheLruNodes.TryGetValue(key, out var node))
+                        {
+                            _strongCacheLru.Remove(node);
+                            _strongCacheLruNodes.Remove(key);
+                        }
+                        _strongCache.Remove(key);
+                    }
+                }
+                finally
+                {
+                    _bitmapCacheLock.ExitWriteLock();
+                }
+                
+                // Clear from preview image index (temporary cache) - both exact and prefix matches
+                PreviewImageIndex.TryRemove(packageName, out _);
+                // Also check for versioned entries (e.g., "Creator.Package.1" when given "Creator.Package")
+                var previewKeysToRemove = PreviewImageIndex.Keys
+                    .Where(k => k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                foreach (var key in previewKeysToRemove)
+                {
+                    PreviewImageIndex.TryRemove(key, out _);
+                }
+                
+                // NOTE: Do NOT remove from ImageIndex here - we need to preserve the image locations
+                // The image index should only be cleared when the package is permanently removed from the system
+                // Only clear the signatures so the index will be rebuilt if the file changes
+                _varArchiveLock.EnterWriteLock();
+                try
+                {
+                    _imageIndexSignatures.Remove(packageName);
+                    // Also remove versioned entries
+                    var sigKeysToRemove = _imageIndexSignatures.Keys
+                        .Where(k => k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    foreach (var key in sigKeysToRemove)
+                    {
+                        _imageIndexSignatures.Remove(key);
+                    }
+                }
+                finally
+                {
+                    _varArchiveLock.ExitWriteLock();
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// Internal version of InvalidatePackageCache that doesn't acquire _varArchiveLock.
+        /// Used when the caller already holds the lock.
+        /// </summary>
+        private void InvalidatePackageCacheInternal(string packageName)
         {
             if (string.IsNullOrEmpty(packageName)) return;
             
@@ -2502,17 +2611,9 @@ namespace VPM.Services
                 PreviewImageIndex.TryRemove(packageName, out _);
                 
                 // NOTE: Do NOT remove from ImageIndex here - we need to preserve the image locations
-                // The image index should only be cleared when the package is permanently removed from the system
                 // Only clear the signatures so the index will be rebuilt if the file changes
-                _varArchiveLock.EnterWriteLock();
-                try
-                {
-                    _imageIndexSignatures.Remove(packageName);
-                }
-                finally
-                {
-                    _varArchiveLock.ExitWriteLock();
-                }
+                // Note: We don't acquire _varArchiveLock here since caller already holds it
+                _imageIndexSignatures.Remove(packageName);
             }
             catch (Exception)
             {
