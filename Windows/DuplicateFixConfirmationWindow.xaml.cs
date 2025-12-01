@@ -88,9 +88,9 @@ namespace VPM
                 packageNum++;
                 var info = group.Value;
                 
-                message.AppendLine($"•”•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••");
-                message.AppendLine($"•‘ PACKAGE #{packageNum}: {info.BaseName}");
-                message.AppendLine($"•š•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••");
+                message.AppendLine($"════════════════════════════════════════════════════════════════════════════════");
+                message.AppendLine($" PACKAGE #{packageNum}: {info.BaseName}");
+                message.AppendLine($"════════════════════════════════════════════════════════════════════════════════");
                 message.AppendLine();
                 
                 // Files to keep - these are files that will remain after the operation
@@ -151,8 +151,8 @@ namespace VPM
                 
                 if (filesToKeep.Count > 0)
                 {
-                    message.AppendLine("  ✓ FILES TO KEEP:");
-                    message.AppendLine("  ─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                    message.AppendLine("  [KEEP] FILES TO KEEP:");
+                    message.AppendLine("  ────────────────────────────────────────────────────────────────────────────");
                     foreach (var file in filesToKeep.OrderBy(f => f))
                     {
                         if (File.Exists(file))
@@ -177,8 +177,8 @@ namespace VPM
                 // Files to move
                 if (info.FilesToMove.Count > 0)
                 {
-                    message.AppendLine("  âžœ FILES TO MOVE:");
-                    message.AppendLine("  ─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                    message.AppendLine("  -> FILES TO MOVE:");
+                    message.AppendLine("  ────────────────────────────────────────────────────────────────────────────");
                     foreach (var kvp in info.FilesToMove.OrderBy(m => m.Key))
                     {
                         var fileInfo = new FileInfo(kvp.Key);
@@ -194,8 +194,8 @@ namespace VPM
                 // Files to delete
                 if (info.FilesToDelete.Count > 0)
                 {
-                    message.AppendLine("  ✗ FILES TO DELETE:");
-                    message.AppendLine("  ─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                    message.AppendLine("  [DEL] FILES TO DELETE:");
+                    message.AppendLine("  ────────────────────────────────────────────────────────────────────────────");
                     foreach (var file in info.FilesToDelete.OrderBy(f => f))
                     {
                         var fileInfo = new FileInfo(file);
@@ -210,9 +210,9 @@ namespace VPM
                 message.AppendLine();
             }
             
-            message.AppendLine("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••");
+            message.AppendLine("═══════════════════════════════════════════════════════════════════════════════");
             message.AppendLine($"TOTAL SPACE TO BE FREED: {FormatHelper.FormatFileSize(totalSpaceFreed)}");
-            message.AppendLine("•••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••");
+            message.AppendLine("═══════════════════════════════════════════════════════════════════════════════");
             
             ContentText.Text = message.ToString();
         }

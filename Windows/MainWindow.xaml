@@ -3445,7 +3445,7 @@
                                 Visibility="Collapsed">
                                 <Button.Style>
                                     <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                        <Setter Property="Background" Value="#FFEB3B" />
+                                        <Setter Property="Background" Value="#212121" />
                                         <Setter Property="Foreground" Value="#212121" />
                                         <Setter Property="BorderBrush" Value="#FBC02D" />
                                         <Setter Property="Template">
@@ -3459,9 +3459,9 @@
                                                         <!--  Left Status Bar (Gold for Fix Duplicates)  -->
                                                         <Border
                                                             Grid.Column="0"
-                                                            Margin="1,2,0,2"
-                                                            Background="#FFFFEB3B"
-                                                            CornerRadius="2" />
+                                                            Margin="0,0,0,0"
+                                                            Background="#FBC02D"
+                                                            CornerRadius="3,0,0,3" />
                                                         <!--  Button Content  -->
                                                         <Border
                                                             Grid.Column="1"
