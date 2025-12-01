@@ -3672,10 +3672,10 @@
                                         <Setter Property="FontWeight" Value="Normal" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="Active">
-                                                <Setter Property="Background" Value="#FF505050" />
-                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}" />
                                                 <Setter Property="FontWeight" Value="Bold" />
-                                                <Setter Property="BorderBrush" Value="#FF505050" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -3717,10 +3717,10 @@
                                         <Setter Property="FontWeight" Value="Normal" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="Active">
-                                                <Setter Property="Background" Value="#FF505050" />
-                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}" />
                                                 <Setter Property="FontWeight" Value="Bold" />
-                                                <Setter Property="BorderBrush" Value="#FF505050" />
+                                                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}" />
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -4283,6 +4283,7 @@
                                     VerticalContentAlignment="Top"
                                     Background="Transparent"
                                     BorderThickness="0"
+                                    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                     IsReadOnly="True"
                                     Text="Select a package to view details..."
                                     TextWrapping="Wrap" />
@@ -4766,8 +4767,8 @@
                                                                 Margin="0,6,0,3"
                                                                 Padding="4,4"
                                                                 HorizontalAlignment="Stretch"
-                                                                Background="#2A2A2A"
-                                                                BorderBrush="#444444"
+                                                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                                                                 BorderThickness="1"
                                                                 CornerRadius="3">
                                                                 <Grid>
@@ -4787,39 +4788,14 @@
                                                                         Height="26"
                                                                         Margin="0,0,3,0"
                                                                         Padding="0,0"
-                                                                        Background="#20FFFFFF"
-                                                                        BorderBrush="#40FFFFFF"
-                                                                        BorderThickness="1"
                                                                         Click="PackageHeaderLoadUnload_Click"
                                                                         Content="{Binding Items[0].PackageItem.Status, Converter={StaticResource PackageStatusToLoadButtonConverter}}"
                                                                         FontSize="11"
                                                                         FontWeight="SemiBold"
-                                                                        Foreground="White"
                                                                         ToolTip="Load/Unload package"
                                                                         Visibility="{Binding Items[0].ShowLoadButton, Converter={StaticResource BoolToVis}}">
                                                                         <Button.Style>
-                                                                            <Style TargetType="Button">
-                                                                                <Setter Property="Template">
-                                                                                    <Setter.Value>
-                                                                                        <ControlTemplate TargetType="Button">
-                                                                                            <Border
-                                                                                                x:Name="ButtonBorder"
-                                                                                                Background="{TemplateBinding Background}"
-                                                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                                                CornerRadius="3">
-                                                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                                            </Border>
-                                                                                            <ControlTemplate.Triggers>
-                                                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                                                    <Setter TargetName="ButtonBorder" Property="Background" Value="#30FFFFFF" />
-                                                                                                    <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                                                                                                </Trigger>
-                                                                                            </ControlTemplate.Triggers>
-                                                                                        </ControlTemplate>
-                                                                                    </Setter.Value>
-                                                                                </Setter>
-                                                                            </Style>
+                                                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
                                                                         </Button.Style>
                                                                     </Button>
 
@@ -4843,7 +4819,7 @@
                                                                             Margin="0,0,0,0"
                                                                             FontSize="15"
                                                                             FontWeight="SemiBold"
-                                                                            Foreground="White"
+                                                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                                                             Text="{Binding Items[0].PackageName}"
                                                                             TextTrimming="CharacterEllipsis" />
                                                                     </StackPanel>
@@ -4903,7 +4879,7 @@
                                                                         Margin="8,0,16,0"
                                                                         VerticalAlignment="Center"
                                                                         FontSize="16"
-                                                                        Foreground="#AAAAAA"
+                                                                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                                                                         Text="{Binding Items[0].ItemFileSizeFormatted}" />
                                                                 </Grid>
                                                             </Border>

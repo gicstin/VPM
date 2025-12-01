@@ -85,11 +85,12 @@
         
         <!-- DataGrid Column Header Style for Dark Theme -->
         <Style TargetType="{x:Type DataGridColumnHeader}">
-            <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
-            <Setter Property="BorderThickness" Value="0,0,1,1"/>
-            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Height" Value="0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
         </Style>
@@ -369,6 +370,8 @@ Examples:
                               SelectionMode="Extended"
                               GridLinesVisibility="None"
                               HeadersVisibility="None"
+                              ColumnHeaderHeight="0"
+                              RowHeaderWidth="0"
                               Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
                               BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                               BorderThickness="1"

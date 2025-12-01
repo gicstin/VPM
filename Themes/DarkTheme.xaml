@@ -722,7 +722,7 @@
                         SnapsToDevicePixels="True">
                         <Grid>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" MinHeight="50" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
                             <DataGridColumnHeadersPresenter Grid.Row="0" Visibility="{Binding HeadersVisibility, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource DataGridHeadersVisibilityConverter}}" />

@@ -433,23 +433,29 @@ namespace VPM
                 var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
                 headerPanel.Children.Add(new TextBlock { Text = $"{icon} {categoryName} ({items.Count})", VerticalAlignment = VerticalAlignment.Center });
 
-                var tab = new TabItem { Header = headerPanel, Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)) };
+                var tab = new TabItem 
+                { 
+                    Header = headerPanel,
+                    Style = PackageInfoTabControl.FindResource(typeof(TabItem)) as Style
+                };
                 var listBox = new ListBox
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(45, 45, 45)),
-                    Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
                     BorderThickness = new Thickness(0),
                     Margin = new Thickness(5)
                 };
+                // Use theme resources
+                listBox.SetResourceReference(Control.BackgroundProperty, SystemColors.WindowBrushKey);
+                listBox.SetResourceReference(Control.ForegroundProperty, SystemColors.ControlTextBrushKey);
 
                 foreach (var item in items)
                 {
-                    listBox.Items.Add(new ListBoxItem
+                    var listBoxItem = new ListBoxItem
                     {
                         Content = item,
-                        Background = Brushes.Transparent,
-                        Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220))
-                    });
+                        Background = Brushes.Transparent
+                    };
+                    listBoxItem.SetResourceReference(Control.ForegroundProperty, SystemColors.ControlTextBrushKey);
+                    listBox.Items.Add(listBoxItem);
                 }
 
                 tab.Content = listBox;
