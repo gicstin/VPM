@@ -26,7 +26,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
-*.md
 /Services/SharpZipLibHelper.cs
 /ANALYSIS_COMPLETE.txt
 /.samples/vvvevevvv.Night_Party.1
