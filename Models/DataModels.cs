@@ -39,6 +39,7 @@ namespace VPM.Models
         private int _skinsCount = 0;
         private bool _isDamaged = false;
         private string _damageReason = "";
+        private int _missingDependencyCount = 0;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -126,6 +127,14 @@ namespace VPM.Models
             get => _dependentsCount;
             set => SetProperty(ref _dependentsCount, value);
         }
+        
+        public int MissingDependencyCount
+        {
+            get => _missingDependencyCount;
+            set => SetProperty(ref _missingDependencyCount, value);
+        }
+        
+        public bool HasMissingDependencies => _missingDependencyCount > 0;
         
         public bool IsOptimized
         {

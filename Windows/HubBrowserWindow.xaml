@@ -238,8 +238,7 @@
                     Text="" />
                 <Button
                     x:Name="SearchButton"
-                    Width="80"
-                    Height="28"
+                    Padding="12,4"
                     Click="SearchButton_Click"
                     Content="🔍 Search" />
             </StackPanel>
@@ -332,8 +331,7 @@
             <Button
                 x:Name="RefreshButton"
                 Grid.Column="6"
-                Width="80"
-                Height="28"
+                Padding="12,4"
                 Click="RefreshButton_Click"
                 Content="🔄 Refresh" />
         </Grid>
@@ -368,7 +366,8 @@
                 <ScrollViewer
                     x:Name="ResourcesScrollViewer"
                     HorizontalScrollBarVisibility="Disabled"
-                    VerticalScrollBarVisibility="Auto">
+                    VerticalScrollBarVisibility="Auto"
+                    PreviewMouseWheel="ResourcesScrollViewer_PreviewMouseWheel">
                     <ItemsControl x:Name="ResourcesItemsControl">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -529,13 +528,13 @@
                 Orientation="Horizontal">
                 <Button
                     x:Name="FirstPageButton"
-                    Width="60"
+                    Padding="12,4"
                     Margin="0,0,4,0"
                     Click="FirstPage_Click"
                     Content="⏮ First" />
                 <Button
                     x:Name="PrevPageButton"
-                    Width="60"
+                    Padding="12,4"
                     Margin="0,0,4,0"
                     Click="PrevPage_Click"
                     Content="◀ Prev" />
@@ -547,7 +546,7 @@
                     Text="Page 1 of 1" />
                 <Button
                     x:Name="NextPageButton"
-                    Width="60"
+                    Padding="12,4"
                     Margin="4,0,0,0"
                     Click="NextPage_Click"
                     Content="Next ▶" />

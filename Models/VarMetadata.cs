@@ -64,6 +64,11 @@ namespace VPM.Models
         
         // Complete file index from archive - used for UI display and expansion
         public List<string> AllFiles { get; set; } = new List<string>();
+        
+        // Missing dependencies tracking
+        public List<string> MissingDependencies { get; set; } = new List<string>();
+        public bool HasMissingDependencies => MissingDependencies?.Count > 0;
+        public int MissingDependencyCount => MissingDependencies?.Count ?? 0;
     }
 }
 

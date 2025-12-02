@@ -30,6 +30,9 @@ namespace VPM.Services
         
         public Dictionary<string, VarMetadata> PackageMetadata { get; private set; } = new Dictionary<string, VarMetadata>(StringComparer.OrdinalIgnoreCase);
         private ConcurrentDictionary<string, List<ImageLocation>> _previewImageIndex;
+        
+        // Dependency graph for reverse dependency lookups and analysis
+        private readonly DependencyGraph _dependencyGraph = new();
 
 
         private readonly string _cacheFolder;
@@ -1318,6 +1321,12 @@ namespace VPM.Services
             // Detect old versions after all packages are loaded
             DetectOldVersions();
             
+            // Detect missing dependencies for all packages
+            DetectMissingDependencies();
+            
+            // Build dependency graph for reverse lookups and analysis
+            _dependencyGraph.Build(PackageMetadata);
+            
             // Save binary cache asynchronously after scanning completes (fire-and-forget)
             // Don't await to avoid blocking the UI
             _ = SaveBinaryCacheAsync();
@@ -1375,6 +1384,219 @@ namespace VPM.Services
                 }
             }
         }
+
+        /// <summary>
+        /// Detects missing dependencies for all packages.
+        /// A dependency is considered missing if no package with that name (or any version for .latest) exists.
+        /// </summary>
+        public void DetectMissingDependencies()
+        {
+            // Build a set of all known package names for fast lookup
+            // Include both exact names and base names (for .latest resolution)
+            var knownPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var knownPackageBases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var kvp in PackageMetadata)
+            {
+                var metadata = kvp.Value;
+                if (metadata.IsCorrupted)
+                    continue;
+                
+                // Add the full package name (Creator.Package.Version)
+                var fullName = $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}";
+                knownPackages.Add(fullName);
+                
+                // Also add the base name for .latest resolution
+                var baseName = $"{metadata.CreatorName}.{metadata.PackageName}";
+                knownPackageBases.Add(baseName);
+            }
+            
+            // Now check each package's dependencies
+            int totalMissing = 0;
+            foreach (var kvp in PackageMetadata)
+            {
+                var metadata = kvp.Value;
+                metadata.MissingDependencies = new List<string>();
+                
+                if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
+                    continue;
+                
+                foreach (var dep in metadata.Dependencies)
+                {
+                    if (string.IsNullOrEmpty(dep))
+                        continue;
+                    
+                    bool found = false;
+                    
+                    // Check if it's a .latest reference
+                    if (dep.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Extract base name (Creator.Package)
+                        var baseName = dep.Substring(0, dep.Length - 7);
+                        found = knownPackageBases.Contains(baseName);
+                    }
+                    else
+                    {
+                        // Check exact match first
+                        found = knownPackages.Contains(dep);
+                        
+                        // If not found, check if any version of this package exists
+                        if (!found)
+                        {
+                            // Try to extract base name (handle Creator.Package.Version format)
+                            var lastDot = dep.LastIndexOf('.');
+                            if (lastDot > 0)
+                            {
+                                var baseName = dep.Substring(0, lastDot);
+                                found = knownPackageBases.Contains(baseName);
+                            }
+                        }
+                    }
+                    
+                    if (!found)
+                    {
+                        metadata.MissingDependencies.Add(dep);
+                        totalMissing++;
+                    }
+                }
+            }
+        }
+
+        #region Dependency Graph API
+        
+        /// <summary>
+        /// Gets packages that depend on the specified package (reverse dependencies)
+        /// </summary>
+        public List<string> GetPackageDependents(string packageName)
+        {
+            return _dependencyGraph.GetDependents(packageName);
+        }
+        
+        /// <summary>
+        /// Gets the count of packages that depend on the specified package
+        /// </summary>
+        public int GetPackageDependentsCount(string packageName)
+        {
+            return _dependencyGraph.GetDependentsCount(packageName);
+        }
+        
+        /// <summary>
+        /// Gets orphan packages (packages that no other package depends on)
+        /// </summary>
+        public List<string> GetOrphanPackages()
+        {
+            return _dependencyGraph.GetOrphanPackages();
+        }
+        
+        /// <summary>
+        /// Gets critical packages (packages that many others depend on)
+        /// </summary>
+        public List<(string Package, int DependentCount)> GetCriticalPackages(int minDependents = 5)
+        {
+            return _dependencyGraph.GetCriticalPackages(minDependents);
+        }
+        
+        /// <summary>
+        /// Gets the full dependency chain for a package (all transitive dependencies)
+        /// </summary>
+        public HashSet<string> GetFullDependencyChain(string packageName)
+        {
+            return _dependencyGraph.GetFullDependencyChain(packageName);
+        }
+        
+        /// <summary>
+        /// Gets packages that would break if the specified package is removed
+        /// </summary>
+        public List<string> GetPackagesThatWouldBreak(string packageName)
+        {
+            return _dependencyGraph.GetPackagesThatWouldBreak(packageName);
+        }
+        
+        /// <summary>
+        /// Gets dependency statistics for a package
+        /// </summary>
+        public PackageDependencyStats GetPackageDependencyStats(string packageName)
+        {
+            return _dependencyGraph.GetPackageStats(packageName);
+        }
+        
+        /// <summary>
+        /// Gets overall dependency graph statistics
+        /// </summary>
+        public GraphStatistics GetDependencyGraphStatistics()
+        {
+            return _dependencyGraph.GetGraphStatistics();
+        }
+        
+        /// <summary>
+        /// Checks if a package exists in the dependency graph
+        /// </summary>
+        public bool PackageExistsInGraph(string packageName)
+        {
+            return _dependencyGraph.PackageExists(packageName);
+        }
+        
+        /// <summary>
+        /// Checks if any of the given packages have dependents and returns warning info
+        /// </summary>
+        /// <param name="packages">Packages to check</param>
+        /// <returns>Dictionary of package name to list of dependents, only for packages with dependents</returns>
+        public Dictionary<string, List<string>> CheckPackagesForDependents(IEnumerable<VarMetadata> packages)
+        {
+            var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var pkg in packages)
+            {
+                var packageFullName = $"{pkg.CreatorName}.{pkg.PackageName}.{pkg.Version}";
+                var dependents = _dependencyGraph.GetDependents(packageFullName);
+                
+                if (dependents.Count > 0)
+                {
+                    result[packageFullName] = dependents;
+                }
+            }
+            
+            return result;
+        }
+        
+        /// <summary>
+        /// Gets a formatted warning message for packages that have dependents
+        /// </summary>
+        public string GetDependentsWarningMessage(Dictionary<string, List<string>> packagesWithDependents, int maxToShow = 5)
+        {
+            if (packagesWithDependents.Count == 0)
+                return null;
+            
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("⚠️ WARNING: The following packages have other packages that depend on them:\n");
+            
+            int shown = 0;
+            foreach (var kvp in packagesWithDependents.OrderByDescending(x => x.Value.Count))
+            {
+                if (shown >= maxToShow)
+                {
+                    sb.AppendLine($"... and {packagesWithDependents.Count - maxToShow} more packages with dependents");
+                    break;
+                }
+                
+                sb.AppendLine($"• {kvp.Key} ({kvp.Value.Count} dependents)");
+                foreach (var dep in kvp.Value.Take(3))
+                {
+                    sb.AppendLine($"    └─ {dep}");
+                }
+                if (kvp.Value.Count > 3)
+                {
+                    sb.AppendLine($"    └─ ... and {kvp.Value.Count - 3} more");
+                }
+                shown++;
+            }
+            
+            sb.AppendLine("\nArchiving these packages may break the dependent packages.");
+            
+            return sb.ToString();
+        }
+        
+        #endregion
 
         /// <summary>
         /// Gets all old version packages that can be archived.

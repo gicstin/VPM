@@ -801,10 +801,20 @@ namespace VPM
                     return;
                 }
                 
+                // Check if any old versions have dependents
+                var packagesWithDependents = _packageManager.CheckPackagesForDependents(oldVersions);
+                var warningMessage = _packageManager.GetDependentsWarningMessage(packagesWithDependents);
+                
                 var message = $"Found {oldVersions.Count} old version package(s).\n\n" +
                              $"These packages will be moved to:\n" +
-                             $"{Path.Combine(_selectedFolder, "ArchivedPackages", "OldPackages")}\n\n" +
-                             $"Do you want to continue?";
+                             $"{Path.Combine(_selectedFolder, "ArchivedPackages", "OldPackages")}\n\n";
+                
+                if (!string.IsNullOrEmpty(warningMessage))
+                {
+                    message += warningMessage + "\n";
+                }
+                
+                message += "Do you want to continue?";
                 
                 var result = DarkMessageBox.Show(message, "Archive Old Versions", 
                                                 MessageBoxButton.YesNo, MessageBoxImage.Question);

@@ -306,6 +306,19 @@ namespace VPM.Windows
             }
         }
 
+        private void ResourcesScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            // Increase scrolling sensitivity by multiplying the delta
+            const double scrollMultiplier = 100;
+            
+            if (sender is ScrollViewer scrollViewer)
+            {
+                double newOffset = scrollViewer.VerticalOffset - (e.Delta * scrollMultiplier / 120.0);
+                scrollViewer.ScrollToVerticalOffset(newOffset);
+                e.Handled = true;
+            }
+        }
+
         private void UpdatePaginationUI()
         {
             PageInfoText.Text = $"Page {_currentPage} of {_totalPages}";

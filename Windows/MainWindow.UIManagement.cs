@@ -967,7 +967,8 @@ namespace VPM
                                 ScriptsCount = metadata.ScriptsCount,
                                 PluginsCount = metadata.PluginsCount,
                                 SubScenesCount = metadata.SubScenesCount,
-                                SkinsCount = metadata.SkinsCount
+                                SkinsCount = metadata.SkinsCount,
+                                MissingDependencyCount = metadata.MissingDependencyCount
                             };
                         })
                         .ToList();
@@ -1708,7 +1709,8 @@ namespace VPM
         }
 
         /// <summary>
-        /// Calculate the number of dependents for each package
+        /// Calculate the number of dependents for each package using the dependency graph
+        /// This is now O(n) instead of O(n²) thanks to the pre-built graph
         /// </summary>
         private Dictionary<string, int> CalculateDependentsCount()
         {
@@ -1723,106 +1725,20 @@ namespace VPM
             if (_packageManager?.PackageMetadata == null)
                 return dependentsCount;
             
-            // Build a lookup table: baseName -> latest version package name
-            var latestVersionLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kvp in _packageManager.PackageMetadata)
-            {
-                var pkgName = Path.GetFileNameWithoutExtension(kvp.Value.Filename);
-                var lastDot = pkgName.LastIndexOf('.');
-                if (lastDot > 0)
-                {
-                    var suffix = pkgName.Substring(lastDot + 1);
-                    if (int.TryParse(suffix, out var version))
-                    {
-                        var baseName = pkgName.Substring(0, lastDot);
-                        
-                        // Check if this is the highest version we've seen
-                        if (!latestVersionLookup.ContainsKey(baseName))
-                        {
-                            latestVersionLookup[baseName] = pkgName;
-                        }
-                        else
-                        {
-                            var existingPkg = latestVersionLookup[baseName];
-                            var existingVersion = int.Parse(existingPkg.Substring(existingPkg.LastIndexOf('.') + 1));
-                            if (version > existingVersion)
-                            {
-                                latestVersionLookup[baseName] = pkgName;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // For each package, track which unique dependents reference it
-            var packageDependents = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-            
+            // Use the dependency graph for O(1) lookups per package
             foreach (var kvp in _packageManager.PackageMetadata)
             {
                 var metadata = kvp.Value;
+                var packageFullName = $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}";
+                var displayName = Path.GetFileNameWithoutExtension(metadata.Filename);
                 
-                // Skip archived packages if HideArchivedPackages is enabled
-                if (_filterManager?.HideArchivedPackages == true)
+                // Get dependents count from the graph
+                var count = _packageManager.GetPackageDependentsCount(packageFullName);
+                
+                if (count > 0)
                 {
-                    if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
+                    dependentsCount[displayName] = count;
                 }
-                
-                if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
-                    continue;
-                
-                // Get the dependent package name (the package that has dependencies)
-                string dependentPackageName = kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
-                    ? kvp.Key
-                    : Path.GetFileNameWithoutExtension(metadata.Filename);
-                
-                foreach (var dependency in metadata.Dependencies)
-                {
-                    if (string.IsNullOrEmpty(dependency))
-                        continue;
-                    
-                    // Remove .var extension if present
-                    var dependencyName = dependency;
-                    if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                    {
-                        dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                    }
-                    
-                    // Add this dependent to the dependency's set
-                    if (!packageDependents.ContainsKey(dependencyName))
-                    {
-                        packageDependents[dependencyName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    }
-                    packageDependents[dependencyName].Add(dependentPackageName);
-                    
-                    // If dependency is X.latest, also add to the actual latest version (X.4, X.5, etc.)
-                    if (dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var baseName = dependencyName.Substring(0, dependencyName.Length - 7); // Remove ".latest"
-                        
-                        // Look up the latest version from our pre-built cache
-                        if (latestVersionLookup.TryGetValue(baseName, out var latestVersionPackage))
-                        {
-                            if (!packageDependents.ContainsKey(latestVersionPackage))
-                            {
-                                packageDependents[latestVersionPackage] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                            }
-                            packageDependents[latestVersionPackage].Add(dependentPackageName);
-                        }
-                    }
-                }
-            }
-            
-            // Convert HashSets to counts
-            foreach (var kvp in packageDependents)
-            {
-                dependentsCount[kvp.Key] = kvp.Value.Count;
             }
             
             // Cache the result

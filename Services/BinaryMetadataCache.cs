@@ -15,7 +15,7 @@ namespace VPM.Services
     /// </summary>
     public class BinaryMetadataCache
     {
-        private const int CACHE_VERSION = 11; // Improved IsRelevantContent filter - more permissive, excludes non-content files
+        private const int CACHE_VERSION = 12; // Added MissingDependencies tracking
         private readonly string _cacheFilePath;
         private readonly string _cacheDirectory;
         private readonly Dictionary<string, CachedMetadata> _cache = new(StringComparer.OrdinalIgnoreCase);
@@ -501,6 +501,21 @@ namespace VPM.Services
                 metadata.AllFiles = new List<string>();
             }
 
+            // Read MissingDependencies list
+            try
+            {
+                var missingDepsCount = reader.ReadInt32();
+                metadata.MissingDependencies = new List<string>(missingDepsCount);
+                for (int i = 0; i < missingDepsCount; i++)
+                {
+                    metadata.MissingDependencies.Add(reader.ReadString());
+                }
+            }
+            catch
+            {
+                metadata.MissingDependencies = new List<string>();
+            }
+
             return metadata;
         }
 
@@ -597,6 +612,14 @@ namespace VPM.Services
             {
                 writer.Write(file ?? "");
             }
+
+            // Write MissingDependencies list
+            var missingDeps = metadata.MissingDependencies ?? new List<string>();
+            writer.Write(missingDeps.Count);
+            foreach (var dep in missingDeps)
+            {
+                writer.Write(dep ?? "");
+            }
         }
 
         #endregion
@@ -649,7 +672,8 @@ namespace VPM.Services
                 PluginsCount = source.PluginsCount,
                 SubScenesCount = source.SubScenesCount,
                 SkinsCount = source.SkinsCount,
-                AllFiles = new List<string>(source.AllFiles ?? new List<string>())
+                AllFiles = new List<string>(source.AllFiles ?? new List<string>()),
+                MissingDependencies = new List<string>(source.MissingDependencies ?? new List<string>())
             };
         }
 

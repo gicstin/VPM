@@ -564,84 +564,9 @@ namespace VPM
             
             _dependenciesCount = packageMetadata?.Dependencies?.Count ?? 0;
             
-            _dependentsCount = 0;
-            if (_packageManager?.PackageMetadata != null)
-            {
-                var packageName = packageItem.DisplayName;
-                
-                // Extract base name from selected package (remove version if present)
-                var packageBaseName = packageName;
-                var lastDotIndex = packageName.LastIndexOf('.');
-                if (lastDotIndex > 0)
-                {
-                    var potentialVersion = packageName.Substring(lastDotIndex + 1);
-                    if (int.TryParse(potentialVersion, out _))
-                    {
-                        packageBaseName = packageName.Substring(0, lastDotIndex);
-                    }
-                }
-                
-                var uniqueDependents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                
-                foreach (var kvp in _packageManager.PackageMetadata)
-                {
-                    var metadata = kvp.Value;
-                    
-                    if (_filterManager?.HideArchivedPackages == true)
-                    {
-                        if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                    }
-                    
-                    if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
-                        continue;
-
-                    foreach (var dependency in metadata.Dependencies)
-                    {
-                        var dependencyName = dependency;
-                        if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                        {
-                            dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                        }
-
-                        // Check if dependency matches the selected package
-                        bool isMatch = false;
-                        
-                        // Match exact version: P1.V1 matches P1.V1
-                        if (dependencyName.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
-                            dependencyName.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isMatch = true;
-                        }
-                        // If selected package is latest version, also match .latest dependencies
-                        else if (packageItem.IsLatestVersion && dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var depBaseName = dependencyName.Substring(0, dependencyName.Length - 7);
-                            if (depBaseName.Equals(packageBaseName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                isMatch = true;
-                            }
-                        }
-
-                        if (isMatch)
-                        {
-                            string dependentPackageName = kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
-                                ? kvp.Key
-                                : Path.GetFileNameWithoutExtension(metadata.Filename);
-                            uniqueDependents.Add(dependentPackageName);
-                            break;
-                        }
-                    }
-                }
-                
-                _dependentsCount = uniqueDependents.Count;
-            }
+            // Use dependency graph for O(1) lookup instead of iterating all packages
+            var packageFullName = $"{packageMetadata?.CreatorName}.{packageMetadata?.PackageName}.{packageMetadata?.Version}";
+            _dependentsCount = _packageManager?.GetPackageDependentsCount(packageFullName) ?? 0;
             
             DependenciesCountText.Text = $"({_dependenciesCount})";
             DependentsCountText.Text = $"({_dependentsCount})";
@@ -649,112 +574,40 @@ namespace VPM
 
         private void UpdateBothTabCountsForMultiple(List<PackageItem> selectedPackages)
         {
-            var allDependencies = new HashSet<string>();
+            var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var allDependents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
             foreach (var package in selectedPackages)
             {
                 _packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var packageMetadata);
-                if (packageMetadata?.Dependencies != null)
+                if (packageMetadata != null)
                 {
-                    foreach (var dependency in packageMetadata.Dependencies)
+                    // Collect dependencies
+                    if (packageMetadata.Dependencies != null)
                     {
-                        var dependencyName = dependency;
-                        if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                        foreach (var dependency in packageMetadata.Dependencies)
                         {
-                            dependencyName = Path.GetFileNameWithoutExtension(dependency);
+                            var dependencyName = dependency;
+                            if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                            {
+                                dependencyName = Path.GetFileNameWithoutExtension(dependency);
+                            }
+                            allDependencies.Add(dependencyName);
                         }
-                        allDependencies.Add(dependencyName);
+                    }
+                    
+                    // Use dependency graph for O(1) lookup of dependents
+                    var packageFullName = $"{packageMetadata.CreatorName}.{packageMetadata.PackageName}.{packageMetadata.Version}";
+                    var dependents = _packageManager?.GetPackageDependents(packageFullName);
+                    if (dependents != null)
+                    {
+                        foreach (var dep in dependents)
+                            allDependents.Add(dep);
                     }
                 }
             }
+            
             _dependenciesCount = allDependencies.Count;
-            
-            var packageNames = new HashSet<string>(selectedPackages.Select(p => p.DisplayName), StringComparer.OrdinalIgnoreCase);
-            
-            // Build a lookup of base names for packages that are latest versions
-            var latestVersionBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var package in selectedPackages)
-            {
-                if (package.IsLatestVersion)
-                {
-                    var baseName = package.DisplayName;
-                    var lastDotIndex = baseName.LastIndexOf('.');
-                    if (lastDotIndex > 0)
-                    {
-                        var potentialVersion = baseName.Substring(lastDotIndex + 1);
-                        if (int.TryParse(potentialVersion, out _))
-                        {
-                            baseName = baseName.Substring(0, lastDotIndex);
-                        }
-                    }
-                    latestVersionBaseNames.Add(baseName);
-                }
-            }
-            
-            var allDependents = new HashSet<string>();
-            
-            if (_packageManager?.PackageMetadata != null)
-            {
-                foreach (var kvp in _packageManager.PackageMetadata)
-                {
-                    var metadata = kvp.Value;
-                    
-                    if (_filterManager?.HideArchivedPackages == true)
-                    {
-                        if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                        if (kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            continue;
-                    }
-                    
-                    if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
-                        continue;
-
-                    foreach (var dependency in metadata.Dependencies)
-                    {
-                        var dependencyName = dependency;
-                        if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                        {
-                            dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                        }
-
-                        bool isMatch = false;
-                        
-                        // Check exact match against any selected package
-                        foreach (var packageName in packageNames)
-                        {
-                            if (dependencyName.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
-                                dependencyName.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
-                            {
-                                isMatch = true;
-                                break;
-                            }
-                        }
-                        
-                        // If not matched yet and dependency is .latest, check if it matches any latest version package
-                        if (!isMatch && dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var depBaseName = dependencyName.Substring(0, dependencyName.Length - 7);
-                            if (latestVersionBaseNames.Contains(depBaseName))
-                            {
-                                isMatch = true;
-                            }
-                        }
-
-                        if (isMatch)
-                        {
-                            string dependentPackageName = kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
-                                ? kvp.Key
-                                : Path.GetFileNameWithoutExtension(metadata.Filename);
-                            allDependents.Add(dependentPackageName);
-                            break;
-                        }
-                    }
-                }
-            }
             _dependentsCount = allDependents.Count;
             
             DependenciesCountText.Text = $"({_dependenciesCount})";
@@ -1094,7 +947,6 @@ namespace VPM
         private void DisplayDependents(PackageItem packageItem)
         {
             // Refresh package status index to ensure we have the latest status of all packages
-            // This is critical when switching packages after downloading dependencies
             _packageFileManager?.RefreshPackageStatusIndex();
 
             var view = CollectionViewSource.GetDefaultView(Dependencies);
@@ -1106,7 +958,8 @@ namespace VPM
             Dependencies.Clear();
             _originalDependencies.Clear();
 
-            if (_packageManager?.PackageMetadata == null)
+            _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var packageMetadata);
+            if (packageMetadata == null)
             {
                 var noDepsItem = new DependencyItem
                 {
@@ -1118,119 +971,40 @@ namespace VPM
                 return;
             }
 
-            var packageName = packageItem.DisplayName;
-            
-            // Extract base name from selected package (remove version if present)
-            var packageBaseName = packageName;
-            var lastDotIndex = packageName.LastIndexOf('.');
-            if (lastDotIndex > 0)
+            // Use dependency graph for O(1) lookup instead of iterating all packages
+            var packageFullName = $"{packageMetadata.CreatorName}.{packageMetadata.PackageName}.{packageMetadata.Version}";
+            var dependentsList = _packageManager.GetPackageDependents(packageFullName);
+
+            if (dependentsList.Count > 0)
             {
-                var potentialVersion = packageName.Substring(lastDotIndex + 1);
-                if (int.TryParse(potentialVersion, out _))
+                foreach (var dependentName in dependentsList.OrderBy(d => d))
                 {
-                    packageBaseName = packageName.Substring(0, lastDotIndex);
-                }
-            }
-            
-            var dependents = new Dictionary<string, DependencyItem>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var kvp in _packageManager.PackageMetadata)
-            {
-                var metadata = kvp.Value;
-                
-                // Skip archived packages if HideArchivedPackages is enabled
-                if (_filterManager?.HideArchivedPackages == true)
-                {
-                    if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                }
-                
-                if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
-                    continue;
-
-                foreach (var dependency in metadata.Dependencies)
-                {
-                    var dependencyName = dependency;
-                    if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                    {
-                        dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                    }
-
-                    // Check if dependency matches the selected package
-                    bool isMatch = false;
+                    // Parse the dependent name to extract base name and version
+                    string baseName = dependentName;
+                    string version = "";
                     
-                    // Match exact version: P1.V1 matches P1.V1
-                    if (dependencyName.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
-                        dependencyName.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
+                    var lastDotIndex = dependentName.LastIndexOf('.');
+                    if (lastDotIndex > 0)
                     {
-                        isMatch = true;
-                    }
-                    // If selected package is latest version, also match .latest dependencies
-                    else if (packageItem.IsLatestVersion && dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var depBaseName = dependencyName.Substring(0, dependencyName.Length - 7);
-                        if (depBaseName.Equals(packageBaseName, StringComparison.OrdinalIgnoreCase))
+                        var potentialVersion = dependentName.Substring(lastDotIndex + 1);
+                        if (int.TryParse(potentialVersion, out _))
                         {
-                            isMatch = true;
+                            version = potentialVersion;
+                            baseName = dependentName.Substring(0, lastDotIndex);
                         }
                     }
-
-                    if (isMatch)
+                    
+                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    
+                    var dependentItem = new DependencyItem
                     {
-                        string dependentPackageName = kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
-                            ? kvp.Key
-                            : Path.GetFileNameWithoutExtension(metadata.Filename);
-
-                        if (!dependents.ContainsKey(dependentPackageName))
-                        {
-                            // Extract base name and version for display (similar to DisplayDependencies)
-                            string baseName = dependentPackageName;
-                            string version = "";
-                            
-                            // Remove #archived suffix if present
-                            if (baseName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            {
-                                baseName = baseName.Substring(0, baseName.Length - 9); // Remove "#archived"
-                            }
-                            
-                            // Extract version number if present
-                            var baseNameDotIndex = baseName.LastIndexOf('.');
-                            if (baseNameDotIndex > 0)
-                            {
-                                var potentialVersion = baseName.Substring(baseNameDotIndex + 1);
-                                if (int.TryParse(potentialVersion, out _))
-                                {
-                                    version = potentialVersion;
-                                    baseName = baseName.Substring(0, baseNameDotIndex);
-                                }
-                            }
-                            
-                            var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
-                            
-                            dependents[dependentPackageName] = new DependencyItem
-                            {
-                                Name = baseName,
-                                Version = version,
-                                Status = status
-                            };
-                        }
-                        break;
-                    }
-                }
-            }
-
-            if (dependents.Count > 0)
-            {
-                foreach (var dependent in dependents.Values.OrderBy(d => d.Name))
-                {
-                    Dependencies.Add(dependent);
-                    _originalDependencies.Add(dependent);
+                        Name = baseName,
+                        Version = version,
+                        Status = status
+                    };
+                    
+                    Dependencies.Add(dependentItem);
+                    _originalDependencies.Add(dependentItem);
                 }
             }
             else
@@ -1256,7 +1030,6 @@ namespace VPM
         private void DisplayConsolidatedDependents(List<PackageItem> selectedPackages)
         {
             // Refresh package status index to ensure we have the latest status of all packages
-            // This is critical when switching packages after downloading dependencies
             _packageFileManager?.RefreshPackageStatusIndex();
 
             var view = CollectionViewSource.GetDefaultView(Dependencies);
@@ -1268,134 +1041,46 @@ namespace VPM
             Dependencies.Clear();
             _originalDependencies.Clear();
 
-            if (_packageManager?.PackageMetadata == null)
-            {
-                var noDepsItem = new DependencyItem
-                {
-                    Name = "No dependents found",
-                    Status = "N/A"
-                };
-                Dependencies.Add(noDepsItem);
-                _originalDependencies.Add(noDepsItem);
-                return;
-            }
+            // Use dependency graph for O(1) lookups instead of iterating all packages
+            var allDependents = new Dictionary<string, DependencyItem>(StringComparer.OrdinalIgnoreCase);
 
-            var packageNames = new HashSet<string>(selectedPackages.Select(p => p.DisplayName), StringComparer.OrdinalIgnoreCase);
-            
-            // Build a lookup of base names for packages that are latest versions
-            var latestVersionBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var package in selectedPackages)
             {
-                if (package.IsLatestVersion)
+                _packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var packageMetadata);
+                if (packageMetadata == null)
+                    continue;
+                
+                var packageFullName = $"{packageMetadata.CreatorName}.{packageMetadata.PackageName}.{packageMetadata.Version}";
+                var dependentsList = _packageManager.GetPackageDependents(packageFullName);
+                
+                foreach (var dependentName in dependentsList)
                 {
-                    var baseName = package.DisplayName;
-                    var lastDotIndex = baseName.LastIndexOf('.');
+                    if (allDependents.ContainsKey(dependentName))
+                        continue;
+                    
+                    // Parse the dependent name to extract base name and version
+                    string baseName = dependentName;
+                    string version = "";
+                    
+                    var lastDotIndex = dependentName.LastIndexOf('.');
                     if (lastDotIndex > 0)
                     {
-                        var potentialVersion = baseName.Substring(lastDotIndex + 1);
+                        var potentialVersion = dependentName.Substring(lastDotIndex + 1);
                         if (int.TryParse(potentialVersion, out _))
                         {
-                            baseName = baseName.Substring(0, lastDotIndex);
-                        }
-                    }
-                    latestVersionBaseNames.Add(baseName);
-                }
-            }
-            
-            var allDependents = new Dictionary<string, DependencyItem>();
-
-            foreach (var kvp in _packageManager.PackageMetadata)
-            {
-                var metadata = kvp.Value;
-                
-                // Skip archived packages if HideArchivedPackages is enabled
-                if (_filterManager?.HideArchivedPackages == true)
-                {
-                    if (metadata.Status != null && metadata.Status.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    if (kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                }
-                
-                if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
-                    continue;
-
-                foreach (var dependency in metadata.Dependencies)
-                {
-                    var dependencyName = dependency;
-                    if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                    {
-                        dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                    }
-
-                    bool isMatch = false;
-                    
-                    // Check exact match against any selected package
-                    foreach (var packageName in packageNames)
-                    {
-                        if (dependencyName.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
-                            dependencyName.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isMatch = true;
-                            break;
+                            version = potentialVersion;
+                            baseName = dependentName.Substring(0, lastDotIndex);
                         }
                     }
                     
-                    // If not matched yet and dependency is .latest, check if it matches any latest version package
-                    if (!isMatch && dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    
+                    allDependents[dependentName] = new DependencyItem
                     {
-                        var depBaseName = dependencyName.Substring(0, dependencyName.Length - 7);
-                        if (latestVersionBaseNames.Contains(depBaseName))
-                        {
-                            isMatch = true;
-                        }
-                    }
-
-                    if (isMatch)
-                    {
-                        string dependentPackageName = kvp.Key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
-                            ? kvp.Key
-                            : Path.GetFileNameWithoutExtension(metadata.Filename);
-
-                        if (!allDependents.ContainsKey(dependentPackageName))
-                        {
-                            // Extract base name and version for display (similar to DisplayDependencies)
-                            string baseName = dependentPackageName;
-                            string version = "";
-                            
-                            // Remove #archived suffix if present
-                            if (baseName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            {
-                                baseName = baseName.Substring(0, baseName.Length - 9); // Remove "#archived"
-                            }
-                            
-                            // Extract version number if present
-                            var baseNameDotIndex = baseName.LastIndexOf('.');
-                            if (baseNameDotIndex > 0)
-                            {
-                                var potentialVersion = baseName.Substring(baseNameDotIndex + 1);
-                                if (int.TryParse(potentialVersion, out _))
-                                {
-                                    version = potentialVersion;
-                                    baseName = baseName.Substring(0, baseNameDotIndex);
-                                }
-                            }
-                            
-                            var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
-                            
-                            allDependents[dependentPackageName] = new DependencyItem
-                            {
-                                Name = baseName,
-                                Version = version,
-                                Status = status
-                            };
-                        }
-                        break;
-                    }
+                        Name = baseName,
+                        Version = version,
+                        Status = status
+                    };
                 }
             }
 
