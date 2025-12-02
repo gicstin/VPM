@@ -452,10 +452,17 @@
                                                 Text="{Binding Creator}" />
 
                                             <!-- Stats Row -->
-                                            <StackPanel
-                                                Margin="0,4,0,0"
-                                                Orientation="Horizontal">
+                                            <Grid Margin="0,4,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+
                                                 <TextBlock
+                                                    Grid.Column="0"
                                                     Margin="0,0,12,0"
                                                     FontSize="11"
                                                     Foreground="{StaticResource DarkTextSecondary}">
@@ -463,6 +470,7 @@
                                                     <Run Text="{Binding DownloadCount, Mode=OneWay}" />
                                                 </TextBlock>
                                                 <TextBlock
+                                                    Grid.Column="1"
                                                     Margin="0,0,12,0"
                                                     FontSize="11"
                                                     Foreground="{StaticResource DarkTextSecondary}">
@@ -470,23 +478,24 @@
                                                     <Run Text="{Binding RatingAvg, StringFormat={}{0:F1}, Mode=OneWay}" />
                                                 </TextBlock>
                                                 <TextBlock
+                                                    Grid.Column="2"
                                                     FontSize="11"
                                                     Foreground="{StaticResource DarkTextSecondary}"
                                                     Text="Free" />
-                                            </StackPanel>
 
-                                            <!-- Type Badge -->
-                                            <Border
-                                                Margin="0,4,0,0"
-                                                Padding="6,2"
-                                                HorizontalAlignment="Left"
-                                                Background="#2196F3"
-                                                CornerRadius="2">
-                                                <TextBlock
-                                                    FontSize="10"
-                                                    Foreground="White"
-                                                    Text="{Binding Type}" />
-                                            </Border>
+                                                <!-- Type Badge on same row -->
+                                                <Border
+                                                    Grid.Column="4"
+                                                    Padding="6,2"
+                                                    HorizontalAlignment="Right"
+                                                    Background="#2196F3"
+                                                    CornerRadius="2">
+                                                    <TextBlock
+                                                        FontSize="10"
+                                                        Foreground="White"
+                                                        Text="{Binding Type}" />
+                                                </Border>
+                                            </Grid>
                                         </StackPanel>
                                     </Grid>
                                 </Border>

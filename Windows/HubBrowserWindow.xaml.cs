@@ -43,6 +43,7 @@ namespace VPM.Windows
         private bool _isPanelExpanded = false;
         private const double PanelWidth = 380;
         private HubResourceDetail _currentDetail;
+        private HubResource _currentResource;  // Track the resource being viewed
         private ObservableCollection<HubFileViewModel> _currentFiles;
         private ObservableCollection<HubFileViewModel> _currentDependencies;
 
@@ -385,6 +386,7 @@ namespace VPM.Windows
                 if (detail != null)
                 {
                     _currentDetail = detail;
+                    _currentResource = resource;  // Store the resource for later updates
                     PopulateDetailPanel(detail);
                     ExpandPanel();
                     StatusText.Text = "Ready";
@@ -823,6 +825,12 @@ namespace VPM.Windows
                     file.IsInstalled = true;
                     file.LocalPath = Path.Combine(_destinationFolder, file.Filename);
                     _localPackages.Add(packageName);
+                    
+                    // Update the resource's InLibrary status so the main grid updates instantly
+                    if (_currentResource != null)
+                    {
+                        _currentResource.InLibrary = true;
+                    }
                 }
                 else
                 {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,7 +10,7 @@ namespace VPM.Models
     /// <summary>
     /// Represents a resource from the VaM Hub
     /// </summary>
-    public class HubResource
+    public class HubResource : INotifyPropertyChanged
     {
         [JsonPropertyName("resource_id")]
         public string ResourceId { get; set; }
@@ -79,9 +80,30 @@ namespace VPM.Models
         public List<HubFile> HubFiles { get; set; }
 
         // UI helper properties
-        public bool InLibrary { get; set; }
-        public bool UpdateAvailable { get; set; }
-        public string UpdateMessage { get; set; }
+        private bool _inLibrary;
+        public bool InLibrary
+        {
+            get => _inLibrary;
+            set { _inLibrary = value; OnPropertyChanged(nameof(InLibrary)); }
+        }
+
+        private bool _updateAvailable;
+        public bool UpdateAvailable
+        {
+            get => _updateAvailable;
+            set { _updateAvailable = value; OnPropertyChanged(nameof(UpdateAvailable)); }
+        }
+
+        private string _updateMessage;
+        public string UpdateMessage
+        {
+            get => _updateMessage;
+            set { _updateMessage = value; OnPropertyChanged(nameof(UpdateMessage)); }
+        }
+
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged(string name) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     /// <summary>
