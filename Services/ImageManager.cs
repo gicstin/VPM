@@ -1249,7 +1249,7 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Loads a single image asynchronously, checking cache first
+        /// Loads a single image asynchronously, checking all cache layers (memory → disk → archive)
         /// </summary>
         public async Task<BitmapImage> LoadImageAsync(string varPath, string internalPath, int decodeWidth = 0, int decodeHeight = 0)
         {
@@ -1259,15 +1259,25 @@ namespace VPM.Services
 
             try
             {
+                // 1.5. Check in-memory bitmap cache first (fastest)
+                var cacheKey = $"{varPath}::{internalPath}";
+                var memCached = GetCachedImage(cacheKey);
+                if (memCached != null)
+                {
+                    return memCached;
+                }
+                
                 var fileInfo = new FileInfo(varPath);
                 long fileSize = fileInfo.Length;
                 long lastWriteTicks = fileInfo.LastWriteTime.Ticks;
 
-                // 2. Check Binary Cache first
+                // 2. Check Binary/Disk Cache (second fastest)
                 // This avoids opening the archive if we already have the processed image
                 var cachedImage = _diskCache.TryGetCached(varPath, internalPath, fileSize, lastWriteTicks);
                 if (cachedImage != null)
                 {
+                    // Add to memory cache for faster subsequent access
+                    AddImageToCache(cacheKey, cachedImage);
                     return cachedImage;
                 }
 
@@ -1310,6 +1320,9 @@ namespace VPM.Services
 
                 // 5. Save to Disk Cache for future use
                 _diskCache.TrySaveToCache(varPath, internalPath, fileSize, lastWriteTicks, bitmap);
+                
+                // 6. Add to memory cache for faster subsequent access
+                AddImageToCache(cacheKey, bitmap);
 
                 return bitmap;
             }
@@ -1675,6 +1688,27 @@ namespace VPM.Services
         {
             AddToStrongCache(imagePath, bitmap);
         }
+        
+        /// <summary>
+        /// Adds an image to the memory cache (both strong and weak references)
+        /// Thread-safe method for external callers
+        /// </summary>
+        public void AddImageToCache(string cacheKey, BitmapImage bitmap)
+        {
+            if (string.IsNullOrEmpty(cacheKey) || bitmap == null) return;
+            
+            _bitmapCacheLock.EnterWriteLock();
+            try
+            {
+                AddToStrongCache(cacheKey, bitmap);
+                _bitmapCache[cacheKey] = new WeakReference<BitmapImage>(bitmap);
+            }
+            finally
+            {
+                _bitmapCacheLock.ExitWriteLock();
+            }
+        }
+        
         private void AddToStrongCache(string imagePath, BitmapImage bitmap)
         {
             // O(1) LRU eviction - matching archive cache pattern

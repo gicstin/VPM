@@ -32,7 +32,8 @@ namespace VPM.Windows
 
         private readonly HubService _hubService;
         private readonly string _destinationFolder;
-        private readonly HashSet<string> _localPackages;
+        private readonly string _vamFolder;  // Root VaM folder for searching packages
+        private readonly Dictionary<string, string> _localPackagePaths;  // Package name -> file path
         
         private CancellationTokenSource _searchCts;
         private int _currentPage = 1;
@@ -47,15 +48,17 @@ namespace VPM.Windows
         private ObservableCollection<HubFileViewModel> _currentFiles;
         private ObservableCollection<HubFileViewModel> _currentDependencies;
 
-        public HubBrowserWindow(string destinationFolder, IEnumerable<string> localPackageNames = null)
+        public HubBrowserWindow(string destinationFolder, Dictionary<string, string> localPackagePaths = null)
         {
             InitializeComponent();
             
             _hubService = new HubService();
             _destinationFolder = destinationFolder;
-            _localPackages = new HashSet<string>(
-                localPackageNames ?? Enumerable.Empty<string>(), 
-                StringComparer.OrdinalIgnoreCase);
+            _localPackagePaths = localPackagePaths ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            
+            // Derive VaM folder from destination folder (go up from AddonPackages or AllPackages)
+            _vamFolder = Path.GetDirectoryName(destinationFolder);
+            
             _currentFiles = new ObservableCollection<HubFileViewModel>();
             _currentDependencies = new ObservableCollection<HubFileViewModel>();
 
@@ -187,8 +190,9 @@ namespace VPM.Windows
                 if (string.IsNullOrEmpty(packageName))
                     continue;
 
-                // Check if we have this package
-                if (_localPackages.Contains(packageName) || _localPackages.Contains(packageName + ".var"))
+                // Check if we have this package - verify file actually exists
+                var localPath = FindLocalPackage(packageName);
+                if (localPath != null)
                 {
                     resource.InLibrary = true;
                 }
@@ -207,7 +211,17 @@ namespace VPM.Windows
 
         private string GetPackageGroupName(string packageName)
         {
-            var name = packageName.Replace(".var", "");
+            var name = packageName;
+            
+            // Remove .var extension
+            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 4);
+            
+            // Remove .latest suffix
+            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 7);
+            
+            // Remove version number (digits at the end)
             var lastDot = name.LastIndexOf('.');
             if (lastDot > 0)
             {
@@ -223,7 +237,7 @@ namespace VPM.Windows
         private int GetHighestLocalVersion(string groupName)
         {
             int highest = 0;
-            foreach (var pkg in _localPackages)
+            foreach (var pkg in _localPackagePaths.Keys)
             {
                 var name = pkg.Replace(".var", "");
                 if (name.StartsWith(groupName + ".", StringComparison.OrdinalIgnoreCase))
@@ -236,6 +250,62 @@ namespace VPM.Windows
                 }
             }
             return highest;
+        }
+        
+        /// <summary>
+        /// Find a local package by name, checking if the file actually exists.
+        /// Supports finding any version of a package (for .latest dependencies).
+        /// </summary>
+        /// <param name="packageName">Package name to find</param>
+        /// <returns>Full path to the package file if found, null otherwise</returns>
+        private string FindLocalPackage(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName))
+                return null;
+            
+            var cleanName = packageName.Replace(".var", "");
+            
+            // First, try exact match in our known packages
+            if (_localPackagePaths.TryGetValue(cleanName, out var exactPath))
+            {
+                if (File.Exists(exactPath))
+                    return exactPath;
+            }
+            
+            // Try with .var extension
+            if (_localPackagePaths.TryGetValue(cleanName + ".var", out exactPath))
+            {
+                if (File.Exists(exactPath))
+                    return exactPath;
+            }
+            
+            // For .latest or version-flexible matching, find any version of this package
+            var basePackage = GetBasePackageName(cleanName);
+            
+            // Find matching packages - must be basePackage.{version} where version is numeric
+            var matchingEntry = _localPackagePaths
+                .Where(kvp => {
+                    var name = kvp.Key.Replace(".var", "");
+                    if (!name.StartsWith(basePackage + ".", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                    // Ensure what follows is a version number
+                    var suffix = name.Substring(basePackage.Length + 1);
+                    return int.TryParse(suffix, out _);
+                })
+                .OrderByDescending(kvp => {
+                    // Get highest version
+                    var name = kvp.Key.Replace(".var", "");
+                    var suffix = name.Substring(basePackage.Length + 1);
+                    return int.TryParse(suffix, out var v) ? v : 0;
+                })
+                .FirstOrDefault();
+            
+            if (!string.IsNullOrEmpty(matchingEntry.Value) && File.Exists(matchingEntry.Value))
+            {
+                return matchingEntry.Value;
+            }
+            
+            return null;
         }
 
         #endregion
@@ -472,26 +542,18 @@ namespace VPM.Windows
             var filename = file.Filename;
             var downloadUrl = file.EffectiveDownloadUrl;
             
-            Debug.WriteLine($"[HubBrowser] CreateFileViewModel: {filename} (isDependency={isDependency})");
-            Debug.WriteLine($"[HubBrowser]   EffectiveDownloadUrl: {downloadUrl}");
-            Debug.WriteLine($"[HubBrowser]   LatestVersion from API: '{file.LatestVersion}'");
-            Debug.WriteLine($"[HubBrowser]   LatestUrl from API: '{file.LatestUrl}'");
             
             // Check for .latest at the end or .latest. in the middle
             if (filename.Contains(".latest"))
             {
-                Debug.WriteLine($"[HubBrowser]   Filename contains .latest, attempting to resolve...");
                 
                 // Try to get version from LatestVersion property first
                 var latestVersion = file.LatestVersion;
-                Debug.WriteLine($"[HubBrowser]   LatestVersion property: '{latestVersion}'");
                 
                 // If not available, try to extract from LatestUrl
                 if (string.IsNullOrEmpty(latestVersion) && !string.IsNullOrEmpty(file.LatestUrl))
                 {
-                    Debug.WriteLine($"[HubBrowser]   LatestVersion empty, trying to extract from LatestUrl...");
                     latestVersion = ExtractVersionFromUrl(file.LatestUrl, file.Filename);
-                    Debug.WriteLine($"[HubBrowser]   Extracted version: '{latestVersion}'");
                 }
                 
                 // If we found a version, replace .latest with actual version
@@ -508,18 +570,15 @@ namespace VPM.Windows
                         // Replace .latest at the end
                         filename = filename.Replace(".latest", $".{latestVersion}");
                     }
-                    Debug.WriteLine($"[HubBrowser]   Resolved filename: {oldFilename} -> {filename}");
                     
                     // Use LatestUrl if available
                     if (!string.IsNullOrEmpty(file.LatestUrl))
                     {
                         downloadUrl = file.LatestUrl;
-                        Debug.WriteLine($"[HubBrowser]   Using LatestUrl for download: {downloadUrl}");
                     }
                 }
                 else
                 {
-                    Debug.WriteLine($"[HubBrowser]   WARNING: Could not resolve .latest version!");
                 }
             }
             
@@ -533,61 +592,68 @@ namespace VPM.Windows
                 HubFile = file
             };
             
-            // Check if already downloaded - check both original and resolved names
+            // Check if already downloaded - use FindLocalPackage which verifies file existence
             var packageName = filename.Replace(".var", "");
             var originalPackageName = file.PackageName;
             
-            Debug.WriteLine($"[HubBrowser]   Checking if installed:");
-            Debug.WriteLine($"[HubBrowser]     Resolved package name: {packageName}");
-            Debug.WriteLine($"[HubBrowser]     Original package name: {originalPackageName}");
             
-            // Find local path if installed
-            string localPath = null;
-            if (_localPackages.Contains(packageName))
+            // Find local path if installed - try resolved name first, then original
+            var localPath = FindLocalPackage(packageName);
+            if (localPath == null && packageName != originalPackageName)
             {
-                localPath = Path.Combine(_destinationFolder, packageName + ".var");
-                Debug.WriteLine($"[HubBrowser]     FOUND: Exact match for resolved name: {packageName}");
+                localPath = FindLocalPackage(originalPackageName);
             }
-            else if (_localPackages.Contains(originalPackageName))
+            
+            if (localPath != null)
             {
-                localPath = Path.Combine(_destinationFolder, originalPackageName + ".var");
-                Debug.WriteLine($"[HubBrowser]     FOUND: Exact match for original name: {originalPackageName}");
-            }
-            else
-            {
-                // Check for any version of this package (for .latest deps)
-                var basePackage = GetBasePackageName(originalPackageName);
-                Debug.WriteLine($"[HubBrowser]     No exact match, checking for any version with base: {basePackage}");
+                vm.IsInstalled = true;
+                vm.LocalPath = localPath;
                 
-                var matchingPackage = _localPackages.FirstOrDefault(p => p.StartsWith(basePackage + "."));
-                if (matchingPackage != null)
+                // Check if there's an update available
+                // Get local version from the found package path
+                var localPackageName = Path.GetFileNameWithoutExtension(localPath);
+                var localVersion = ExtractVersionNumber(localPackageName);
+                
+                // Get latest version from Hub API
+                // Try multiple sources: LatestVersion property, Version property, or extract from filename
+                int hubLatestVersion = -1;
+                
+                // 1. Try LatestVersion property (used for dependencies)
+                if (!string.IsNullOrEmpty(file.LatestVersion) && int.TryParse(file.LatestVersion, out var parsedLatest))
                 {
-                    localPath = Path.Combine(_destinationFolder, matchingPackage + ".var");
-                    Debug.WriteLine($"[HubBrowser]     FOUND: Version match: {matchingPackage}");
-                    packageName = matchingPackage;
+                    hubLatestVersion = parsedLatest;
+                }
+                // 2. Try Version property (used for main package files)
+                else if (!string.IsNullOrEmpty(file.Version) && int.TryParse(file.Version, out var parsedVersion))
+                {
+                    hubLatestVersion = parsedVersion;
+                }
+                // 3. Extract from the Hub filename (the filename on Hub represents the latest version)
+                else
+                {
+                    hubLatestVersion = ExtractVersionNumber(file.Filename);
+                }
+                
+                
+                if (hubLatestVersion > 0 && localVersion > 0 && hubLatestVersion > localVersion)
+                {
+                    // Update available!
+                    vm.Status = $"Update {localVersion} → {hubLatestVersion}";
+                    vm.StatusColor = new SolidColorBrush(Colors.Orange);
+                    vm.CanDownload = true;
+                    vm.ButtonText = "⬆";
+                    vm.HasUpdate = true;
                 }
                 else
                 {
-                    Debug.WriteLine($"[HubBrowser]     NOT FOUND: No matching package in library");
-                    // Debug: show some local packages for comparison
-                    var samplePackages = _localPackages.Where(p => p.StartsWith(basePackage.Split('.')[0] + ".")).Take(5);
-                    Debug.WriteLine($"[HubBrowser]     Sample packages from same creator: {string.Join(", ", samplePackages)}");
+                    vm.Status = "✓ In Library";
+                    vm.StatusColor = new SolidColorBrush(Colors.LimeGreen);
+                    vm.CanDownload = false;
+                    vm.ButtonText = "✓";
                 }
-            }
-            
-            if (localPath != null && (File.Exists(localPath) || _localPackages.Contains(packageName)))
-            {
-                Debug.WriteLine($"[HubBrowser]     Status: IN LIBRARY at {localPath}");
-                vm.Status = "✓ In Library";
-                vm.StatusColor = new SolidColorBrush(Colors.LimeGreen);
-                vm.CanDownload = false;
-                vm.ButtonText = "✓";
-                vm.IsInstalled = true;
-                vm.LocalPath = localPath;
             }
             else if (string.IsNullOrEmpty(vm.DownloadUrl))
             {
-                Debug.WriteLine($"[HubBrowser]     Status: NOT AVAILABLE (no download URL)");
                 vm.Status = "Not available";
                 vm.StatusColor = new SolidColorBrush(Colors.Gray);
                 vm.CanDownload = false;
@@ -595,7 +661,6 @@ namespace VPM.Windows
             }
             else
             {
-                Debug.WriteLine($"[HubBrowser]     Status: READY TO DOWNLOAD");
                 vm.Status = "Ready to download";
                 vm.StatusColor = new SolidColorBrush(Colors.White);
                 vm.CanDownload = true;
@@ -606,17 +671,70 @@ namespace VPM.Windows
         }
         
         /// <summary>
+        /// Extracts the version number from a package name
+        /// </summary>
+        private int ExtractVersionNumber(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName))
+                return -1;
+            
+            var name = packageName;
+            
+            // Remove .var extension if present
+            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 4);
+            
+            // Handle .latest - no numeric version
+            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                return -1;
+            
+            // Get version number from the end
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot > 0)
+            {
+                var afterDot = name.Substring(lastDot + 1);
+                if (int.TryParse(afterDot, out var version))
+                {
+                    return version;
+                }
+            }
+            
+            return -1;
+        }
+        
+        /// <summary>
         /// Gets the base package name without version (Creator.PackageName)
+        /// Uses the same logic as VB's PackageIDToPackageGroupID:
+        /// - Removes .{version} (digits) from the end
+        /// - Removes .latest from the end
         /// </summary>
         private string GetBasePackageName(string packageName)
         {
-            // Package format: Creator.PackageName.Version
-            var parts = packageName.Split('.');
-            if (parts.Length >= 2)
+            if (string.IsNullOrEmpty(packageName))
+                return packageName;
+                
+            var name = packageName;
+            
+            // Remove .var extension if present
+            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 4);
+            
+            // Remove .latest suffix if present
+            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 7);
+            
+            // Remove version number (digits at the end after last dot)
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot > 0)
             {
-                return $"{parts[0]}.{parts[1]}";
+                var afterDot = name.Substring(lastDot + 1);
+                if (int.TryParse(afterDot, out _))
+                {
+                    return name.Substring(0, lastDot);
+                }
             }
-            return packageName;
+            
+            return name;
         }
         
         /// <summary>
@@ -657,7 +775,7 @@ namespace VPM.Windows
                 Debug.WriteLine($"[HubBrowser]   Base package name: {baseName}");
                 
                 // Extract version - everything after the base name
-                if (urlFilename.StartsWith(baseName + "."))
+                if (urlFilename.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase))
                 {
                     var version = urlFilename.Substring(baseName.Length + 1);
                     Debug.WriteLine($"[HubBrowser]   Extracted version string: {version}");
@@ -743,8 +861,15 @@ namespace VPM.Windows
         {
             if (sender is Button button && button.Tag is HubFileViewModel file)
             {
-                // If already installed, open in Explorer
-                if (file.IsInstalled)
+                // If has update available, download the update
+                if (file.HasUpdate && file.CanDownload)
+                {
+                    await DownloadFileAsync(file);
+                    return;
+                }
+                
+                // If already installed (no update), open in Explorer
+                if (file.IsInstalled && !file.HasUpdate)
                 {
                     if (!string.IsNullOrEmpty(file.LocalPath) && File.Exists(file.LocalPath))
                     {
@@ -801,48 +926,81 @@ namespace VPM.Windows
 
         private async Task DownloadFileAsync(HubFileViewModel file)
         {
-            if (!file.CanDownload || string.IsNullOrEmpty(file.DownloadUrl))
+            // Determine which URL to use:
+            // - For dependency updates: use LatestUrl if available
+            // - For main package updates: DownloadUrl already points to latest version
+            // - Otherwise: use DownloadUrl
+            var downloadUrl = file.HasUpdate && !string.IsNullOrEmpty(file.LatestUrl) 
+                ? file.LatestUrl 
+                : file.DownloadUrl;
+                
+            if (!file.CanDownload || string.IsNullOrEmpty(downloadUrl))
                 return;
 
             try
             {
-                file.Status = "Downloading...";
+                file.Status = file.HasUpdate ? "Updating..." : "Downloading...";
                 file.StatusColor = new SolidColorBrush(Colors.Yellow);
                 file.CanDownload = false;
                 file.ButtonText = "...";
 
-                // Pass just the destination folder - HubService will add the filename
-                // Use the resolved filename (with actual version instead of .latest)
-                var packageName = file.Filename.Replace(".var", "");
+                // Get the package name from the download URL
+                // This ensures we get the correct version for both new downloads and updates
+                string packageName;
+                try
+                {
+                    var uri = new Uri(downloadUrl);
+                    var urlFilename = Path.GetFileName(uri.LocalPath);
+                    if (!string.IsNullOrEmpty(urlFilename) && urlFilename.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                    {
+                        packageName = urlFilename.Replace(".var", "");
+                    }
+                    else
+                    {
+                        packageName = file.Filename.Replace(".var", "");
+                    }
+                }
+                catch
+                {
+                    packageName = file.Filename.Replace(".var", "");
+                }
                 
                 var progress = new Progress<HubDownloadProgress>(p =>
                 {
                     if (p.IsDownloading)
                     {
                         var percent = p.TotalBytes > 0 ? (p.DownloadedBytes * 100 / p.TotalBytes) : 0;
-                        file.Status = $"Downloading... {percent}%";
+                        file.Status = file.HasUpdate ? $"Updating... {percent}%" : $"Downloading... {percent}%";
                     }
                 });
 
                 var success = await _hubService.DownloadPackageAsync(
-                    file.DownloadUrl, 
+                    downloadUrl, 
                     _destinationFolder,  // Pass folder, not full path
                     packageName,         // Package name without .var
                     progress);
 
                 if (success)
                 {
-                    file.Status = "✓ Downloaded";
+                    var downloadedFilename = packageName + ".var";
+                    var downloadedPath = Path.Combine(_destinationFolder, downloadedFilename);
+                    
+                    file.Status = file.HasUpdate ? "✓ Updated" : "✓ Downloaded";
                     file.StatusColor = new SolidColorBrush(Colors.LimeGreen);
                     file.ButtonText = "✓";
                     file.IsInstalled = true;
-                    file.LocalPath = Path.Combine(_destinationFolder, file.Filename);
-                    _localPackages.Add(packageName);
+                    file.HasUpdate = false;  // Clear update flag after successful update
+                    file.LocalPath = downloadedPath;
+                    file.Filename = downloadedFilename;  // Update filename to reflect new version
+                    
+                    // Add to local packages dictionary for future lookups
+                    _localPackagePaths[packageName] = downloadedPath;
                     
                     // Update the resource's InLibrary status so the main grid updates instantly
                     if (_currentResource != null)
                     {
                         _currentResource.InLibrary = true;
+                        _currentResource.UpdateAvailable = false;  // Clear update flag
                     }
                 }
                 else
@@ -879,6 +1037,7 @@ namespace VPM.Windows
         private string _buttonText;
         private bool _isDownloading;
         private bool _isInstalled;
+        private bool _hasUpdate;
         private float _progress;
 
         public string Filename { get; set; }
@@ -891,6 +1050,12 @@ namespace VPM.Windows
         public bool AlreadyHave { get; set; }
         public HubFile HubFile { get; set; }
         public string LocalPath { get; set; } // Path to installed file
+        
+        public bool HasUpdate
+        {
+            get => _hasUpdate;
+            set { _hasUpdate = value; OnPropertyChanged(nameof(HasUpdate)); }
+        }
 
         public bool IsInstalled
         {

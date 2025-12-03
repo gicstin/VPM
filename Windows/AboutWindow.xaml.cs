@@ -94,13 +94,13 @@ namespace VPM
             }
         }
 
-        private void SharpCompressLink_Click(object sender, RoutedEventArgs e)
+        private void OpenUrl(string url)
         {
             try
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "https://github.com/adamhathcock/sharpcompress",
+                    FileName = url,
                     UseShellExecute = true
                 });
             }
@@ -108,6 +108,36 @@ namespace VPM
             {
                 System.Diagnostics.Debug.WriteLine($"Error opening link: {ex.Message}");
             }
+        }
+
+        private void GitHubButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/gicstin/VPM");
+        }
+
+        private void SharpCompressLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/adamhathcock/sharpcompress");
+        }
+
+        private void NetVipsLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/kleber-silveira/net-vips");
+        }
+
+        private void GraphShapeLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/KeRNeLith/GraphShape");
+        }
+
+        private void RecyclableMemoryStreamLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/microsoft/Microsoft.IO.RecyclableMemoryStream");
+        }
+
+        private void ImageListViewLink_Click(object sender, RoutedEventArgs e)
+        {
+            OpenUrl("https://github.com/oozcitak/imagelistview");
         }
 
         private void CloseButton_Click(object sender, RoutedEventArgs e)

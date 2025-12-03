@@ -60,7 +60,7 @@ namespace VPM
                 
                 // Initialize download queue manager with 2 concurrent downloads
                 _downloadQueueManager?.Dispose();
-                _downloadQueueManager = new DownloadQueueManager(_packageDownloader, maxConcurrentDownloads: 2);
+                _downloadQueueManager = new DownloadQueueManager(_packageDownloader, addonPackagesFolder, maxConcurrentDownloads: 2);
                 _downloadQueueManager.QueueStatusChanged += OnQueueStatusChanged;
                 _downloadQueueManager.DownloadQueued += OnDownloadQueued;
                 _downloadQueueManager.DownloadStarted += OnDownloadStartedInQueue;
@@ -75,108 +75,17 @@ namespace VPM
         }
         
         /// <summary>
-        /// Loads the package download list from GitHub or local fallback
-        /// This method will request network permission if not already granted
+        /// Loads the package download list from local links.txt file
+        /// This method is now a no-op as downloads use Hub and local links.txt
         /// </summary>
-        /// <returns>True if successfully loaded, false otherwise</returns>
-        public async Task<bool> LoadPackageDownloadListAsync()
+        /// <returns>True if package downloader is initialized</returns>
+        public Task<bool> LoadPackageDownloadListAsync()
         {
-            try
-            {
-                if (_packageDownloader == null)
-                    return false;
-                
-                // Subscribe to console output to show retry progress
-                var originalOut = Console.Out;
-                var statusWriter = new StatusWriter(this, originalOut);
-                Console.SetOut(statusWriter);
-                
-                try
-                {
-                    // Use Cloudflare Worker proxy for encrypted database
-                    const string githubUrl = "https://github.com/gicstin/VPM/raw/refs/heads/main/VPM.bin";
-                    var success = await _packageDownloader.LoadEncryptedPackageListAsync(githubUrl);
-                    
-                    // Success or failure is handled by the caller
-                    
-                    return success;
-                }
-                finally
-                {
-                    Console.SetOut(originalOut);
-                }
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            // Downloads now use Hub service and local links.txt file
+            // No encrypted database loading needed
+            return Task.FromResult(_packageDownloader != null);
         }
         
-        /// <summary>
-        /// Custom TextWriter to capture console output and update status bar
-        /// </summary>
-        private class StatusWriter : System.IO.TextWriter
-        {
-            private readonly MainWindow _window;
-            private readonly System.IO.TextWriter _originalOut;
-            
-            public StatusWriter(MainWindow window, System.IO.TextWriter originalOut)
-            {
-                _window = window;
-                _originalOut = originalOut;
-            }
-            
-            public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
-            
-            public override void WriteLine(string value)
-            {
-                // Update status bar for specific messages
-                if (value != null)
-                {
-                    if (value.Contains("[PackageDownloader]"))
-                    {
-                        // Extract the message part
-                        var message = value.Substring(value.IndexOf("]") + 1).Trim();
-                        
-                        // Update status bar on UI thread
-                        _window.Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            if (message.Contains("Retry attempt"))
-                            {
-                                _window.SetStatus(message);
-                            }
-                            else if (message.Contains("Waiting") && message.Contains("firewall"))
-                            {
-                                _window.SetStatus("Waiting for firewall approval...");
-                            }
-                        }));
-                    }
-                    else if (value.Contains("[EncryptedDB]"))
-                    {
-                        // Update status for key database loading steps
-                        if (value.Contains("Downloading") || value.Contains("Decrypting") || 
-                            value.Contains("Decompressing") || value.Contains("Parsing"))
-                        {
-                            var message = value.Substring(value.IndexOf("]") + 1).Trim();
-                            _window.Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                _window.SetStatus(message);
-                            }));
-                        }
-                    }
-                }
-                
-                // Write to both debug output AND the actual console
-                System.Diagnostics.Debug.WriteLine(value);
-                _originalOut?.WriteLine(value);
-            }
-            
-            public override void Write(string value)
-            {
-                System.Diagnostics.Debug.Write(value);
-                _originalOut?.Write(value);
-            }
-        }
         
         #endregion
         

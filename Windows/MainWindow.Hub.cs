@@ -20,10 +20,28 @@ namespace VPM
                 // Get the destination folder (AddonPackages or AllPackages)
                 var destinationFolder = GetHubDownloadFolder();
                 
-                // Get list of local package names for library status checking
-                var localPackageNames = Packages?.Select(p => p.Name).ToList();
+                // Get dictionary of local package names to their file paths for library status checking
+                var localPackagePaths = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (Packages != null && _packageManager?.PackageMetadata != null)
+                {
+                    foreach (var package in Packages)
+                    {
+                        if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) 
+                            && !string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            // Use package name (without .var) as key
+                            var name = package.Name.EndsWith(".var", StringComparison.OrdinalIgnoreCase) 
+                                ? package.Name.Substring(0, package.Name.Length - 4) 
+                                : package.Name;
+                            if (!localPackagePaths.ContainsKey(name))
+                            {
+                                localPackagePaths[name] = metadata.FilePath;
+                            }
+                        }
+                    }
+                }
                 
-                var hubWindow = new HubBrowserWindow(destinationFolder, localPackageNames);
+                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths);
                 hubWindow.Owner = this;
                 hubWindow.ShowDialog();
                 

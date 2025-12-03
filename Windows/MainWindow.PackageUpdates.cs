@@ -15,6 +15,7 @@ namespace VPM
         #region Fields
         
         private PackageUpdateChecker _updateChecker;
+        private HubService _hubService;
         private List<string> _availableUpdatePackages;
         private List<PackageUpdateInfo> _cachedUpdateInfo;  // Cache the full update info
         private int _updateCount = 0;
@@ -31,12 +32,13 @@ namespace VPM
         {
             try
             {
-                if (_packageDownloader == null)
+                // Initialize HubService if not already done
+                if (_hubService == null)
                 {
-                    return;
+                    _hubService = new HubService();
                 }
                 
-                _updateChecker = new PackageUpdateChecker(_packageDownloader);
+                _updateChecker = new PackageUpdateChecker(_hubService);
                 _availableUpdatePackages = new List<string>();
             }
             catch (Exception)
@@ -62,23 +64,30 @@ namespace VPM
                     InitializeUpdateChecker();
                 }
                 
-                if (_updateChecker == null || _packageDownloader == null)
+                if (_updateChecker == null)
                 {
                     return;
                 }
                 
-                // Ensure online database is loaded
-                int packageCount = _packageDownloader.GetPackageCount();
-                if (packageCount == 0)
-                {
-                    bool loaded = await LoadPackageDownloadListAsync();
-                    
-                    if (!loaded)
-                    {
-                        return;
-                    }
-                }
                 SetStatus("Checking for package updates...");
+                
+                // Load package source (local links.txt or Hub resources)
+                var sourceLoaded = await _updateChecker.LoadPackageSourceAsync();
+                if (!sourceLoaded)
+                {
+                    SetStatus("Failed to load package source for update checking");
+                    return;
+                }
+                
+                // Show which source is being used
+                if (_updateChecker.IsUsingLocalLinks)
+                {
+                    SetStatus("Checking for updates using local links.txt...");
+                }
+                else
+                {
+                    SetStatus("Checking for updates using Hub resources...");
+                }
                 
                 // Use the already-loaded package list from the main table (in-memory, very fast!)
                 // This includes both Loaded and Available packages
@@ -110,13 +119,14 @@ namespace VPM
                     UpdateCheckUpdatesButton();
                 });
                 
+                var sourceInfo = _updateChecker.IsUsingLocalLinks ? " (from links.txt)" : " (from Hub)";
                 if (_updateCount > 0)
                 {
-                    SetStatus($"Found {_updateCount} package update(s) available");
+                    SetStatus($"Found {_updateCount} package update(s) available{sourceInfo}");
                 }
                 else
                 {
-                    SetStatus("All packages are up to date");
+                    SetStatus($"All packages are up to date{sourceInfo}");
                 }
             }
             catch (Exception)
@@ -126,22 +136,13 @@ namespace VPM
         }
         
         /// <summary>
-        /// Updates the Check Updates button text based on results
+        /// Updates the Check Updates button text with the update count
         /// </summary>
         private void UpdateCheckUpdatesButton()
         {
             try
             {
-                if (_updateCount > 0)
-                {
-                    CheckUpdatesToolbarButton.Header = $"✓ Updates Available ({_updateCount})";
-                    CheckUpdatesToolbarButton.ToolTip = $"Click to view and download {_updateCount} package update(s)";
-                }
-                else
-                {
-                    CheckUpdatesToolbarButton.Header = "✓ No Updates";
-                    CheckUpdatesToolbarButton.ToolTip = "All packages are up to date";
-                }
+                // Button removed from menu - this method is kept for compatibility
             }
             catch (Exception)
             {
@@ -216,21 +217,14 @@ namespace VPM
         {
             try
             {
-                // Track if this is the first click (checking for updates)
-                bool isFirstClick = CheckUpdatesToolbarButton.Header.ToString().Contains("Check for Updates");
+                // Button removed from menu - this method is kept for compatibility
+                SetStatus("Checking for updates...");
+                await CheckForPackageUpdatesAsync();
                 
-                // If button shows "Check for Updates", run the check
-                if (isFirstClick)
+                // If no updates found, return early
+                if (_availableUpdatePackages == null || _availableUpdatePackages.Count == 0)
                 {
-                    SetStatus("Checking for updates...");
-                    await CheckForPackageUpdatesAsync();
-                    
-                    // If no updates found, return early
-                    if (_availableUpdatePackages == null || _availableUpdatePackages.Count == 0)
-                    {
-                        return;
-                    }
-                    // Continue to open the window below
+                    return;
                 }
                 
                 // Otherwise, button shows results - open downloads window if updates available

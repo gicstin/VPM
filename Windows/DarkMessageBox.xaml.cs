@@ -1,5 +1,6 @@
 ﻿using System.Windows;
 using System.Windows.Input;
+using System.Windows.Controls;
 using VPM.Services;
 
 namespace VPM
@@ -101,6 +102,15 @@ namespace VPM
                 Result = MessageBoxResult.Cancel;
             
             Close();
+        }
+
+        private void MessageText_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (sender is TextBox textBox)
+            {
+                textBox.ScrollToVerticalOffset(textBox.VerticalOffset - e.Delta);
+                e.Handled = true;
+            }
         }
     }
 }

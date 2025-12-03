@@ -759,6 +759,12 @@
                                                             <Setter Property="Background" Value="#FF2A2A2A" />
                                                             <Setter Property="Foreground" Value="#FF888888" />
                                                         </DataTrigger>
+                                                        <!-- HasUpdate trigger must come after IsInstalled to take priority -->
+                                                        <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                            <Setter Property="Background" Value="#FFFF8C00" />
+                                                            <Setter Property="Foreground" Value="White" />
+                                                            <Setter Property="ToolTip" Value="Download Update" />
+                                                        </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </Button.Style>
@@ -866,6 +872,12 @@
                                                         <DataTrigger Binding="{Binding CanDownload}" Value="False">
                                                             <Setter Property="Background" Value="#FF2A2A2A" />
                                                             <Setter Property="Foreground" Value="#FF888888" />
+                                                        </DataTrigger>
+                                                        <!-- HasUpdate trigger must come after IsInstalled to take priority -->
+                                                        <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                            <Setter Property="Background" Value="#FFFF8C00" />
+                                                            <Setter Property="Foreground" Value="White" />
+                                                            <Setter Property="ToolTip" Value="Download Update" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ namespace VPM.Services
     public class DownloadQueueManager : IDisposable
     {
         private readonly PackageDownloader _downloader;
+        private readonly string _destinationFolder;
         private readonly Queue<QueuedDownload> _downloadQueue;
         private readonly ConcurrentDictionary<string, QueuedDownload> _activeDownloads;
         private readonly SemaphoreSlim _downloadSemaphore;
@@ -55,9 +57,10 @@ namespace VPM.Services
         /// </summary>
         public IEnumerable<QueuedDownload> ActiveDownloads => _activeDownloads.Values.ToArray();
         
-        public DownloadQueueManager(PackageDownloader downloader, int maxConcurrentDownloads = 2)
+        public DownloadQueueManager(PackageDownloader downloader, string destinationFolder = null, int maxConcurrentDownloads = 2)
         {
             _downloader = downloader ?? throw new ArgumentNullException(nameof(downloader));
+            _destinationFolder = destinationFolder;
             _maxConcurrentDownloads = Math.Max(1, maxConcurrentDownloads);
             _downloadQueue = new Queue<QueuedDownload>();
             _activeDownloads = new ConcurrentDictionary<string, QueuedDownload>();
@@ -295,8 +298,68 @@ namespace VPM.Services
             
             try
             {
-                // Perform the actual download
-                bool success = await _downloader.DownloadPackageAsync(packageName, cts.Token);
+                bool success = false;
+                
+                // Check if we have a direct download URL (from Hub or links.txt)
+                if (queuedDownload.DownloadInfo != null && !string.IsNullOrEmpty(queuedDownload.DownloadInfo.DownloadUrl))
+                {
+                    var downloadUrl = queuedDownload.DownloadInfo.DownloadUrl;
+                    
+                    // If it's a Hub URL, use HubService for download
+                    if (downloadUrl.Contains("hub.virtamate.com", StringComparison.OrdinalIgnoreCase))
+                    {
+                        using (var hubService = new HubService())
+                        {
+                            // Use provided destination folder, or fall back to app folder
+                            var destinationFolder = _destinationFolder ?? System.IO.Path.Combine(
+                                System.IO.Path.GetDirectoryName(_downloader.GetType().Assembly.Location),
+                                "AddonPackages"
+                            );
+                            
+                            // Create a progress handler to report download progress
+                            var progress = new Progress<HubDownloadProgress>(hubProgress =>
+                            {
+                                if (hubProgress.IsDownloading)
+                                {
+                                    // Convert HubDownloadProgress to PackageDownloader format
+                                    var percentage = (int)(hubProgress.Progress * 100);
+                                    _downloader.FireDownloadProgress(
+                                        packageName,
+                                        hubProgress.DownloadedBytes,
+                                        hubProgress.TotalBytes,
+                                        percentage,
+                                        "Hub"
+                                    );
+                                }
+                            });
+                            
+                            success = await hubService.DownloadPackageAsync(
+                                downloadUrl,
+                                destinationFolder,
+                                packageName,
+                                progress,
+                                cts.Token
+                            );
+                            
+                            // Fire the completion event so UI gets updated
+                            if (success)
+                            {
+                                var fileName = System.IO.Path.Combine(destinationFolder, packageName + ".var");
+                                _downloader.FireDownloadCompleted(packageName, fileName, false);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // For other URLs (local links.txt), use PackageDownloader
+                        success = await _downloader.DownloadPackageAsync(packageName, cts.Token);
+                    }
+                }
+                else
+                {
+                    // Fallback to original method (package in downloader cache)
+                    success = await _downloader.DownloadPackageAsync(packageName, cts.Token);
+                }
                 
                 if (success)
                 {

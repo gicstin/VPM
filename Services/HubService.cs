@@ -289,6 +289,33 @@ namespace VPM.Services
             _packageIdToResourceId.TryGetValue(packageName.Replace(".var", ""), out var resourceId);
             return resourceId;
         }
+        
+        /// <summary>
+        /// Get the latest version number for a package group from Hub
+        /// </summary>
+        /// <param name="packageGroupName">Base package name without version</param>
+        /// <returns>Latest version number, or -1 if not found</returns>
+        public int GetLatestVersion(string packageGroupName)
+        {
+            if (_packageGroupToLatestVersion == null)
+                return -1;
+
+            if (_packageGroupToLatestVersion.TryGetValue(packageGroupName, out var latestVersion))
+            {
+                return latestVersion;
+            }
+
+            return -1;
+        }
+        
+        /// <summary>
+        /// Get the count of packages loaded from Hub
+        /// </summary>
+        /// <returns>Number of packages in the Hub index</returns>
+        public int GetPackageCount()
+        {
+            return _packageIdToResourceId?.Count ?? 0;
+        }
 
         #endregion
 
@@ -324,7 +351,10 @@ namespace VPM.Services
                     Progress = 0
                 });
 
+                // Use HttpCompletionOption.ResponseHeadersRead to stream the response
                 using var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                
+                
                 response.EnsureSuccessStatusCode();
 
                 var totalBytes = response.Content.Headers.ContentLength ?? -1;
@@ -378,6 +408,7 @@ namespace VPM.Services
                     }
                 }
 
+
                 progress?.Report(new HubDownloadProgress
                 {
                     PackageName = packageName,
@@ -391,7 +422,6 @@ namespace VPM.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[HubService] Download error for {packageName}: {ex.Message}");
                 progress?.Report(new HubDownloadProgress
                 {
                     PackageName = packageName,
@@ -442,22 +472,24 @@ namespace VPM.Services
 
         private static int ExtractVersion(string packageName)
         {
-            var name = packageName.EndsWith(".var", StringComparison.OrdinalIgnoreCase)
-                ? packageName.Substring(0, packageName.Length - 4)
-                : packageName;
+            var name = packageName;
+            
+            // Remove .var extension
+            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 4);
+            
+            // Handle .latest - return -1 as there's no numeric version
+            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                return -1;
 
-            for (int i = name.Length - 1; i >= 0; i--)
+            // Find version number at the end
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot > 0)
             {
-                if (name[i] == '.')
+                var afterDot = name.Substring(lastDot + 1);
+                if (int.TryParse(afterDot, out var version))
                 {
-                    if (i + 1 < name.Length)
-                    {
-                        var afterDot = name.Substring(i + 1);
-                        if (int.TryParse(afterDot, out var version))
-                        {
-                            return version;
-                        }
-                    }
+                    return version;
                 }
             }
 
@@ -466,22 +498,24 @@ namespace VPM.Services
 
         private static string GetPackageGroupName(string packageName)
         {
-            var name = packageName.EndsWith(".var", StringComparison.OrdinalIgnoreCase)
-                ? packageName.Substring(0, packageName.Length - 4)
-                : packageName;
+            var name = packageName;
+            
+            // Remove .var extension
+            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 4);
+            
+            // Remove .latest suffix
+            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - 7);
 
-            for (int i = name.Length - 1; i >= 0; i--)
+            // Remove version number (digits at the end)
+            var lastDot = name.LastIndexOf('.');
+            if (lastDot > 0)
             {
-                if (name[i] == '.')
+                var afterDot = name.Substring(lastDot + 1);
+                if (int.TryParse(afterDot, out _))
                 {
-                    if (i + 1 < name.Length)
-                    {
-                        var afterDot = name.Substring(i + 1);
-                        if (int.TryParse(afterDot, out _))
-                        {
-                            return name.Substring(0, i);
-                        }
-                    }
+                    return name.Substring(0, lastDot);
                 }
             }
 

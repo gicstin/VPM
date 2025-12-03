@@ -1,0 +1,480 @@
+<Window x:Class="VPM.Windows.DependencyGraphWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:graphshape="clr-namespace:GraphShape.Controls;assembly=GraphShape.Controls"
+        xmlns:local="clr-namespace:VPM.Windows"
+        Title="Dependency Graph" 
+        Height="850" Width="1300"
+        MinHeight="600" MinWidth="800"
+        WindowStartupLocation="CenterOwner"
+        Background="#1E1E1E"
+        WindowStyle="SingleBorderWindow">
+    
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" GlassFrameThickness="0" CornerRadius="0" ResizeBorderThickness="5"/>
+    </WindowChrome.WindowChrome>
+    
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVisibilityConverter"/>
+        
+        <!-- Dark Theme ComboBox Style -->
+        <Style x:Key="DarkComboBox" TargetType="ComboBox">
+            <Setter Property="Background" Value="#333333"/>
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="1"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="3">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition/>
+                                                    <ColumnDefinition Width="20"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Path x:Name="Arrow" Grid.Column="1"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                      Data="M 0 0 L 4 4 L 8 0 Z" Fill="#A0A0A0"/>
+                                            </Grid>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ContentSite"
+                                              Margin="6,3,23,3"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Center"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              IsHitTestVisible="False"
+                                              TextBlock.Foreground="#E0E0E0"/>
+                            <Popup x:Name="Popup" AllowsTransparency="True" Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="#2B2B2B" BorderBrush="#555555" BorderThickness="1" CornerRadius="3">
+                                    <ScrollViewer Margin="2" SnapsToDevicePixels="True">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Dark Theme ComboBoxItem Style -->
+        <Style x:Key="DarkComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}" CornerRadius="2">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#404040"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#4A4A4A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Dark Theme Button Style -->
+        <Style x:Key="DarkButton" TargetType="Button">
+            <Setter Property="Background" Value="#333333"/>
+            <Setter Property="Foreground" Value="#E0E0E0"/>
+            <Setter Property="BorderBrush" Value="#555555"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#454545"/>
+                                <Setter TargetName="border" Property="BorderBrush" Value="#777777"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#555555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Title Bar Button Style -->
+        <Style x:Key="TitleBarButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#A0A0A0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="46"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#3F3F3F"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#505050"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Title Bar Close Button Style -->
+        <Style x:Key="TitleBarCloseButton" TargetType="Button" BasedOn="{StaticResource TitleBarButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E81123"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F1707A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Custom Title Bar -->
+        <Border Grid.Row="0" Background="#252526">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Title Bar Row -->
+                <Grid Grid.Row="0" Background="#1E1E1E" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="12,0,0,0">
+                        <TextBlock Text="📊 " Foreground="#E0E0E0" VerticalAlignment="Center" FontSize="14"/>
+                        <TextBlock Text="Dependency Graph - " Foreground="#A0A0A0" VerticalAlignment="Center" FontSize="13"/>
+                        <TextBlock x:Name="PackageNameText" Text="" Foreground="#007ACC" VerticalAlignment="Center" FontSize="13" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    
+                    <!-- Window Controls -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="─" Click="MinimizeWindow_Click" Style="{StaticResource TitleBarButton}" ToolTip="Minimize"/>
+                        <Button x:Name="MaximizeRestoreButton" Content="□" Click="MaximizeRestoreWindow_Click" Style="{StaticResource TitleBarButton}" ToolTip="Maximize"/>
+                        <Button Content="✕" Click="CloseWindow_Click" Style="{StaticResource TitleBarCloseButton}" ToolTip="Close"/>
+                    </StackPanel>
+                </Grid>
+                
+                <!-- Controls Row -->
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="12,8,12,8">
+                    <TextBlock Text="Layout:" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <ComboBox x:Name="LayoutComboBox" Width="120" SelectedIndex="0" SelectionChanged="LayoutComboBox_SelectionChanged"
+                              Style="{StaticResource DarkComboBox}" ItemContainerStyle="{StaticResource DarkComboBoxItem}">
+                        <ComboBoxItem Content="Grid"/>
+                        <ComboBoxItem Content="Sugiyama"/>
+                        <ComboBoxItem Content="Tree"/>
+                        <ComboBoxItem Content="Circular"/>
+                        <ComboBoxItem Content="FR"/>
+                        <ComboBoxItem Content="CompoundFDP"/>
+                    </ComboBox>
+                    
+                    <TextBlock Text="Depth:" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                    <ComboBox x:Name="DepthComboBox" Width="50" SelectedIndex="0" SelectionChanged="DepthComboBox_SelectionChanged"
+                              Style="{StaticResource DarkComboBox}" ItemContainerStyle="{StaticResource DarkComboBoxItem}">
+                        <ComboBoxItem Content="1"/>
+                        <ComboBoxItem Content="2"/>
+                        <ComboBoxItem Content="3"/>
+                    </ComboBox>
+                    
+                    <TextBlock Text="View:" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                    <ComboBox x:Name="ViewModeComboBox" Width="110" SelectedIndex="0" SelectionChanged="ViewModeComboBox_SelectionChanged"
+                              Style="{StaticResource DarkComboBox}" ItemContainerStyle="{StaticResource DarkComboBoxItem}">
+                        <ComboBoxItem Content="Dependencies"/>
+                        <ComboBoxItem Content="Dependents"/>
+                        <ComboBoxItem Content="Both"/>
+                    </ComboBox>
+                    
+                    <Button Content="🔄 Relayout" Margin="16,0,0,0" Padding="10,4" Click="Relayout_Click" Style="{StaticResource DarkButton}"/>
+                    <Button Content="➕" Width="28" Height="28" Margin="12,0,4,0" Click="ZoomIn_Click" ToolTip="Zoom In" Style="{StaticResource DarkButton}"/>
+                    <Button Content="➖" Width="28" Height="28" Margin="0,0,4,0" Click="ZoomOut_Click" ToolTip="Zoom Out" Style="{StaticResource DarkButton}"/>
+                    <Button Content="⟲" Width="28" Height="28" Click="ResetView_Click" ToolTip="Reset View" Style="{StaticResource DarkButton}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+        <!-- Graph Area -->
+        <Grid Grid.Row="1">
+            <Border x:Name="GraphAreaBorder" Background="#1A1A1A" ClipToBounds="True"
+                    MouseWheel="GraphArea_MouseWheel"
+                    MouseDown="GraphArea_MouseDown"
+                    MouseUp="GraphArea_MouseUp"
+                    MouseMove="GraphArea_MouseMove">
+                <Canvas Background="Transparent">
+                <!-- Grid Layout ItemsControl with same transform as GraphLayout -->
+                <ItemsControl x:Name="GridItemsControl" 
+                              Background="Transparent"
+                              Visibility="Visible">
+                    <ItemsControl.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform x:Name="GridZoomTransform" ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform x:Name="GridPanTransform" X="0" Y="0"/>
+                        </TransformGroup>
+                    </ItemsControl.RenderTransform>
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" Margin="20" MaxWidth="1400"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#2D2D2D" 
+                                    BorderThickness="2" 
+                                    CornerRadius="6" 
+                                    Padding="6"
+                                    Margin="8"
+                                    Cursor="Hand"
+                                    Width="120"
+                                    BorderBrush="{Binding BorderColor}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="2" Opacity="0.3" Color="Black"/>
+                                </Border.Effect>
+                                <StackPanel>
+                                    <!-- Preview Image (1:1 ratio) -->
+                                    <Border Width="108" Height="108" 
+                                            CornerRadius="4" 
+                                            Background="#1A1A1A"
+                                            Margin="0,0,0,6">
+                                        <Border.Clip>
+                                            <RectangleGeometry Rect="0,0,108,108" RadiusX="4" RadiusY="4"/>
+                                        </Border.Clip>
+                                        <Grid>
+                                            <TextBlock Text="📦" FontSize="32" 
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Opacity="0.3"
+                                                       Visibility="{Binding HasPreviewImage, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                            <Image Source="{Binding PreviewImage}" 
+                                                   Stretch="UniformToFill"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   Visibility="{Binding HasPreviewImage, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Text="{Binding DisplayName}" 
+                                               Foreground="White" FontSize="11" FontWeight="SemiBold" 
+                                               TextTrimming="CharacterEllipsis" 
+                                               TextAlignment="Center"
+                                               ToolTip="{Binding FullName}"/>
+                                    <TextBlock Text="{Binding SubText}" 
+                                               Foreground="#808080" FontSize="9" 
+                                               TextTrimming="CharacterEllipsis"
+                                               TextAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                
+                <!-- GraphShape Layout (for tree/hierarchical views with edges) -->
+                <local:PocGraphLayout x:Name="GraphLayout"
+                                      Visibility="Collapsed"
+                                      MinWidth="1500"
+                                      MinHeight="1000"
+                                      Background="Transparent"
+                                      HighlightAlgorithmType="Simple"
+                                      OverlapRemovalAlgorithmType="FSA">
+                    <local:PocGraphLayout.RenderTransform>
+                        <TransformGroup>
+                            <ScaleTransform x:Name="ZoomTransform" ScaleX="1" ScaleY="1"/>
+                            <TranslateTransform x:Name="PanTransform" X="0" Y="0"/>
+                        </TransformGroup>
+                    </local:PocGraphLayout.RenderTransform>
+                    <local:PocGraphLayout.Resources>
+                        <!-- Vertex Style -->
+                        <Style TargetType="graphshape:VertexControl">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="graphshape:VertexControl">
+                                        <Border x:Name="NodeBorder" 
+                                                Background="#2D2D2D" 
+                                                BorderThickness="2" 
+                                                CornerRadius="6" 
+                                                Padding="6"
+                                                Cursor="Hand"
+                                                Width="120">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="6" ShadowDepth="2" Opacity="0.3" Color="Black"/>
+                                            </Border.Effect>
+                                            <StackPanel>
+                                                <!-- Preview Image (1:1 ratio) - always visible with placeholder -->
+                                                <Border Width="108" Height="108" 
+                                                        CornerRadius="4" 
+                                                        Background="#1A1A1A"
+                                                        Margin="0,0,0,6">
+                                                    <Border.Clip>
+                                                        <RectangleGeometry Rect="0,0,108,108" RadiusX="4" RadiusY="4"/>
+                                                    </Border.Clip>
+                                                    <Grid>
+                                                        <!-- Placeholder icon when no image -->
+                                                        <TextBlock Text="📦" FontSize="32" 
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                   Opacity="0.3"
+                                                                   Visibility="{Binding HasPreviewImage, Converter={StaticResource InverseBoolToVisibilityConverter}}"/>
+                                                        <!-- Actual preview image -->
+                                                        <Image Source="{Binding PreviewImage}" 
+                                                               Stretch="UniformToFill"
+                                                               RenderOptions.BitmapScalingMode="HighQuality"
+                                                               Visibility="{Binding HasPreviewImage, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                                                    </Grid>
+                                                </Border>
+                                                
+                                                <!-- Text Content underneath -->
+                                                <TextBlock Text="{Binding DisplayName}" 
+                                                           Foreground="White" FontSize="11" FontWeight="SemiBold" 
+                                                           TextTrimming="CharacterEllipsis" 
+                                                           TextAlignment="Center"
+                                                           ToolTip="{Binding FullName}"/>
+                                                <TextBlock Text="{Binding SubText}" 
+                                                           Foreground="#808080" FontSize="9" 
+                                                           TextTrimming="CharacterEllipsis"
+                                                           TextAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <DataTrigger Binding="{Binding VertexType}" Value="Root">
+                                                <Setter TargetName="NodeBorder" Property="BorderBrush" Value="#4CAF50"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VertexType}" Value="Dependency">
+                                                <Setter TargetName="NodeBorder" Property="BorderBrush" Value="#2196F3"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VertexType}" Value="Dependent">
+                                                <Setter TargetName="NodeBorder" Property="BorderBrush" Value="#FF9800"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VertexType}" Value="Missing">
+                                                <Setter TargetName="NodeBorder" Property="BorderBrush" Value="#F44336"/>
+                                                <Setter TargetName="NodeBorder" Property="Background" Value="#3D2020"/>
+                                            </DataTrigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="NodeBorder" Property="Background" Value="#404040"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                        
+                        <!-- Edge Style -->
+                        <Style TargetType="graphshape:EdgeControl">
+                            <Setter Property="Foreground" Value="#505050"/>
+                            <Setter Property="StrokeThickness" Value="1.5"/>
+                            <Setter Property="Opacity" Value="0.7"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="#007ACC"/>
+                                    <Setter Property="StrokeThickness" Value="2.5"/>
+                                    <Setter Property="Opacity" Value="1"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </local:PocGraphLayout.Resources>
+                </local:PocGraphLayout>
+                </Canvas>
+            </Border>
+            
+            <!-- Loading Overlay -->
+            <Border x:Name="LoadingOverlay" Background="#CC1A1A1A" Visibility="Visible">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="⏳" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                    <TextBlock x:Name="LoadingText" Text="Loading dependency graph..." 
+                               Foreground="#E0E0E0" FontSize="16" HorizontalAlignment="Center"/>
+                    <ProgressBar x:Name="LoadingProgress" Width="300" Height="8" Margin="0,16,0,0"
+                                 IsIndeterminate="True" Background="#333333" Foreground="#007ACC"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+        
+        <!-- Legend -->
+        <Border Grid.Row="2" Background="#252526" Padding="12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Background="#4CAF50" Width="12" Height="12" CornerRadius="6" Margin="0,0,5,0"/>
+                    <TextBlock Text="Root" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    
+                    <Border Background="#2196F3" Width="12" Height="12" CornerRadius="6" Margin="0,0,5,0"/>
+                    <TextBlock Text="Dependency" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    
+                    <Border Background="#FF9800" Width="12" Height="12" CornerRadius="6" Margin="0,0,5,0"/>
+                    <TextBlock Text="Dependent" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    
+                    <Border Background="#F44336" Width="12" Height="12" CornerRadius="6" Margin="0,0,5,0"/>
+                    <TextBlock Text="Missing" Foreground="#A0A0A0" VerticalAlignment="Center" Margin="0,0,20,0"/>
+                    
+                    <TextBlock Text="│" Foreground="#404040" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <TextBlock Text="💡 Scroll to zoom • Drag to pan • Drag nodes to reposition" 
+                               Foreground="#606060" VerticalAlignment="Center" FontSize="11"/>
+                </StackPanel>
+                
+                <TextBlock x:Name="StatsText" Grid.Column="1" Text="Nodes: 0 │ Edges: 0" 
+                           Foreground="#808080" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

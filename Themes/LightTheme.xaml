@@ -207,7 +207,7 @@
                             SnapsToDevicePixels="True">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="Icon" MinWidth="22"/>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="Icon" MinWidth="0"/>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="Shortcut"/>
                                 <ColumnDefinition Width="Auto" MinWidth="13"/>
@@ -331,16 +331,14 @@
     
     <!-- Separator Style -->
     <Style TargetType="Separator">
-        <Setter Property="Background" Value="{StaticResource ControlBorderBrush}"/>
-        <Setter Property="Margin" Value="0,3"/>
+        <Setter Property="Background" Value="#FFD0D0D0"/>
+        <Setter Property="Margin" Value="6,4"/>
         <Setter Property="Focusable" Value="false"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Separator">
                     <Border Height="1" 
                             Background="{TemplateBinding Background}" 
-                            BorderBrush="{TemplateBinding Background}" 
-                            BorderThickness="0,0,0,1"
                             SnapsToDevicePixels="True"/>
                 </ControlTemplate>
             </Setter.Value>

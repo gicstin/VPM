@@ -25,7 +25,6 @@ namespace VPM.Services
         private readonly SemaphoreSlim _cacheLock = new SemaphoreSlim(1, 1);
         private bool _disposed;
         private bool _lastLoadWasFromGitHub = false;
-        private JsonDatabaseService _jsonDbService;
         
         // Network permission check callback
         private Func<Task<bool>> _networkPermissionCheck;
@@ -57,10 +56,17 @@ namespace VPM.Services
                 _destinationFolder = destinationFolder;
             }
             
-            // Check for CSV first, then JSON as fallback
+            // Check for links.txt first, then CSV, then JSON as fallback
+            var linksPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "links.txt");
             var csvPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "urls.csv");
             var jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "urls.json");
-            _localUrlsFilePath = File.Exists(csvPath) ? csvPath : jsonPath;
+            
+            if (File.Exists(linksPath))
+                _localUrlsFilePath = linksPath;
+            else if (File.Exists(csvPath))
+                _localUrlsFilePath = csvPath;
+            else
+                _localUrlsFilePath = jsonPath;
             
             // Use HttpClientHandler to enable automatic redirect following and cookie support
             var handler = new HttpClientHandler
@@ -93,84 +99,28 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Loads the complete package URL list from an encrypted database file
+        /// Loads the package URL list from local links.txt file only (no network)
         /// </summary>
-        /// <param name="githubUrl">URL to the encrypted database file (VPM.db)</param>
-        /// <param name="forceRefresh">Force refresh even if cache is valid</param>
         /// <returns>True if successfully loaded</returns>
-        public async Task<bool> LoadEncryptedPackageListAsync(string githubUrl, bool forceRefresh = false)
+        public async Task<bool> LoadLocalLinksAsync()
         {
-            
-            await _cacheLock.WaitAsync();
-            try
-            {
-                // Check if cache is still valid
-                if (!forceRefresh && _packageUrlCache != null && 
-                    DateTime.Now - _cacheLastUpdated < _cacheExpiration)
-                {
-                    return true;
-                }
-
-                // Initialize JSON database service if needed (for new JSON format)
-                if (_jsonDbService == null)
-                {
-                    _jsonDbService = new JsonDatabaseService();
-                    _jsonDbService.SetNetworkPermissionCheck(_networkPermissionCheck);
-                }
-
-                // Load and decrypt JSON database
-                var packageList = await _jsonDbService.LoadEncryptedJsonDatabaseAsync(githubUrl, forceRefresh);
-                
-                if (packageList == null || packageList.Count == 0)
-                {
-                    // Failed to load package list
-                    return false;
-                }
-
-                // Packages loaded from JSON database
-
-                // Convert to PackageDownloadInfo dictionary, filtering out invalid entries
-                // Handle duplicates by keeping only the first occurrence
-                _packageUrlCache = new Dictionary<string, PackageDownloadInfo>(StringComparer.OrdinalIgnoreCase);
-                int duplicateCount = 0;
-                
-                foreach (var pkg in packageList)
-                {
-                    if (string.IsNullOrWhiteSpace(pkg.FullPackageName) || string.IsNullOrWhiteSpace(pkg.PrimaryUrl))
-                    {
-                        continue;
-                    }
-                    
-                    if (_packageUrlCache.ContainsKey(pkg.FullPackageName))
-                    {
-                        duplicateCount++;
-                        continue;
-                    }
-                    
-                    _packageUrlCache[pkg.FullPackageName] = new PackageDownloadInfo
-                    {
-                        PackageName = pkg.FullPackageName,
-                        DownloadUrl = pkg.PrimaryUrl,
-                        HubUrls = pkg.HubUrls ?? new List<string>(),
-                        PdrUrls = pkg.PdrUrls ?? new List<string>()
-                    };
-                }
-                
-                // Validation and cache creation complete
-
-                _cacheLastUpdated = DateTime.Now;
-                _lastLoadWasFromGitHub = true;
-                return true;
-            }
-            catch (Exception)
-            {
-                // Error loading encrypted package list
-                return false;
-            }
-            finally
-            {
-                _cacheLock.Release();
-            }
+            return await LoadPackageUrlListAsync(null, forceRefresh: true);
+        }
+        
+        /// <summary>
+        /// Gets the path to the local links file being used
+        /// </summary>
+        public string GetLocalLinksFilePath()
+        {
+            return _localUrlsFilePath;
+        }
+        
+        /// <summary>
+        /// Checks if a local links file exists
+        /// </summary>
+        public bool HasLocalLinksFile()
+        {
+            return File.Exists(_localUrlsFilePath);
         }
 
         /// <summary>
@@ -247,10 +197,12 @@ namespace VPM.Services
                         var content = await File.ReadAllTextAsync(_localUrlsFilePath);
                         
                         // Detect format by extension or content
-                        bool isCsv = _localUrlsFilePath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || 
-                                    !content.TrimStart().StartsWith("[");
+                        // links.txt and csv are treated as text format, json starts with [
+                        bool isTextFormat = _localUrlsFilePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ||
+                                           _localUrlsFilePath.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || 
+                                           !content.TrimStart().StartsWith("[");
                         
-                        if (ParsePackageList(content, isCsv))
+                        if (ParsePackageList(content, isTextFormat))
                         {
                             _cacheLastUpdated = DateTime.Now;
                             _lastLoadWasFromGitHub = false;
@@ -354,8 +306,12 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Efficiently parses a single CSV line to extract package name and download URL
-        /// Uses single-pass algorithm without regex for optimal performance
+        /// Efficiently parses a single line to extract package name and download URL
+        /// Supports multiple formats:
+        /// - Tab-separated: package.name.version[TAB]URL
+        /// - Comma-separated: package.name.version, URL
+        /// - Space-separated: package.name.version  URL (2+ spaces)
+        /// - URL detection: package.name.version https://...
         /// </summary>
         private PackageDownloadInfo ParseCsvLine(string line)
         {
@@ -375,41 +331,55 @@ namespace VPM.Services
             }
             else
             {
-                // Check for multiple consecutive spaces (2 or more)
-                int spaceStart = -1;
-                int spaceCount = 0;
+                // Try to find URL pattern (http:// or https://) - most flexible
+                int httpIndex = line.IndexOf("http://", StringComparison.OrdinalIgnoreCase);
+                if (httpIndex < 0)
+                    httpIndex = line.IndexOf("https://", StringComparison.OrdinalIgnoreCase);
                 
-                for (int i = 0; i < line.Length; i++)
+                if (httpIndex > 0)
                 {
-                    if (line[i] == ' ')
-                    {
-                        if (spaceStart == -1)
-                            spaceStart = i;
-                        spaceCount++;
-                    }
-                    else if (spaceCount >= 2)
-                    {
-                        // Found multiple spaces - use as delimiter
-                        packageName = line.Substring(0, spaceStart).Trim();
-                        downloadUrl = line.Substring(i).Trim();
-                        break;
-                    }
-                    else
-                    {
-                        // Reset counter
-                        spaceStart = -1;
-                        spaceCount = 0;
-                    }
+                    // Everything before the URL is the package name
+                    packageName = line.Substring(0, httpIndex).TrimEnd(' ', ',', '\t');
+                    downloadUrl = line.Substring(httpIndex).Trim();
                 }
-                
-                // If no multiple spaces found, try comma
-                if (packageName == null)
+                else
                 {
-                    int commaIndex = line.IndexOf(',');
-                    if (commaIndex > 0)
+                    // Check for multiple consecutive spaces (2 or more)
+                    int spaceStart = -1;
+                    int spaceCount = 0;
+                    
+                    for (int i = 0; i < line.Length; i++)
                     {
-                        packageName = line.Substring(0, commaIndex).Trim();
-                        downloadUrl = line.Substring(commaIndex + 1).Trim();
+                        if (line[i] == ' ')
+                        {
+                            if (spaceStart == -1)
+                                spaceStart = i;
+                            spaceCount++;
+                        }
+                        else if (spaceCount >= 2)
+                        {
+                            // Found multiple spaces - use as delimiter
+                            packageName = line.Substring(0, spaceStart).Trim();
+                            downloadUrl = line.Substring(i).Trim();
+                            break;
+                        }
+                        else
+                        {
+                            // Reset counter
+                            spaceStart = -1;
+                            spaceCount = 0;
+                        }
+                    }
+                    
+                    // If no multiple spaces found, try comma
+                    if (packageName == null)
+                    {
+                        int commaIndex = line.IndexOf(',');
+                        if (commaIndex > 0)
+                        {
+                            packageName = line.Substring(0, commaIndex).Trim();
+                            downloadUrl = line.Substring(commaIndex + 1).Trim();
+                        }
                     }
                 }
             }
@@ -423,6 +393,13 @@ namespace VPM.Services
                 packageName.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
             {
                 packageName = packageName.Substring(0, packageName.Length - 4);
+            }
+            
+            // Validate URL looks reasonable
+            if (!downloadUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
+                !downloadUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
             }
             
             return new PackageDownloadInfo
@@ -510,9 +487,18 @@ namespace VPM.Services
             // Extract base name (everything before .latest)
             var baseName = packageName.Substring(0, packageName.Length - 7); // Remove ".latest"
 
-            // Find all versions of this package
+            // Find all versions of this package - must be baseName.{version} where version is numeric
             var versions = _packageUrlCache.Keys
-                .Where(k => k.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase))
+                .Where(k => {
+                    if (!k.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase))
+                        return false;
+                    // Ensure what follows is a version number
+                    var suffix = k.Substring(baseName.Length + 1);
+                    // Remove .var if present
+                    if (suffix.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                        suffix = suffix.Substring(0, suffix.Length - 4);
+                    return int.TryParse(suffix, out _);
+                })
                 .ToList();
 
             if (versions.Count == 0)
@@ -1131,6 +1117,22 @@ namespace VPM.Services
                 PackageName = packageName,
                 ErrorMessage = errorMessage
             });
+        }
+        
+        /// <summary>
+        /// Public method to fire download progress event (for external callers like HubService)
+        /// </summary>
+        public void FireDownloadProgress(string packageName, long downloadedBytes, long totalBytes, int percentage, string downloadSource = null)
+        {
+            OnDownloadProgress(packageName, downloadedBytes, totalBytes, percentage, downloadSource);
+        }
+        
+        /// <summary>
+        /// Public method to fire download completion event (for external callers like HubService)
+        /// </summary>
+        public void FireDownloadCompleted(string packageName, string filePath, bool alreadyExisted)
+        {
+            OnDownloadCompleted(packageName, filePath, alreadyExisted);
         }
 
         #endregion

@@ -65,7 +65,7 @@
                            Foreground="#E0E0E0" FontWeight="SemiBold" FontSize="14"
                            VerticalAlignment="Center" Margin="15,0"/>
                 
-                <Button x:Name="CloseButton" Grid.Column="1" Content="✓" 
+                <Button x:Name="CloseButton" Grid.Column="1" Content="✕" 
                         Background="Transparent" Foreground="#E0E0E0" 
                         BorderThickness="0" FontSize="16" FontWeight="Bold"
                         Click="Close_Click" Width="40" Height="40"
@@ -119,7 +119,8 @@
                              VerticalScrollBarVisibility="Auto"
                              HorizontalScrollBarVisibility="Disabled"
                              VerticalAlignment="Stretch"
-                             Padding="0"/>
+                             Padding="0"
+                             PreviewMouseWheel="MessageText_PreviewMouseWheel"/>
                 </Border>
             </Grid>
             

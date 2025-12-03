@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -34,6 +35,8 @@ namespace VPM
         private readonly Func<Task<bool>> _updateDatabaseCallback;
         private readonly Action<string, string> _onPackageDownloadedCallback;
         private readonly ObservableCollection<PackageSearchResult> _searchResults;
+        private HubService _hubService;
+        private PackageUpdateChecker _updateChecker;
         private bool _isSearching = false;
         private int _totalDownloads = 0;
         private int _completedDownloads = 0;
@@ -101,26 +104,38 @@ namespace VPM
         }
         
         /// <summary>
-        /// Attempts to load offline database file without prompting for network access
+        /// Attempts to load package source (local links.txt or Hub resources)
         /// </summary>
         private async Task TryLoadOfflineDatabase()
         {
-            // Only try if database is currently empty
-            if (_packageDownloader.GetPackageCount() > 0)
-            {
-                return;
-            }
-            
             try
             {
-                // Try to load without network permission (will use offline file if available)
-                bool loaded = await _packageDownloader.LoadEncryptedPackageListAsync("", forceRefresh: false);
-                
-                if (loaded && _packageDownloader.GetPackageCount() > 0)
+                // Initialize HubService and UpdateChecker if not already done
+                if (_hubService == null)
                 {
-                    int packageCount = _packageDownloader.GetPackageCount();
-                    SetStatus($"Offline database loaded: {packageCount:N0} packages");
+                    _hubService = new HubService();
+                }
+                
+                if (_updateChecker == null)
+                {
+                    _updateChecker = new PackageUpdateChecker(_hubService);
+                }
+                
+                // Load package source (local links.txt or Hub resources)
+                bool loaded = await _updateChecker.LoadPackageSourceAsync();
+                
+                if (loaded)
+                {
                     UpdateDatabaseStatus();
+                    
+                    if (_updateChecker.IsUsingLocalLinks)
+                    {
+                        SetStatus($"Local links.txt loaded");
+                    }
+                    else
+                    {
+                        SetStatus($"Hub packages loaded");
+                    }
                 }
             }
             catch (Exception)
@@ -270,7 +285,26 @@ namespace VPM
         {
             Dispatcher.Invoke(() =>
             {
-                int packageCount = _packageDownloader?.GetPackageCount() ?? 0;
+                // Check if using local links.txt or Hub
+                bool usingLocalLinks = _updateChecker?.IsUsingLocalLinks ?? false;
+                int packageCount = 0;
+                string sourceName = "";
+                string tooltipText = "";
+                
+                if (usingLocalLinks)
+                {
+                    // Get count from local links cache
+                    packageCount = _updateChecker?.GetAllPackageNames()?.Count ?? 0;
+                    sourceName = "Local Links";
+                    tooltipText = $"Using local links.txt file\n{packageCount:N0} packages available";
+                }
+                else
+                {
+                    // Get count from Hub service
+                    packageCount = _hubService?.GetPackageCount() ?? 0;
+                    sourceName = "Hub Packages";
+                    tooltipText = $"Using VaM Hub resources\n{packageCount:N0} packages available";
+                }
                 
                 if (packageCount > 0)
                 {
@@ -282,12 +316,10 @@ namespace VPM
                     // Show green dot and label
                     DatabaseStatusDot.Visibility = Visibility.Visible;
                     DatabaseStatusLabel.Visibility = Visibility.Visible;
-                    DatabaseStatusLabel.Text = $"Online Database: {formattedCount}";
+                    DatabaseStatusLabel.Text = $"{sourceName}: {formattedCount}";
                     
                     // Set tooltip with detailed info
-                    bool fromGitHub = _packageDownloader.WasLastLoadFromGitHub();
-                    string source = fromGitHub ? "GitHub" : "local cache";
-                    DatabaseStatusTooltip.Content = $"Database loaded from {source}\n{packageCount:N0} packages available for download";
+                    DatabaseStatusTooltip.Content = tooltipText;
                 }
                 else
                 {
@@ -724,58 +756,60 @@ namespace VPM
         {
             try
             {
-                // Use Cloudflare Worker proxy with random filename for obscurity
-                const string githubUrl = "https://github.com/gicstin/VPM/raw/refs/heads/main/VPM.bin";
+                // Initialize HubService and UpdateChecker if not already done
+                if (_hubService == null)
+                {
+                    _hubService = new HubService();
+                }
                 
-                // Check if database is already loaded
-                int existingCount = _packageDownloader.GetPackageCount();
+                if (_updateChecker == null)
+                {
+                    _updateChecker = new PackageUpdateChecker(_hubService);
+                }
+                
+                // Check if package source is already loaded
+                bool usingLocalLinks = _updateChecker.IsUsingLocalLinks;
+                int existingCount = usingLocalLinks 
+                    ? _updateChecker.GetAllPackageNames()?.Count ?? 0 
+                    : _hubService.GetPackageCount();
+                
                 if (existingCount > 0)
                 {
-                    // Database already loaded, use it
-                    bool fromCache = !_packageDownloader.WasLastLoadFromGitHub();
-                    string source = fromCache ? "cached" : "online";
-                    SetStatus($"Using {source} database: {existingCount:N0} packages");
+                    // Source already loaded
+                    string source = usingLocalLinks ? "local links.txt" : "Hub";
+                    SetStatus($"Using {source}: {existingCount:N0} packages");
                 }
                 else
                 {
-                    // Need to load database
-                    SetStatus("Downloading online database... (this may take a moment)");
+                    // Need to load package source
+                    SetStatus("Loading package source...");
                     
-                    // Redirect console output to capture retry messages
-                    var originalOut = Console.Out;
-                    var statusWriter = new StatusWriter(this);
-                    Console.SetOut(statusWriter);
-                    
-                    bool loaded = false;
-                    try
-                    {
-                        // Load encrypted package database with retries for firewall approval
-                        loaded = await _packageDownloader.LoadEncryptedPackageListAsync(githubUrl, forceRefresh: false);
-                    }
-                    finally
-                    {
-                        Console.SetOut(originalOut);
-                    }
+                    bool loaded = await _updateChecker.LoadPackageSourceAsync();
 
                     if (!loaded)
                     {
-                        SetStatus("Failed to load online database");
-                        CustomMessageBox.Show("Failed to load the online package database.\n\nPlease check your internet connection and firewall settings.",
-                            "Database Load Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        SetStatus("Failed to load package source");
+                        CustomMessageBox.Show("Failed to load package source.\n\nPlease check your internet connection or ensure links.txt exists.",
+                            "Source Load Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                     
-                    // Verify database has packages
-                    int packageCount = _packageDownloader.GetPackageCount();
+                    // Verify source has packages
+                    usingLocalLinks = _updateChecker.IsUsingLocalLinks;
+                    int packageCount = usingLocalLinks 
+                        ? _updateChecker.GetAllPackageNames()?.Count ?? 0 
+                        : _hubService.GetPackageCount();
+                    
                     if (packageCount == 0)
                     {
-                        SetStatus("Database is empty");
-                        CustomMessageBox.Show("The online database is empty or could not be loaded.",
-                            "Database Empty", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        SetStatus("Package source is empty");
+                        CustomMessageBox.Show("The package source is empty or could not be loaded.",
+                            "Source Empty", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
                     
-                    SetStatus($"Database loaded: {packageCount:N0} packages available");
+                    string sourceName = usingLocalLinks ? "Local links" : "Hub packages";
+                    SetStatus($"{sourceName} loaded: {packageCount:N0} packages available");
                     
                     // Update the database status label
                     UpdateDatabaseStatus();
@@ -786,42 +820,66 @@ namespace VPM
                     var result = _searchResults.FirstOrDefault(r => r.PackageName == packageName);
                     if (result == null) continue;
 
-                    // Check if package is available in online database
-                    var downloadInfo = _packageDownloader.GetPackageInfo(packageName);
+                    // Check if package is available
+                    string downloadUrl = null;
+                    string onlinePackageName = null;
+                    int onlineVersion = -1;
                     
-                    if (downloadInfo != null && !string.IsNullOrWhiteSpace(downloadInfo.DownloadUrl))
+                    if (usingLocalLinks)
+                    {
+                        // Check local links.txt
+                        downloadUrl = _updateChecker.GetDownloadUrl(packageName);
+                        if (!string.IsNullOrEmpty(downloadUrl))
+                        {
+                            onlinePackageName = packageName;
+                            var versionStr = ExtractVersionFromPackageName(packageName);
+                            int.TryParse(versionStr.Split('.').FirstOrDefault() ?? "0", out onlineVersion);
+                        }
+                    }
+                    else
+                    {
+                        // Check Hub - get resource ID to verify package exists
+                        var baseName = ExtractBaseName(packageName);
+                        var hubLatestVersion = _hubService.GetLatestVersion(baseName);
+                        
+                        if (hubLatestVersion > 0)
+                        {
+                            onlinePackageName = $"{baseName}.{hubLatestVersion}";
+                            onlineVersion = hubLatestVersion;
+                            // Hub download URL will be fetched when actually downloading
+                            downloadUrl = "hub"; // Placeholder to indicate available on Hub
+                        }
+                    }
+                    
+                    if (!string.IsNullOrEmpty(downloadUrl))
                     {
                         Dispatcher.Invoke(() =>
                         {
                             result.IsAvailableOnline = true;
-                            result.DownloadUrl = downloadInfo.DownloadUrl;
-                            result.OnlineVersion = downloadInfo.PackageName; // Store full package name with version
+                            result.DownloadUrl = downloadUrl;
+                            result.OnlineVersion = onlinePackageName;
                             
                             // Check if local package exists and if online version is newer
                             if (result.IsLocal && !string.IsNullOrEmpty(result.LocalPackageName))
                             {
                                 try
                                 {
-                                    // Extract version from actual local package name
-                                    var localVersion = ExtractVersionFromPackageName(result.LocalPackageName);
-                                    var onlineVersion = ExtractVersionFromPackageName(downloadInfo.PackageName ?? packageName);
+                                    var localVersionStr = ExtractVersionFromPackageName(result.LocalPackageName);
+                                    int.TryParse(localVersionStr.Split('.').FirstOrDefault() ?? "0", out int localVersionInt);
                                     
-                                    if (CompareVersions(onlineVersion, localVersion) > 0)
+                                    if (onlineVersion > localVersionInt)
                                     {
                                         result.HasNewerVersionOnline = true;
                                     }
                                 }
                                 catch (Exception)
                                 {
-                                    // If version comparison fails, assume no newer version
                                     result.HasNewerVersionOnline = false;
                                 }
                             }
                             else if (!result.IsLocal)
                             {
-                                // For packages not found locally, check if there are multiple versions available
-                                // If the search term doesn't include a version, mark as having update available
-                                // This indicates the user can download a version
+                                // Package not found locally but available online
                                 if (!packageName.Contains(".") || !char.IsDigit(packageName[packageName.Length - 1]))
                                 {
                                     result.HasNewerVersionOnline = true;
@@ -857,7 +915,7 @@ namespace VPM
 
         #region Download Logic
 
-        private void DownloadPackages(List<PackageSearchResult> selectedItems)
+        private async void DownloadPackages(List<PackageSearchResult> selectedItems)
         {
             if (!selectedItems.Any())
             {
@@ -872,13 +930,92 @@ namespace VPM
             {
                 SetStatus($"Queueing {selectedItems.Count} package(s) for download...");
 
-                foreach (var item in selectedItems)
+                int queuedCount = 0;
+                for (int i = 0; i < selectedItems.Count; i++)
                 {
+                    var item = selectedItems[i];
+                    
                     // Use OnlineVersion if available (for updates), otherwise use PackageName
                     string packageToDownload = !string.IsNullOrEmpty(item.OnlineVersion) ? item.OnlineVersion : item.PackageName;
                     
-                    // Get download info from the package downloader
-                    var downloadInfo = _packageDownloader.GetPackageInfo(packageToDownload);
+                    // Check if using local links or Hub
+                    bool usingLocalLinks = _updateChecker?.IsUsingLocalLinks ?? false;
+                    PackageDownloadInfo downloadInfo = null;
+                    
+                    if (usingLocalLinks)
+                    {
+                        // Get download URL from local links
+                        var downloadUrl = _updateChecker?.GetDownloadUrl(packageToDownload);
+                        if (!string.IsNullOrEmpty(downloadUrl))
+                        {
+                            downloadInfo = new PackageDownloadInfo
+                            {
+                                PackageName = packageToDownload,
+                                DownloadUrl = downloadUrl
+                            };
+                        }
+                        else
+                        {
+                        }
+                    }
+                    else
+                    {
+                        // For Hub, we need to get the resource detail to get the download URL
+                        // First, try to get the package info from the downloader (if it has cached data)
+                        downloadInfo = _packageDownloader.GetPackageInfo(packageToDownload);
+                        
+                        if (downloadInfo == null)
+                        {
+                            // If not in downloader cache, try to get from Hub using the package name
+                            try
+                            {
+                                var hubDetail = await _hubService.GetResourceDetailAsync(packageToDownload, isPackageName: true);
+                                
+                                if (hubDetail != null)
+                                {
+                                    // Try to get download URL from HubFiles or ExternalDownloadUrl
+                                    string downloadUrl = null;
+                                    
+                                    if (hubDetail.HubFiles != null && hubDetail.HubFiles.Count > 0)
+                                    {
+                                        var hubFile = hubDetail.HubFiles[0];
+                                        downloadUrl = hubFile.EffectiveDownloadUrl;
+                                    }
+                                    else if (!string.IsNullOrEmpty(hubDetail.ExternalDownloadUrl))
+                                    {
+                                        downloadUrl = hubDetail.ExternalDownloadUrl;
+                                    }
+                                    
+                                    if (!string.IsNullOrEmpty(downloadUrl))
+                                    {
+                                        downloadInfo = new PackageDownloadInfo
+                                        {
+                                            PackageName = packageToDownload,
+                                            DownloadUrl = downloadUrl
+                                        };
+                                    }
+                                    else
+                                    {
+                                    }
+                                }
+                                else
+                                {
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                            }
+                            
+                            // Add a small delay between Hub lookups to avoid rate limiting
+                            if (i < selectedItems.Count - 1)
+                            {
+                                await Task.Delay(100);
+                            }
+                        }
+                        else
+                        {
+                        }
+                    }
                     
                     if (downloadInfo != null)
                     {
@@ -887,6 +1024,7 @@ namespace VPM
                         
                         if (queued)
                         {
+                            queuedCount++;
                             item.IsDownloading = true;
                             item.StatusText = "Queued";
                             item.StatusColor = "#FFA500"; // Orange
@@ -906,6 +1044,9 @@ namespace VPM
                         item.ProgressText = "Package not in database";
                     }
                 }
+                
+                
+                SetStatus($"Queued {_totalDownloads} package(s) for download");
             }
             catch (Exception ex)
             {

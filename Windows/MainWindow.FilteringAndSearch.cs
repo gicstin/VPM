@@ -549,6 +549,27 @@ namespace VPM
                     bool shouldShow = hasText || hasSelection;
                     PackageSearchClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
                 }
+                
+                // Also update the dependency graph button visibility
+                UpdatePackageDependencyGraphButton();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void UpdatePackageDependencyGraphButton()
+        {
+            if (!this.IsLoaded) return;
+            
+            try
+            {
+                if (PackageDependencyGraphButton != null && PackageDataGrid != null)
+                {
+                    // Only show when exactly one package is selected
+                    bool shouldShow = PackageDataGrid.SelectedItems.Count == 1;
+                    PackageDependencyGraphButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
+                }
             }
             catch (Exception)
             {

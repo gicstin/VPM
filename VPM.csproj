@@ -31,6 +31,8 @@
   <!-- Rely on in-box System.Text.Json from .NET 8 to avoid copying extra DLLs -->
   
   <ItemGroup>
+    <PackageReference Include="GraphShape" Version="1.2.1" />
+    <PackageReference Include="GraphShape.Controls" Version="1.2.2" />
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
     <PackageReference Include="NetVips" Version="3.1.0" />
     <PackageReference Include="NetVips.Native" Version="8.17.3" />

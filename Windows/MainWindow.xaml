@@ -297,7 +297,7 @@
                     <!--  Display Settings Section  -->
                     <Separator />
                     <MenuItem Header="🎨 _Display Settings">
-                        <MenuItem Header="_Theme">
+                        <MenuItem Header="🎨 _Theme">
                             <MenuItem
                                 x:Name="DarkThemeMenuItem"
                                 Click="SetTheme_Click"
@@ -344,77 +344,9 @@
                         <MenuItem Click="ClearAllMetadataCache_Click" Header="🗑️ Clear All _Metadata Cache" />
                     </MenuItem>
 
-                    <!--  Package Settings Section  -->
+                    <!--  About  -->
                     <Separator />
-                    <MenuItem Header="📦 _Package Settings">
-                        <MenuItem Click="ConfigureFileSizeRanges_Click" Header="📦 _File Size Ranges..." />
-                        <MenuItem Header="📊 _Preview Selection Limit">
-                            <MenuItem
-                                Click="SetMaxSafeSelection_Click"
-                                Header="100 packages"
-                                Tag="100" />
-                            <MenuItem
-                                Click="SetMaxSafeSelection_Click"
-                                Header="200 packages (default)"
-                                Tag="200" />
-                            <MenuItem
-                                Click="SetMaxSafeSelection_Click"
-                                Header="500 packages"
-                                Tag="500" />
-                            <MenuItem
-                                Click="SetMaxSafeSelection_Click"
-                                Header="1000 packages"
-                                Tag="1000" />
-                        </MenuItem>
-                    </MenuItem>
-
-                    <!--  Hub Section  -->
-                    <Separator />
-                    <MenuItem Header="🌐 _Hub">
-                        <MenuItem
-                            x:Name="HubBrowserMenuItem"
-                            Click="HubBrowser_Click"
-                            Header="🔍 Browse Hub"
-                            ToolTip="Browse and download packages from VaM Hub" />
-                        <MenuItem
-                            x:Name="HubCheckUpdatesMenuItem"
-                            Click="HubCheckUpdates_Click"
-                            Header="📡 Check for Updates"
-                            ToolTip="Check Hub for package updates" />
-                        <MenuItem
-                            x:Name="HubMissingDepsMenuItem"
-                            Click="HubMissingDeps_Click"
-                            Header="📥 Find Missing Dependencies"
-                            ToolTip="Find and download missing dependencies from Hub" />
-                    </MenuItem>
-
-                    <!--  Tools Section  -->
-                    <Separator />
-                    <MenuItem Header="🛠️ _Tools">
-                        <MenuItem
-                            x:Name="PackageDownloadsToolbarButton"
-                            Click="PackageDownloadsToolbar_Click"
-                            Header="📥 Package Downloads"
-                            ToolTip="Search and download missing packages" />
-                        <MenuItem
-                            x:Name="CheckUpdatesToolbarButton"
-                            Click="CheckUpdatesToolbar_Click"
-                            Header="📡 Check for Updates"
-                            ToolTip="Check for package updates" />
-                        <MenuItem
-                            x:Name="DownloadMissingToolbarButton"
-                            Click="DownloadMissingToolbar_Click"
-                            Header="📥 Download Missing"
-                            ToolTip="Download missing dependencies"
-                            Visibility="Collapsed" />
-                    </MenuItem>
-
-                    <!--  Help Section  -->
-                    <Separator />
-                    <MenuItem Header="❓ _Help">
-                        <MenuItem Click="KeyboardShortcuts_Click" Header="⌨️ _Keyboard Shortcuts" />
-                        <MenuItem Click="About_Click" Header="_About VPM" />
-                    </MenuItem>
+                    <MenuItem Click="About_Click" Header="ℹ️ _About VPM" />
 
                     <!--  Exit at Bottom  -->
                     <Separator />
@@ -2128,6 +2060,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -2138,7 +2071,7 @@
                         <Grid
                             Grid.Row="0"
                             Grid.Column="0"
-                            Grid.ColumnSpan="3"
+                            Grid.ColumnSpan="4"
                             Margin="0,0,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -2323,9 +2256,28 @@
                             </Button.Style>
                         </Button>
                         <Button
-                            Name="PackageSortButton"
+                            Name="PackageDependencyGraphButton"
                             Grid.Row="1"
                             Grid.Column="2"
+                            MinWidth="30"
+                            Margin="6,6,0,0"
+                            Padding="0"
+                            VerticalAlignment="Center"
+                            Click="ShowDependencyGraph_Click"
+                            Content="⫘"
+                            ToolTip="Show dependency graph for selected package"
+                            Visibility="Collapsed">
+                            <Button.Style>
+                                <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                    <Setter Property="Width" Value="{Binding ElementName=PackageSearchBox, Path=ActualHeight}" />
+                                    <Setter Property="Height" Value="{Binding ElementName=PackageSearchBox, Path=ActualHeight}" />
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <Button
+                            Name="PackageSortButton"
+                            Grid.Row="1"
+                            Grid.Column="3"
                             MinWidth="30"
                             Margin="6,6,0,0"
                             Padding="0"
@@ -2457,6 +2409,7 @@
                             VirtualizingPanel.IsVirtualizing="True"
                             VirtualizingPanel.ScrollUnit="Item"
                             VirtualizingPanel.VirtualizationMode="Recycling">
+
 
                             <DataGrid.Resources>
                                 <Style BasedOn="{StaticResource DataGridScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
@@ -4410,16 +4363,16 @@
                                 </Grid.ColumnDefinitions>
                                 <!--  Normal buttons  -->
                                 <Button
-                                    x:Name="PackageDownloadsImageButton"
+                                    x:Name="VamHubImageButton"
                                     Grid.Column="0"
                                     Height="34"
                                     Margin="0,0,3,0"
                                     Padding="6,0"
-                                    Click="PackageDownloadsToolbar_Click"
-                                    Content="📥 Downloads"
+                                    Click="VamHubButton_Click"
+                                    Content="🌐 VaM Hub"
                                     FontSize="12"
                                     FontWeight="SemiBold"
-                                    ToolTip="Search and download missing packages"
+                                    ToolTip="Open VaM Hub in browser"
                                     Visibility="Visible">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">

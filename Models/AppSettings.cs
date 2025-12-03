@@ -94,7 +94,7 @@ namespace VPM.Models
         private int _cacheLength = 2;
         private bool _enableImageCaching = true;
         private int _imageCacheSize = 500;
-        private int _maxSafeSelection = 50;
+        private int _maxSafeSelection = 200;
         
         // Texture Validation Settings
         private bool _useThoroughTextureScan = false;
@@ -704,7 +704,7 @@ namespace VPM.Models
                 CacheLength = 2,
                 EnableImageCaching = true,
                 ImageCacheSize = 500,
-                MaxSafeSelection = 50,
+                MaxSafeSelection = 200,
                 UseThoroughTextureScan = false,
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,

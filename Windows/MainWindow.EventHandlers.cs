@@ -4029,21 +4029,6 @@ namespace VPM
             {
                 int selectedCount = PackageDataGrid?.SelectedItems.Count ?? 0;
                 
-                // Update Download Missing button
-                if (DownloadMissingToolbarButton != null)
-                {
-                    int missingCount = Dependencies?.Count(d => d.Status == "Missing" || d.Status == "Unknown") ?? 0;
-                    if (missingCount > 0)
-                    {
-                        DownloadMissingToolbarButton.Header = $"📁 Download Missing ({missingCount})";
-                        DownloadMissingToolbarButton.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        DownloadMissingToolbarButton.Visibility = Visibility.Collapsed;
-                    }
-                }
-                
                 // Note: Fix Duplicates button is now handled in UpdatePackageButtonBar() to avoid animation conflicts
             }
             catch { }
@@ -4675,6 +4660,14 @@ namespace VPM
         }
         
         /// <summary>
+        /// Opens the VaM Hub Browser window
+        /// </summary>
+        private void VamHubButton_Click(object sender, RoutedEventArgs e)
+        {
+            HubBrowser_Click(sender, e);
+        }
+        
+        /// <summary>
         /// Launches VirtAMate in Desktop mode
         /// </summary>
         private void LaunchDesktop_Click(object sender, RoutedEventArgs e)
@@ -4990,6 +4983,72 @@ namespace VPM
         }
         
         #endregion
+        
+        #endregion
+        
+        #region Package Context Menu
+        
+        private void ShowDependencyGraph_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+            {
+                DarkMessageBox.Show("Please select a package to view its dependency graph.", "No Package Selected",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            
+            // Use the first selected package
+            var packageItem = selectedPackages[0];
+            _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var metadata);
+            
+            if (metadata == null)
+            {
+                DarkMessageBox.Show("Could not load package metadata.", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            
+            var graphWindow = new Windows.DependencyGraphWindow(_packageManager, _packageFileManager, _imageManager, metadata)
+            {
+                Owner = this
+            };
+            graphWindow.Show();
+        }
+        
+        private void OpenInExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+                return;
+            
+            var packageItem = selectedPackages[0];
+            _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var metadata);
+            
+            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+            {
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{metadata.FilePath}\"");
+            }
+        }
+        
+        private void CopyPackageName_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+                return;
+            
+            var names = selectedPackages.Select(p => p.DisplayName);
+            var text = string.Join(Environment.NewLine, names);
+            
+            try
+            {
+                Clipboard.SetText(text);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to copy to clipboard: {ex.Message}");
+            }
+        }
         
         #endregion
     }

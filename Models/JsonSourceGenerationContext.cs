@@ -14,13 +14,6 @@ namespace VPM.Models
         GenerationMode = JsonSourceGenerationMode.Default,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
     [JsonSerializable(typeof(AppSettings))]
-    [JsonSerializable(typeof(JsonPackageDatabase))]
-    [JsonSerializable(typeof(JsonPackageInfo))]
-    [JsonSerializable(typeof(JsonPackageSources))]
-    [JsonSerializable(typeof(FlatPackageEntry))]
-    [JsonSerializable(typeof(List<FlatPackageEntry>))]
-    [JsonSerializable(typeof(Dictionary<string, Dictionary<string, JsonPackageInfo>>))]
-    [JsonSerializable(typeof(Dictionary<string, JsonPackageInfo>))]
     [JsonSerializable(typeof(List<string>))]
     [JsonSerializable(typeof(Dictionary<string, SerializableSortingState>))]
     [JsonSerializable(typeof(SerializableSortingState))]
