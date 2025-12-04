@@ -998,8 +998,28 @@ namespace VPM.Services
                 }
             }
             
-            // Return status from index, default to Missing if not found
-            return _packageStatusIndex.TryGetValue(packageName, out var status) ? status : "Missing";
+            // Try exact match first (base name like "Creator.Package")
+            if (_packageStatusIndex.TryGetValue(packageName, out var status))
+            {
+                return status;
+            }
+            
+            // If packageName includes version (e.g., "Creator.Package.5"), extract base name and try again
+            var lastDotIndex = packageName.LastIndexOf('.');
+            if (lastDotIndex > 0)
+            {
+                var potentialVersion = packageName.Substring(lastDotIndex + 1);
+                if (int.TryParse(potentialVersion, out _))
+                {
+                    var baseName = packageName.Substring(0, lastDotIndex);
+                    if (_packageStatusIndex.TryGetValue(baseName, out status))
+                    {
+                        return status;
+                    }
+                }
+            }
+            
+            return "Missing";
         }
 
         /// <summary>
@@ -1027,6 +1047,8 @@ namespace VPM.Services
                 if (_statusIndexBuilt && _packageStatusIndex.Count > 0)
                 {
                     // Quick check: if directory signatures haven't changed, skip rebuild
+                    // Note: This optimization can cause stale data if files were just added
+                    // Use RefreshPackageStatusIndex(force: true) after downloads
                     needsRebuild = HasDirectoriesChanged();
                 }
                 
@@ -1056,9 +1078,11 @@ namespace VPM.Services
                     foreach (var file in availableFiles)
                     {
                         var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
-                        if (!string.IsNullOrEmpty(packageName) && !_packageStatusIndex.ContainsKey(packageName))
+                        if (!string.IsNullOrEmpty(packageName))
                         {
-                            _packageStatusIndex[packageName] = "Available";
+                            // Only add as Available if not already marked as Loaded
+                            // Use TryAdd to avoid overwriting Loaded status
+                            _packageStatusIndex.TryAdd(packageName, "Available");
                         }
                     }
                 }
@@ -1183,8 +1207,14 @@ namespace VPM.Services
         /// <summary>
         /// Rebuilds the package status index (call when major changes occur)
         /// </summary>
-        public void RefreshPackageStatusIndex()
+        /// <param name="force">If true, forces a full rebuild ignoring directory signature cache</param>
+        public void RefreshPackageStatusIndex(bool force = false)
         {
+            if (force)
+            {
+                // Clear the built flag to force a full rebuild
+                _statusIndexBuilt = false;
+            }
             BuildPackageStatusIndex();
         }
 

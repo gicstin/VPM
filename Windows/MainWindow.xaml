@@ -2410,6 +2410,16 @@
                             VirtualizingPanel.ScrollUnit="Item"
                             VirtualizingPanel.VirtualizationMode="Recycling">
 
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Click="ShowDependencyGraph_Click" Header="📊 Show Dependency Graph" />
+                                    <MenuItem Click="OpenInExplorer_Click" Header="📁 Open in Explorer" />
+                                    <MenuItem Click="CopyPackageName_Click" Header="📋 Copy Package Name" />
+                                    <Separator />
+                                    <MenuItem Click="DiscardSelected_Click" Header="🗑️ Discard Selected" />
+                                    <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
 
                             <DataGrid.Resources>
                                 <Style BasedOn="{StaticResource DataGridScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
@@ -2599,6 +2609,12 @@
                         VirtualizingPanel.IsVirtualizing="True"
                         VirtualizingPanel.VirtualizationMode="Recycling"
                         Visibility="Collapsed">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Click="DiscardSelectedScenes_Click" Header="🗑️ Discard Selected" />
+                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Resources>
                             <Style BasedOn="{StaticResource DataGridScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
                         </DataGrid.Resources>
@@ -2877,6 +2893,12 @@
                         VirtualizingPanel.IsVirtualizing="True"
                         VirtualizingPanel.VirtualizationMode="Recycling"
                         Visibility="Collapsed">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Click="DiscardSelectedCustomAtoms_Click" Header="🗑️ Discard Selected" />
+                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Resources>
                             <Style BasedOn="{StaticResource DataGridScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
                         </DataGrid.Resources>
@@ -3860,6 +3882,12 @@
                                 VirtualizingPanel.IsVirtualizing="True"
                                 VirtualizingPanel.ScrollUnit="Item"
                                 VirtualizingPanel.VirtualizationMode="Recycling">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Click="DiscardSelectedDependencies_Click" Header="🗑️ Discard Selected" />
+                                        <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
                                 <DataGrid.Resources>
                                     <Style BasedOn="{StaticResource DataGridScrollBarStyle}" TargetType="{x:Type ScrollBar}" />
                                 </DataGrid.Resources>

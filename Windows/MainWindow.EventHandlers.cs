@@ -5050,6 +5050,469 @@ namespace VPM
             }
         }
         
+        private void OpenDiscardLocation_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                
+                // Create folder if it doesn't exist
+                if (!Directory.Exists(discardedFolder))
+                {
+                    Directory.CreateDirectory(discardedFolder);
+                }
+                
+                // Open the folder in explorer
+                System.Diagnostics.Process.Start("explorer.exe", $"\"{discardedFolder}\"");
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error opening discard location: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Error opening discard location: {ex}");
+            }
+        }
+        
+        private async void DiscardSelectedScenes_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedScenes = ScenesDataGrid?.SelectedItems?.Cast<SceneItem>().ToList();
+            if (selectedScenes == null || selectedScenes.Count == 0)
+                return;
+            
+            try
+            {
+                // Create DiscardedPackages folder in game root
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                Directory.CreateDirectory(discardedFolder);
+                
+                int successCount = 0;
+                int failureCount = 0;
+                var failedScenes = new List<string>();
+                
+                foreach (var sceneItem in selectedScenes)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(sceneItem.FilePath) && File.Exists(sceneItem.FilePath))
+                        {
+                            string fileName = Path.GetFileName(sceneItem.FilePath);
+                            string destinationPath = Path.Combine(discardedFolder, fileName);
+                            
+                            // Handle file name conflicts by appending a number
+                            int counter = 1;
+                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            while (File.Exists(destinationPath))
+                            {
+                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                counter++;
+                            }
+                            
+                            // Release file handles before moving
+                            try
+                            {
+                                if (_imageManager != null)
+                                    await _imageManager.CloseFileHandlesAsync(sceneItem.FilePath);
+                                await Task.Delay(100); // Brief delay to ensure handles are released
+                            }
+                            catch (Exception)
+                            {
+                                // Continue even if handle release fails
+                            }
+                            
+                            // Move the file
+                            File.Move(sceneItem.FilePath, destinationPath, overwrite: false);
+                            successCount++;
+                        }
+                        else
+                        {
+                            failureCount++;
+                            failedScenes.Add(sceneItem.DisplayName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error discarding scene {sceneItem.DisplayName}: {ex.Message}");
+                        failureCount++;
+                        failedScenes.Add(sceneItem.DisplayName);
+                    }
+                }
+                
+                // Show error message only if there were failures
+                if (failureCount > 0)
+                {
+                    DarkMessageBox.Show($"Failed to discard {failureCount} scene(s):\n\n{string.Join("\n", failedScenes)}",
+                        "Discard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                
+                // Remove successfully discarded scenes from the UI
+                if (successCount > 0)
+                {
+                    var scenesToRemove = selectedScenes.Where(s => 
+                        string.IsNullOrEmpty(s.FilePath) || !File.Exists(s.FilePath)
+                    ).ToList();
+                    
+                    foreach (var scene in scenesToRemove)
+                    {
+                        Scenes.Remove(scene);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error during discard operation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
+            }
+        }
+        
+        private async void DiscardSelectedCustomAtoms_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedCustomAtoms = CustomAtomDataGrid?.SelectedItems?.Cast<CustomAtomItem>().ToList();
+            if (selectedCustomAtoms == null || selectedCustomAtoms.Count == 0)
+                return;
+            
+            try
+            {
+                // Create DiscardedPackages folder in game root
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                Directory.CreateDirectory(discardedFolder);
+                
+                int successCount = 0;
+                int failureCount = 0;
+                var failedCustomAtoms = new List<string>();
+                
+                foreach (var customAtomItem in selectedCustomAtoms)
+                {
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(customAtomItem.FilePath) && File.Exists(customAtomItem.FilePath))
+                        {
+                            string fileName = Path.GetFileName(customAtomItem.FilePath);
+                            string destinationPath = Path.Combine(discardedFolder, fileName);
+                            
+                            // Handle file name conflicts by appending a number
+                            int counter = 1;
+                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            while (File.Exists(destinationPath))
+                            {
+                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                counter++;
+                            }
+                            
+                            // Release file handles before moving
+                            try
+                            {
+                                if (_imageManager != null)
+                                    await _imageManager.CloseFileHandlesAsync(customAtomItem.FilePath);
+                                await Task.Delay(100); // Brief delay to ensure handles are released
+                            }
+                            catch (Exception)
+                            {
+                                // Continue even if handle release fails
+                            }
+                            
+                            // Move the file
+                            File.Move(customAtomItem.FilePath, destinationPath, overwrite: false);
+                            successCount++;
+                        }
+                        else
+                        {
+                            failureCount++;
+                            failedCustomAtoms.Add(customAtomItem.DisplayName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error discarding custom atom {customAtomItem.DisplayName}: {ex.Message}");
+                        failureCount++;
+                        failedCustomAtoms.Add(customAtomItem.DisplayName);
+                    }
+                }
+                
+                // Remove successfully discarded custom atoms from the UI
+                if (successCount > 0)
+                {
+                    var customAtomsToRemove = selectedCustomAtoms.Where(c => 
+                        string.IsNullOrEmpty(c.FilePath) || !File.Exists(c.FilePath)
+                    ).ToList();
+                    
+                    foreach (var customAtom in customAtomsToRemove)
+                    {
+                        CustomAtomItems.Remove(customAtom);
+                    }
+                }
+                
+                // Show error message only if there were failures
+                if (failureCount > 0)
+                {
+                    DarkMessageBox.Show($"Failed to discard {failureCount} custom atom(s):\n\n{string.Join("\n", failedCustomAtoms)}",
+                        "Discard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error during discard operation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
+            }
+        }
+        
+        private async void DiscardSelectedDependencies_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedDependencies = DependenciesDataGrid?.SelectedItems?.Cast<DependencyItem>().ToList();
+            if (selectedDependencies == null || selectedDependencies.Count == 0)
+                return;
+            
+            try
+            {
+                // Create DiscardedPackages folder in game root
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                Directory.CreateDirectory(discardedFolder);
+                
+                int successCount = 0;
+                int failureCount = 0;
+                var failedDependencies = new List<string>();
+                
+                foreach (var depItem in selectedDependencies)
+                {
+                    try
+                    {
+                        // Get package metadata to find the file path
+                        if (_packageManager?.PackageMetadata?.TryGetValue(depItem.Name, out var metadata) == true)
+                        {
+                            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                            {
+                                string fileName = Path.GetFileName(metadata.FilePath);
+                                string destinationPath = Path.Combine(discardedFolder, fileName);
+                                
+                                // Handle file name conflicts by appending a number
+                                int counter = 1;
+                                string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                                string extension = Path.GetExtension(fileName);
+                                while (File.Exists(destinationPath))
+                                {
+                                    destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                    counter++;
+                                }
+                                
+                                // Release file handles before moving
+                                try
+                                {
+                                    if (_imageManager != null)
+                                        await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
+                                    await Task.Delay(100); // Brief delay to ensure handles are released
+                                }
+                                catch (Exception)
+                                {
+                                    // Continue even if handle release fails
+                                }
+                                
+                                // Move the file
+                                File.Move(metadata.FilePath, destinationPath, overwrite: false);
+                                successCount++;
+                            }
+                            else
+                            {
+                                failureCount++;
+                                failedDependencies.Add(depItem.Name);
+                            }
+                        }
+                        else
+                        {
+                            failureCount++;
+                            failedDependencies.Add(depItem.Name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error discarding dependency {depItem.Name}: {ex.Message}");
+                        failureCount++;
+                        failedDependencies.Add(depItem.Name);
+                    }
+                }
+                
+                // Remove successfully discarded dependencies from the UI
+                if (successCount > 0)
+                {
+                    var depsToRemove = selectedDependencies.Where(d => 
+                    {
+                        if (_packageManager?.PackageMetadata?.TryGetValue(d.Name, out var metadata) == true)
+                        {
+                            return metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && !File.Exists(metadata.FilePath);
+                        }
+                        return false;
+                    }).ToList();
+                    
+                    foreach (var dep in depsToRemove)
+                    {
+                        Dependencies.Remove(dep);
+                    }
+                }
+                
+                // Show error message only if there were failures
+                if (failureCount > 0)
+                {
+                    DarkMessageBox.Show($"Failed to discard {failureCount} package(s):\n\n{string.Join("\n", failedDependencies)}",
+                        "Discard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error during discard operation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
+            }
+        }
+        
+        private async void DiscardSelected_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+                return;
+            
+            try
+            {
+                // Create DiscardedPackages folder in game root
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                Directory.CreateDirectory(discardedFolder);
+                
+                int successCount = 0;
+                int failureCount = 0;
+                var failedPackages = new List<string>();
+                
+                foreach (var packageItem in selectedPackages)
+                {
+                    try
+                    {
+                        // Get package metadata to find the file path
+                        if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
+                        {
+                            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                            {
+                                string fileName = Path.GetFileName(metadata.FilePath);
+                                string destinationPath = Path.Combine(discardedFolder, fileName);
+                                
+                                // Handle file name conflicts by appending a number
+                                int counter = 1;
+                                string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                                string extension = Path.GetExtension(fileName);
+                                while (File.Exists(destinationPath))
+                                {
+                                    destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                    counter++;
+                                }
+                                
+                                // Release file handles before moving
+                                try
+                                {
+                                    if (_imageManager != null)
+                                        await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
+                                    await Task.Delay(100); // Brief delay to ensure handles are released
+                                }
+                                catch (Exception)
+                                {
+                                    // Continue even if handle release fails
+                                }
+                                
+                                // Move the file
+                                File.Move(metadata.FilePath, destinationPath, overwrite: false);
+                                successCount++;
+                            }
+                            else
+                            {
+                                failureCount++;
+                                failedPackages.Add(packageItem.DisplayName);
+                            }
+                        }
+                        else
+                        {
+                            failureCount++;
+                            failedPackages.Add(packageItem.DisplayName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error discarding package {packageItem.DisplayName}: {ex.Message}");
+                        failureCount++;
+                        failedPackages.Add(packageItem.DisplayName);
+                    }
+                }
+                
+                // Remove successfully discarded packages from the UI
+                if (successCount > 0)
+                {
+                    var packagesToRemove = selectedPackages.Where(p => 
+                    {
+                        if (_packageManager?.PackageMetadata?.TryGetValue(p.MetadataKey, out var metadata) == true)
+                        {
+                            return metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && !File.Exists(metadata.FilePath);
+                        }
+                        return false;
+                    }).ToList();
+                    
+                    foreach (var package in packagesToRemove)
+                    {
+                        Packages.Remove(package);
+                    }
+                }
+                
+                // Show error message only if there were failures
+                if (failureCount > 0)
+                {
+                    DarkMessageBox.Show($"Failed to discard {failureCount} package(s):\n\n{string.Join("\n", failedPackages)}",
+                        "Discard Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error during discard operation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
+            }
+        }
+        
         #endregion
     }
 }

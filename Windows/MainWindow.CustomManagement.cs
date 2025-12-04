@@ -18,6 +18,34 @@ namespace VPM
     public partial class MainWindow
     {
         private List<CustomAtomItem> _originalCustomAtomItems = new List<CustomAtomItem>();
+        
+        // In-memory cache for custom item thumbnails to avoid re-reading files and prevent file locking
+        // Key: ThumbnailPath, Value: (BitmapImage, LastWriteTime) - LastWriteTime used for cache invalidation
+        private readonly Dictionary<string, (BitmapImage Image, long LastWriteTicks)> _customThumbnailCache = new();
+        
+        /// <summary>
+        /// Clears the custom thumbnail cache for a specific file path (call when file is deleted/renamed)
+        /// </summary>
+        public void ClearCustomThumbnailCache(string thumbnailPath)
+        {
+            if (string.IsNullOrEmpty(thumbnailPath)) return;
+            lock (_customThumbnailCache)
+            {
+                _customThumbnailCache.Remove(thumbnailPath);
+            }
+        }
+        
+        /// <summary>
+        /// Clears all custom thumbnail cache entries
+        /// </summary>
+        public void ClearAllCustomThumbnailCache()
+        {
+            lock (_customThumbnailCache)
+            {
+                _customThumbnailCache.Clear();
+            }
+        }
+        
         /// <summary>
         /// Loads all custom content (presets and scenes) from both Custom\Atom\Person and Saves\scene folders
         /// </summary>
@@ -239,21 +267,58 @@ namespace VPM
                                 return null;
                             }
 
+                            // Check memory cache first to avoid re-reading files
+                            var thumbnailPath = item.ThumbnailPath;
+                            long lastWriteTicks = 0;
+                            try
+                            {
+                                lastWriteTicks = new FileInfo(thumbnailPath).LastWriteTimeUtc.Ticks;
+                            }
+                            catch
+                            {
+                                // File may have been deleted
+                                return null;
+                            }
+                            
+                            // Check cache - return cached image if file hasn't changed
+                            lock (_customThumbnailCache)
+                            {
+                                if (_customThumbnailCache.TryGetValue(thumbnailPath, out var cached) && cached.LastWriteTicks == lastWriteTicks)
+                                {
+                                    return cached.Image;
+                                }
+                            }
+                            
                             return await Task.Run(() => 
                             {
                                 try 
                                 {
-                                    // Load bitmap from file efficiently
-                                    // Use OnLoad cache option to avoid locking the file
+                                    // CRITICAL: Read file bytes into memory first to avoid file locking
+                                    // Using UriSource can hold file locks even with BitmapCacheOption.OnLoad
+                                    // This allows the file to be deleted/renamed immediately after loading
+                                    byte[] imageBytes;
+                                    using (var fileStream = new FileStream(thumbnailPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                                    {
+                                        imageBytes = new byte[fileStream.Length];
+                                        fileStream.Read(imageBytes, 0, imageBytes.Length);
+                                    }
+                                    // File is now released - create BitmapImage from memory
                                     var bi = new BitmapImage();
                                     bi.BeginInit();
-                                    bi.UriSource = new Uri(item.ThumbnailPath, UriKind.Absolute);
                                     bi.CacheOption = BitmapCacheOption.OnLoad;
                                     bi.CreateOptions = BitmapCreateOptions.IgnoreColorProfile | BitmapCreateOptions.PreservePixelFormat;
                                     // Decode to a reasonable size for thumbnails to save memory
-                                    bi.DecodePixelWidth = 300; 
+                                    bi.DecodePixelWidth = 300;
+                                    bi.StreamSource = new MemoryStream(imageBytes);
                                     bi.EndInit();
                                     bi.Freeze(); // Must freeze to pass between threads
+                                    
+                                    // Cache the loaded image for future use
+                                    lock (_customThumbnailCache)
+                                    {
+                                        _customThumbnailCache[thumbnailPath] = (bi, lastWriteTicks);
+                                    }
+                                    
                                     return bi;
                                 }
                                 catch

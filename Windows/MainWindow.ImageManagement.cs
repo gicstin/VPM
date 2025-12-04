@@ -1378,12 +1378,94 @@ namespace VPM
 
         private void UpdateDependenciesStatus()
         {
-            // Stub implementation
+            // Refresh the status of all dependencies in the current view
+            // This is called after downloads complete to ensure the UI reflects the current state
+            if (Dependencies == null || Dependencies.Count == 0)
+                return;
+            
+            // Force refresh package status index to get latest file system state
+            // This is critical after downloads to detect newly added files
+            _packageFileManager?.RefreshPackageStatusIndex(force: true);
+            
+            foreach (var dep in Dependencies)
+            {
+                // Skip placeholder items
+                if (dep.Status == "N/A" || dep.Name == "No dependencies" || dep.Name == "No dependents")
+                    continue;
+                
+                // Skip if already marked as Loaded (e.g., by download completion handler)
+                // This prevents overwriting the correct status with a stale lookup
+                if (dep.Status == "Loaded")
+                    continue;
+                
+                // Get the current status from the package file manager
+                var newStatus = _packageFileManager?.GetPackageStatus(dep.Name) ?? "Unknown";
+                
+                // Only update if the new status is better (Loaded > Available > Missing)
+                // This ensures we don't downgrade a status that was correctly set
+                if (dep.Status != newStatus && ShouldUpdateDependencyStatus(dep.Status, newStatus))
+                {
+                    dep.Status = newStatus;
+                    
+                    // Also update in _originalDependencies to keep in sync
+                    var origDep = _originalDependencies.FirstOrDefault(d => 
+                        d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase) &&
+                        d.Version == dep.Version);
+                    if (origDep != null)
+                    {
+                        origDep.Status = newStatus;
+                    }
+                }
+            }
+            
+            // Update toolbar buttons to reflect new missing count
+            UpdateToolbarButtons();
+        }
+        
+        /// <summary>
+        /// Determines if a dependency status should be updated based on priority
+        /// Loaded > Available > Downloading > Missing/Unknown
+        /// </summary>
+        private bool ShouldUpdateDependencyStatus(string currentStatus, string newStatus)
+        {
+            // Status priority (higher = better)
+            int GetPriority(string status) => status switch
+            {
+                "Loaded" => 4,
+                "Available" => 3,
+                "Downloading" => 2,
+                "Missing" => 1,
+                "Unknown" => 0,
+                _ => 0
+            };
+            
+            // Only update if new status is better or equal priority
+            return GetPriority(newStatus) >= GetPriority(currentStatus);
         }
 
         private void UpdateDependencyStatus(string packageName, string newStatus)
         {
-            // Stub implementation
+            if (string.IsNullOrEmpty(packageName) || Dependencies == null)
+                return;
+            
+            // Find and update the dependency with matching name
+            foreach (var dep in Dependencies)
+            {
+                if (dep.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
+                    dep.DisplayName.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    dep.Status = newStatus;
+                    
+                    // Also update in _originalDependencies to keep in sync
+                    var origDep = _originalDependencies.FirstOrDefault(d => 
+                        d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase) &&
+                        d.Version == dep.Version);
+                    if (origDep != null)
+                    {
+                        origDep.Status = newStatus;
+                    }
+                }
+            }
         }
 
         private async Task OpenImageInViewer(string packageNameOrMetadataKey, System.Windows.Media.Imaging.BitmapSource imageSource)

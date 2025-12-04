@@ -389,16 +389,9 @@ namespace VPM
                     string message = e.AlreadyExisted ? "Package already exists" : "Download completed successfully";
                     _currentProgressWindow?.MarkCompleted(e.PackageName, true, message);
                     
-                    // Update dependency status after download completes - try multiple matching strategies
-                    var dep = Dependencies.FirstOrDefault(d => 
-                        d.Name.Equals(e.PackageName, StringComparison.OrdinalIgnoreCase) ||
-                        d.DisplayName.Equals(e.PackageName, StringComparison.OrdinalIgnoreCase) ||
-                        e.PackageName.StartsWith(d.Name + ".", StringComparison.OrdinalIgnoreCase));
-                    
-                    if (dep != null)
-                    {
-                        dep.Status = "Loaded";
-                    }
+                    // Update dependency status after download completes
+                    // Find all matching dependencies (could be multiple if .latest is used)
+                    UpdateDependencyStatusAfterDownload(e.PackageName);
                     
                     // Incrementally add the downloaded package to the UI
                     await AddDownloadedPackageToUIAsync(e.FilePath, e.PackageName);
@@ -422,14 +415,28 @@ namespace VPM
                     _currentProgressWindow?.MarkCompleted(e.PackageName, false, e.ErrorMessage);
                     
                     // Revert dependency status back to Missing if download failed
-                    var dep = Dependencies.FirstOrDefault(d => 
-                        d.Name.Equals(e.PackageName, StringComparison.OrdinalIgnoreCase) ||
-                        d.DisplayName.Equals(e.PackageName, StringComparison.OrdinalIgnoreCase));
+                    // Find all matching dependencies
+                    var matchingDeps = FindMatchingDependencies(e.PackageName);
                     
-                    if (dep != null && dep.Status == "Downloading")
+                    foreach (var dep in matchingDeps)
                     {
-                        dep.Status = "Missing";
-                        
+                        if (dep.Status == "Downloading")
+                        {
+                            dep.Status = "Missing";
+                            
+                            // Also update in _originalDependencies to keep in sync
+                            var origDep = _originalDependencies.FirstOrDefault(d => 
+                                d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase) &&
+                                d.Version == dep.Version);
+                            if (origDep != null)
+                            {
+                                origDep.Status = "Missing";
+                            }
+                        }
+                    }
+                    
+                    if (matchingDeps.Any())
+                    {
                         // Update toolbar buttons to reflect current missing count
                         UpdateToolbarButtons();
                     }
@@ -438,6 +445,103 @@ namespace VPM
                 {
                 }
             });
+        }
+        
+        /// <summary>
+        /// Updates dependency status after a package is successfully downloaded
+        /// </summary>
+        private void UpdateDependencyStatusAfterDownload(string downloadedPackageName)
+        {
+            // Find all matching dependencies in both collections
+            var matchingDeps = FindMatchingDependencies(downloadedPackageName);
+            
+            foreach (var dep in matchingDeps)
+            {
+                dep.Status = "Loaded";
+                
+                // Also update in _originalDependencies to keep in sync
+                var origDep = _originalDependencies.FirstOrDefault(d => 
+                    d.Name.Equals(dep.Name, StringComparison.OrdinalIgnoreCase) &&
+                    d.Version == dep.Version);
+                if (origDep != null)
+                {
+                    origDep.Status = "Loaded";
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Finds all dependencies that match a downloaded package name
+        /// Handles exact matches, DisplayName matches, base name matches, and .latest dependencies
+        /// </summary>
+        private List<DependencyItem> FindMatchingDependencies(string packageName)
+        {
+            var matches = new List<DependencyItem>();
+            
+            if (string.IsNullOrEmpty(packageName))
+                return matches;
+            
+            // Extract base name from the downloaded package (e.g., "Creator.Package" from "Creator.Package.5")
+            string downloadedBaseName = packageName;
+            string downloadedVersion = "";
+            
+            var lastDotIndex = packageName.LastIndexOf('.');
+            if (lastDotIndex > 0)
+            {
+                var potentialVersion = packageName.Substring(lastDotIndex + 1);
+                if (int.TryParse(potentialVersion, out _))
+                {
+                    downloadedBaseName = packageName.Substring(0, lastDotIndex);
+                    downloadedVersion = potentialVersion;
+                }
+            }
+            
+            foreach (var dep in Dependencies)
+            {
+                // Skip placeholder items
+                if (dep.Status == "N/A")
+                    continue;
+                
+                bool isMatch = false;
+                
+                // Match 1: Exact name match (rare, but possible)
+                if (dep.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    isMatch = true;
+                }
+                // Match 2: DisplayName match (Name.Version == packageName)
+                else if (dep.DisplayName.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                {
+                    isMatch = true;
+                }
+                // Match 3: Base name match - downloaded package starts with dependency base name
+                else if (packageName.StartsWith(dep.Name + ".", StringComparison.OrdinalIgnoreCase))
+                {
+                    // For .latest dependencies, any version of the same base name satisfies it
+                    if (dep.Version.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        isMatch = true;
+                    }
+                    // For specific version dependencies, check if versions match
+                    else if (!string.IsNullOrEmpty(downloadedVersion) && dep.Version == downloadedVersion)
+                    {
+                        isMatch = true;
+                    }
+                }
+                // Match 4: Dependency base name matches downloaded base name (for .latest)
+                else if (dep.Name.Equals(downloadedBaseName, StringComparison.OrdinalIgnoreCase) &&
+                         dep.Version.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                {
+                    isMatch = true;
+                }
+                
+                if (isMatch)
+                {
+                    matches.Add(dep);
+                }
+            }
+            
+            return matches;
         }
         
         #endregion
@@ -531,10 +635,10 @@ namespace VPM
         {
             try
             {
-                // Rebuild package status index
+                // Rebuild package status index - force rebuild to detect newly downloaded files
                 if (_packageFileManager != null)
                 {
-                    await Task.Run(() => _packageFileManager.RefreshPackageStatusIndex());
+                    await Task.Run(() => _packageFileManager.RefreshPackageStatusIndex(force: true));
                 }
                 
                 // Update dependencies status

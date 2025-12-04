@@ -1,3 +1,6 @@
+## Join Our Discord Community
+[![Discord](https://img.shields.io/badge/Chat-Discord-blue?logo=discord)](https://discord.gg/TekWBVsa73)
+
 # VPM - Virt-A-Mate Package Manager
 
 <img width="3268" height="1876" alt="image" src="https://github.com/user-attachments/assets/3c700666-794b-48bf-9200-d1859ee61641" />
