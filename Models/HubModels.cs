@@ -194,6 +194,7 @@ namespace VPM.Models
         public string Creator { get; set; } = "All";
         public string Tags { get; set; } = "All";
         public string Sort { get; set; } = "Last Update";
+        public string SortSecondary { get; set; } = "None";  // Secondary sort option
         public bool OnlyDownloadable { get; set; } = true;
     }
 
@@ -246,6 +247,33 @@ namespace VPM.Models
         public HubResourceDetail Resource { get; set; }
 
         public bool IsSuccess => Status == "success";
+    }
+
+    /// <summary>
+    /// Hub filter options (categories, types, sort options, etc.)
+    /// </summary>
+    public class HubFilterOptions
+    {
+        [JsonPropertyName("location")]
+        public List<string> Locations { get; set; }
+
+        [JsonPropertyName("category")]
+        public List<string> Categories { get; set; }
+
+        [JsonPropertyName("type")]
+        public List<string> Types { get; set; }
+
+        [JsonPropertyName("sort")]
+        public List<string> SortOptions { get; set; }
+
+        [JsonPropertyName("users")]
+        public Dictionary<string, object> Users { get; set; }
+
+        [JsonPropertyName("tags")]
+        public Dictionary<string, object> Tags { get; set; }
+
+        [JsonPropertyName("last_update")]
+        public string LastUpdate { get; set; }
     }
 
     /// <summary>

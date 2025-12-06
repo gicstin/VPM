@@ -95,6 +95,24 @@ namespace VPM.Models
         
         public CancellationTokenSource CancellationTokenSource { get; set; }
         
+        // Download URL and destination for queue processing
+        public string DownloadUrl { get; set; }
+        public string DestinationPath { get; set; }
+        
+        /// <summary>
+        /// Whether this download can be cancelled (queued or downloading)
+        /// </summary>
+        public bool CanCancel => Status == DownloadStatus.Queued || Status == DownloadStatus.Downloading;
+        
+        /// <summary>
+        /// Cancel this download
+        /// </summary>
+        public void Cancel()
+        {
+            CancellationTokenSource?.Cancel();
+            Status = DownloadStatus.Cancelled;
+        }
+        
         // Display properties
         public string StatusText
         {

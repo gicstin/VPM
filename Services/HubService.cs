@@ -34,9 +34,21 @@ namespace VPM.Services
         private DateTime _packagesCacheTime = DateTime.MinValue;
         private readonly TimeSpan _packagesCacheExpiry = TimeSpan.FromHours(1);
 
+        // Download queue management
+        private readonly Queue<QueuedDownload> _downloadQueue = new Queue<QueuedDownload>();
+        private readonly object _downloadQueueLock = new object();
+        private bool _isDownloading = false;
+
         // Events
         public event EventHandler<HubDownloadProgress> DownloadProgressChanged;
         public event EventHandler<string> StatusChanged;
+        public event EventHandler<QueuedDownload> DownloadQueued;
+        public event EventHandler<QueuedDownload> DownloadStarted;
+        public event EventHandler<QueuedDownload> DownloadCompleted;
+        /// <summary>
+        /// Fired when all queued downloads have been processed (queue is empty)
+        /// </summary>
+        public event EventHandler AllDownloadsCompleted;
 
         public HubService()
         {
@@ -60,6 +72,37 @@ namespace VPM.Services
         }
 
         #region Search & Browse
+
+        /// <summary>
+        /// Get available filter options from the Hub API
+        /// </summary>
+        public async Task<HubFilterOptions> GetFilterOptionsAsync(CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var request = new JsonObject
+                {
+                    ["source"] = "VaM",
+                    ["action"] = "getInfo"
+                };
+
+                var requestJson = request.ToJsonString();
+
+                var response = await PostRequestRawAsync(requestJson, cancellationToken);
+                var options = JsonSerializer.Deserialize<HubFilterOptions>(response, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return options;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubService] Failed to get filter options: {ex.Message}");
+                Debug.WriteLine($"[HubService] Exception details: {ex}");
+                return null;
+            }
+        }
 
         /// <summary>
         /// Search for resources on the Hub
@@ -100,9 +143,11 @@ namespace VPM.Services
                 request["tags"] = searchParams.Tags;
 
             request["sort"] = searchParams.Sort;
+            
+            if (!string.IsNullOrEmpty(searchParams.SortSecondary) && searchParams.SortSecondary != "None")
+                request["sort_secondary"] = searchParams.SortSecondary;
 
             var requestJson = request.ToJsonString();
-            Debug.WriteLine($"[HubService] API Request: {requestJson}");
             
             var response = await PostRequestAsync<HubSearchResponse>(requestJson, cancellationToken);
             return response;
@@ -453,6 +498,204 @@ namespace VPM.Services
                     ErrorMessage = ex.Message
                 });
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Queue a download to be processed sequentially
+        /// </summary>
+        public QueuedDownload QueueDownload(string downloadUrl, string destinationPath, string packageName, long fileSize = 0)
+        {
+            var queuedDownload = new QueuedDownload
+            {
+                PackageName = packageName,
+                DownloadUrl = downloadUrl,
+                DestinationPath = destinationPath,
+                Status = DownloadStatus.Queued,
+                TotalBytes = fileSize,
+                CancellationTokenSource = new CancellationTokenSource(),
+                QueuedTime = DateTime.Now
+            };
+
+            bool shouldStartProcessing = false;
+            
+            // Use lock for thread-safe queue access
+            lock (_downloadQueueLock)
+            {
+                _downloadQueue.Enqueue(queuedDownload);
+                
+                // Check if we need to start processing (inside same lock to prevent race)
+                if (!_isDownloading)
+                {
+                    _isDownloading = true;
+                    shouldStartProcessing = true;
+                }
+            }
+            
+            // Fire event (outside lock to prevent deadlocks)
+            DownloadQueued?.Invoke(this, queuedDownload);
+            
+            // Start processing queue on background thread if needed
+            if (shouldStartProcessing)
+            {
+                Task.Run(() => ProcessDownloadQueueAsync());
+            }
+
+            return queuedDownload;
+        }
+
+        /// <summary>
+        /// Cancel a queued or active download
+        /// </summary>
+        public void CancelDownload(QueuedDownload download)
+        {
+            if (download?.CancellationTokenSource != null && download.CanCancel)
+            {
+                download.CancellationTokenSource.Cancel();
+                download.Status = DownloadStatus.Cancelled;
+            }
+        }
+
+        /// <summary>
+        /// Cancel all queued and active downloads
+        /// </summary>
+        public void CancelAllDownloads()
+        {
+            lock (_downloadQueueLock)
+            {
+                foreach (var download in _downloadQueue)
+                {
+                    if (download.CanCancel)
+                    {
+                        download.CancellationTokenSource?.Cancel();
+                        download.Status = DownloadStatus.Cancelled;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Get the current download queue count
+        /// </summary>
+        public int GetQueueCount()
+        {
+            lock (_downloadQueueLock)
+            {
+                return _downloadQueue.Count;
+            }
+        }
+
+        /// <summary>
+        /// Check if currently downloading
+        /// </summary>
+        public bool IsDownloading => _isDownloading;
+
+        /// <summary>
+        /// Process the download queue sequentially (runs on background thread)
+        /// </summary>
+        private async Task ProcessDownloadQueueAsync()
+        {
+            try
+            {
+                while (true)
+                {
+                    QueuedDownload download;
+                    
+                    lock (_downloadQueueLock)
+                    {
+                        if (_downloadQueue.Count == 0)
+                            break;
+
+                        download = _downloadQueue.Dequeue();
+                    }
+
+                    if (download == null)
+                        break;
+
+                    // Skip cancelled downloads
+                    if (download.Status == DownloadStatus.Cancelled)
+                        continue;
+
+                    download.Status = DownloadStatus.Downloading;
+                    download.StartTime = DateTime.Now;
+                    download.ProgressPercentage = 0;
+                    DownloadStarted?.Invoke(this, download);
+
+                    var progress = new Progress<HubDownloadProgress>(p =>
+                    {
+                        if (p.IsDownloading)
+                        {
+                            download.DownloadedBytes = p.DownloadedBytes;
+                            if (p.TotalBytes > 0)
+                            {
+                                download.TotalBytes = p.TotalBytes;
+                                download.ProgressPercentage = (int)(p.Progress * 100);
+                            }
+                        }
+                    });
+
+                    bool success = false;
+                    try
+                    {
+                        success = await DownloadPackageAsync(
+                            download.DownloadUrl,
+                            download.DestinationPath,
+                            download.PackageName,
+                            progress,
+                            download.CancellationTokenSource.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Download was cancelled
+                        success = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[HubService] Download error: {ex.Message}");
+                        download.ErrorMessage = ex.Message;
+                        success = false;
+                    }
+
+                    download.EndTime = DateTime.Now;
+
+                    if (download.CancellationTokenSource.Token.IsCancellationRequested)
+                    {
+                        download.Status = DownloadStatus.Cancelled;
+                    }
+                    else if (success)
+                    {
+                        download.Status = DownloadStatus.Completed;
+                        download.ProgressPercentage = 100;
+                    }
+                    else
+                    {
+                        download.Status = DownloadStatus.Failed;
+                        if (string.IsNullOrEmpty(download.ErrorMessage))
+                            download.ErrorMessage = "Download failed";
+                    }
+
+                    // Dispose the CancellationTokenSource to prevent memory leak
+                    try
+                    {
+                        download.CancellationTokenSource?.Dispose();
+                    }
+                    catch
+                    {
+                        // Ignore disposal errors
+                    }
+
+                    DownloadCompleted?.Invoke(this, download);
+                }
+            }
+            finally
+            {
+                lock (_downloadQueueLock)
+                {
+                    _isDownloading = false;
+                }
+                
+                // Notify that all downloads are complete
+                AllDownloadsCompleted?.Invoke(this, EventArgs.Empty);
             }
         }
 

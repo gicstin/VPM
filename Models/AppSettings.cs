@@ -102,6 +102,8 @@ namespace VPM.Models
         // Package Downloader Settings
         private bool _enableAutoDownload = false;
         
+        // Hub Browser Settings
+        private string _oldVersionHandling = "No Change";
         
         // Package Optimizer Settings
         private bool _forceLatestDependencies = true;
@@ -560,6 +562,12 @@ namespace VPM.Models
             set => SetProperty(ref _enableAutoDownload, value);
         }
         
+        // Hub Browser Settings Properties
+        public string OldVersionHandling
+        {
+            get => _oldVersionHandling;
+            set => SetProperty(ref _oldVersionHandling, value ?? "No Change");
+        }
         
         // Package Optimizer Settings Properties
         public bool ForceLatestDependencies

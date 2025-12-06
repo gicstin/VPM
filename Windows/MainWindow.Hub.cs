@@ -41,7 +41,7 @@ namespace VPM
                     }
                 }
                 
-                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths);
+                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths, _packageManager, _settingsManager);
                 hubWindow.Owner = this;
                 hubWindow.ShowDialog();
                 
@@ -212,17 +212,15 @@ namespace VPM
         private void RefreshPackagesAfterHubDownload()
         {
             // Trigger a refresh to pick up newly downloaded packages
-            // This is a lightweight refresh that just rescans for new files
             try
             {
-                SetStatus("Checking for new packages...");
-                // The actual refresh logic would go here
-                // For now, just update status
-                SetStatus("Ready - restart or refresh to see new packages");
+                SetStatus("Refreshing packages after Hub download...");
+                RefreshPackages();
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore refresh errors
+                System.Diagnostics.Debug.WriteLine($"[MainWindow.Hub] Error refreshing after Hub download: {ex.Message}");
+                SetStatus("Ready - refresh to see new packages");
             }
         }
 
