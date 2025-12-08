@@ -445,6 +445,7 @@ namespace VPM.Services
         /// <summary>
         /// Processes an image (loads from VAR, applies transformations)
         /// Uses lock-free archive reader to eliminate file locking issues.
+        /// Integrates with FileAccessController to prevent conflicts during optimization.
         /// </summary>
         private void ProcessImage(QueuedImage qi)
         {
@@ -455,6 +456,15 @@ namespace VPM.Services
                 // Load image from VAR archive
                 if (!string.IsNullOrEmpty(qi.VarPath) && !string.IsNullOrEmpty(qi.InternalPath))
                 {
+                    // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+                    // This is the primary mechanism to prevent file lock conflicts during optimization
+                    if (FileAccessController.Instance.IsFileLockedForWriting(qi.VarPath))
+                    {
+                        qi.HadError = true;
+                        qi.ErrorText = "File is being optimized";
+                        return;
+                    }
+                    
                     // Get file info for cache validation
                     try
                     {
@@ -480,11 +490,19 @@ namespace VPM.Services
                         // Ignore file info errors, proceed to load from VAR
                     }
 
-                    // Check if cancelled before reading
+                    // Check if cancelled before reading (legacy cancellation system)
                     if (IsFileCancelled(qi.VarPath))
                     {
                         qi.HadError = true;
                         qi.ErrorText = "Operation cancelled";
+                        return;
+                    }
+                    
+                    // Double-check FileAccessController after potential delays
+                    if (FileAccessController.Instance.IsFileLockedForWriting(qi.VarPath))
+                    {
+                        qi.HadError = true;
+                        qi.ErrorText = "File is being optimized";
                         return;
                     }
 
@@ -509,11 +527,21 @@ namespace VPM.Services
                     }
                     
                     // Read entry data using lock-free reader (file is opened, read, and closed immediately)
+                    // The lock-free reader also checks FileAccessController internally
                     var imageData = _lockFreeReader.ReadEntryData(qi.VarPath, qi.InternalPath);
                     if (imageData == null || imageData.Length == 0)
                     {
-                        qi.HadError = true;
-                        qi.ErrorText = "Entry not found in archive or empty";
+                        // Check if this was due to file being locked
+                        if (FileAccessController.Instance.IsFileLockedForWriting(qi.VarPath))
+                        {
+                            qi.HadError = true;
+                            qi.ErrorText = "File is being optimized";
+                        }
+                        else
+                        {
+                            qi.HadError = true;
+                            qi.ErrorText = "Entry not found in archive or empty";
+                        }
                         return;
                     }
                     
@@ -652,6 +680,13 @@ namespace VPM.Services
                 return;
             }
             
+            // CRITICAL: Don't queue if file is locked for writing (optimization in progress)
+            // This is the primary mechanism to prevent new image loads during optimization
+            if (!string.IsNullOrEmpty(qi.VarPath) && FileAccessController.Instance.IsFileLockedForWriting(qi.VarPath))
+            {
+                return;
+            }
+            
             qi.IsThumbnail = false;
             _imageQueue.Push(qi);
             
@@ -671,6 +706,12 @@ namespace VPM.Services
             
             // Don't queue if path is cancelled (prevents file lock conflicts during unload)
             if (!string.IsNullOrEmpty(qi.VarPath) && _cancelledPaths.ContainsKey(qi.VarPath))
+            {
+                return;
+            }
+            
+            // CRITICAL: Don't queue if file is locked for writing (optimization in progress)
+            if (!string.IsNullOrEmpty(qi.VarPath) && FileAccessController.Instance.IsFileLockedForWriting(qi.VarPath))
             {
                 return;
             }

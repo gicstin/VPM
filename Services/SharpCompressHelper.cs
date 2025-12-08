@@ -87,6 +87,12 @@ namespace VPM.Services
             LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+            {
+                throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+            }
 
             if (_availableHandles.TryTake(out var handle))
                 return handle;
@@ -99,6 +105,13 @@ namespace VPM.Services
                     // Check if file exists before attempting to open
                     if (!File.Exists(_archivePath))
                         throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
+                    
+                    // Double-check FileAccessController after potential wait
+                    if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+                    {
+                        _totalCreated--;
+                        throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+                    }
                     
                     // Open file with explicit seek support
                     FileStream fileStream = null;
@@ -123,6 +136,12 @@ namespace VPM.Services
             {
                 if (_disposed)
                     throw new ObjectDisposedException("ArchiveHandlePool");
+                
+                // Check if file became locked for writing while waiting
+                if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+                {
+                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+                }
                 
                 System.Threading.Thread.Sleep(10);
                 waitAttempts++;
@@ -142,6 +161,12 @@ namespace VPM.Services
             LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+            {
+                throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+            }
 
             if (_availableHandles.TryTake(out var handle))
                 return handle;
@@ -154,6 +179,13 @@ namespace VPM.Services
                     // Check if file exists before attempting to open
                     if (!File.Exists(_archivePath))
                         throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
+                    
+                    // Double-check FileAccessController after potential wait
+                    if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+                    {
+                        _totalCreated--;
+                        throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+                    }
                     
                     // Open file with explicit seek support
                     FileStream fileStream = null;
@@ -178,6 +210,12 @@ namespace VPM.Services
             {
                 if (_disposed)
                     throw new ObjectDisposedException("ArchiveHandlePool");
+                
+                // Check if file became locked for writing while waiting
+                if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
+                {
+                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
+                }
                 
                 await Task.Delay(10).ConfigureAwait(false);
                 waitAttempts++;
@@ -236,7 +274,14 @@ namespace VPM.Services
             FileStream fileStream = null;
             try
             {
-                // Check if path is cancelled (prevents opening files during unload/load operations)
+                // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+                // This is the primary mechanism to prevent file lock conflicts during optimization
+                if (FileAccessController.Instance.IsFileLockedForWriting(filePath))
+                {
+                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {filePath}");
+                }
+                
+                // Check if path is cancelled (legacy cancellation system)
                 if (asyncPool != null)
                 {
                     // Check full path
@@ -253,12 +298,10 @@ namespace VPM.Services
                     }
                 }
                 
-                // Console.WriteLine($"[SharpCompressHelper.OpenForRead] Opening archive: {filePath}");
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
                 var archive = ZipArchive.Open(fileStream);
                 fileStream = null; // Archive now owns the stream
-                // Console.WriteLine($"[SharpCompressHelper.OpenForRead] Archive opened successfully");
                 return new DisposableArchive(archive, filePath, forceGcOnDispose);
             }
             catch (Exception ex)

@@ -24,10 +24,6 @@ namespace VPM.Models
         /// </summary>
         public List<string> HubUrls { get; set; } = new List<string>();
         
-        /// <summary>
-        /// Pixeldrain download URLs (fallback)
-        /// </summary>
-        public List<string> PdrUrls { get; set; } = new List<string>();
     }
 }
 

@@ -99,18 +99,20 @@ namespace VPM
                     // Update package statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
+                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
+                    var packageLookup = selectedPackages.ToDictionary(
+                        p => p.Name, 
+                        p => p, 
+                        StringComparer.OrdinalIgnoreCase);
+
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var package = selectedPackages.FirstOrDefault(p => p.Name == packageName);
-                        if (package != null && success)
+                        if (packageLookup.TryGetValue(packageName, out var package) && success)
                         {
                             package.Status = "Loaded";
                             statusUpdates.Add((packageName, "Loaded", package.StatusColor));
                         }
-                        if (!success)
-                        {
-                            // Load failed - error handled in status reporting below
-                        }
+                        // Load failed - error handled in status reporting below
                     }
 
                     // Update image grid status indicators in batch
@@ -311,10 +313,15 @@ namespace VPM
 
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
+                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
+                    var packageLookup = selectedPackages.ToDictionary(
+                        p => p.Name, 
+                        p => p, 
+                        StringComparer.OrdinalIgnoreCase);
+
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var package = selectedPackages.FirstOrDefault(p => p.Name == packageName);
-                        if (package != null && success)
+                        if (packageLookup.TryGetValue(packageName, out var package) && success)
                         {
                             package.Status = "Loaded";
                             statusUpdates.Add((packageName, "Loaded", package.StatusColor));
@@ -475,18 +482,20 @@ namespace VPM
                     // Update package statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
+                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
+                    var packageLookup = selectedPackages.ToDictionary(
+                        p => p.Name, 
+                        p => p, 
+                        StringComparer.OrdinalIgnoreCase);
+
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var package = selectedPackages.FirstOrDefault(p => p.Name == packageName);
-                        if (package != null && success)
+                        if (packageLookup.TryGetValue(packageName, out var package) && success)
                         {
                             package.Status = "Available";
                             statusUpdates.Add((packageName, "Available", package.StatusColor));
                         }
-                        if (!success)
-                        {
-                            // Unload failed - error handled in status reporting below
-                        }
+                        // Unload failed - error handled in status reporting below
                     }
 
                     // Update image grid status indicators in batch

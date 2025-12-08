@@ -201,7 +201,7 @@ namespace VPM
                 await _imageManager.ReleasePackagesAsync(new List<string> { packageName });
                 
                 // Small delay to ensure dialog cleanup completes
-                await System.Threading.Tasks.Task.Delay(200);
+                await System.Threading.Tasks.Task.Delay(100);
 
                 // Create progress dialog
                 var progressDialog = CreateProgressDialog(this); // Use main window as owner now
@@ -210,9 +210,28 @@ namespace VPM
                 var progressBar = progressText?.Children.OfType<ProgressBar>().FirstOrDefault();
 
                 progressDialog.Show();
+                
+                // CRITICAL: Acquire exclusive write access using FileAccessController
+                // This GUARANTEES no image loading can access the file during optimization
+                // - Immediately blocks new readers (image loads)
+                // - Cancels any pending read operations
+                // - Waits for existing readers to finish (up to 30 seconds)
+                IDisposable writeAccess = null;
 
                 try
                 {
+                    // Update progress to show we're acquiring lock
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (progressTextBlock != null)
+                            progressTextBlock.Text = "Acquiring exclusive file access...";
+                    });
+                    
+                    // Acquire exclusive write access - this blocks until all readers finish
+                    // Timeout of 30 seconds should be more than enough for any pending image loads
+                    writeAccess = await Services.FileAccessController.Instance
+                        .AcquireWriteAccessAsync(packagePath, TimeSpan.FromSeconds(30));
+                    
                     // Build conversion dictionary with texture details (only where target differs from current)
                     var conversions = new Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)>();
                     foreach (var texture in selectedTextures)
@@ -301,12 +320,31 @@ namespace VPM
 
                     SetStatus($" Textures optimized: {Path.GetFileName(outputPath)} - Saved {FormatBytes(spaceSaved)}");
                 }
+                catch (TimeoutException tex)
+                {
+                    progressDialog.Close();
+                    MessageBox.Show($"Could not acquire exclusive access to the file.\n\n" +
+                                  $"The file may still be in use by image loading operations.\n\n" +
+                                  $"Please try again in a few seconds.\n\n" +
+                                  $"Technical details: {tex.Message}", "File Access Timeout",
+                                  MessageBoxButton.OK, MessageBoxImage.Warning);
+                    SetStatus($" Texture conversion failed: File access timeout");
+                }
                 catch (Exception ex)
                 {
                     progressDialog.Close();
                     MessageBox.Show($"Error during conversion:\n\n{ex.Message}", "Conversion Error",
                                   MessageBoxButton.OK, MessageBoxImage.Error);
                     SetStatus($" Texture conversion failed: {ex.Message}");
+                }
+                finally
+                {
+                    // CRITICAL: Always release write access when done
+                    // This allows image loading to resume
+                    writeAccess?.Dispose();
+                    
+                    // Invalidate the file from FileAccessController to clean up state
+                    Services.FileAccessController.Instance.InvalidateFile(packagePath);
                 }
             }
             catch (Exception ex)
@@ -1160,8 +1198,46 @@ namespace VPM
                 leftArrowButton.IsEnabled = false;
                 rightArrowButton.IsEnabled = false;
                 optimizeButton.IsEnabled = false;
+                optimizeButton.Content = "Acquiring lock...";
+                
+                // CRITICAL: Cancel any active image loading to prevent file locks
+                await CancelImageLoading();
+                
+                // Clear image preview grid before processing
+                PreviewImages.Clear();
+                
+                // Release file locks before operation to prevent conflicts with image grid
+                await _imageManager.ReleasePackagesAsync(new List<string> { packageName });
+                
+                // CRITICAL: Acquire exclusive write access using FileAccessController
+                // This GUARANTEES no image loading can access the file during optimization
+                IDisposable writeAccess = null;
+                try
+                {
+                    writeAccess = await Services.FileAccessController.Instance
+                        .AcquireWriteAccessAsync(packagePath, TimeSpan.FromSeconds(30));
+                }
+                catch (TimeoutException)
+                {
+                    // Re-enable buttons
+                    optimizeButton.IsEnabled = true;
+                    optimizeButton.Content = "Optimize";
+                    upArrowButton.IsEnabled = currentPackageIndex > 0;
+                    downArrowButton.IsEnabled = currentPackageIndex < allPackages.Count - 1;
+                    leftArrowButton.IsEnabled = true;
+                    rightArrowButton.IsEnabled = true;
+                    
+                    CustomMessageBox.Show("Could not acquire exclusive access to the file.\n\n" +
+                                  "The file may still be in use by image loading operations.\n\n" +
+                                  "Please try again in a few seconds.", "File Access Timeout",
+                                  MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                
                 optimizeButton.Content = "Optimizing...";
                 
+                try
+                {
                 // Build optimization config
                 var config = new PackageRepackager.OptimizationConfig();
                 
@@ -1253,7 +1329,7 @@ namespace VPM
                 }
 
                 // Delay to ensure file system has flushed
-                await System.Threading.Tasks.Task.Delay(1000);
+                await System.Threading.Tasks.Task.Delay(500);
 
                 // Refresh package data
                 await RefreshSinglePackage(packageName);
@@ -1275,6 +1351,15 @@ namespace VPM
                 await RefreshOptimizationTabsData(allPackages, textureResult, hairResult, tabControl);
                 
                 SetStatus($"✓ Optimization complete! Saved {FormatHelper.FormatFileSize(spaceSaved)} ({percentSaved:F1}%)");
+                }
+                finally
+                {
+                    // CRITICAL: Always release write access when done
+                    writeAccess?.Dispose();
+                    
+                    // Invalidate the file from FileAccessController to clean up state
+                    Services.FileAccessController.Instance.InvalidateFile(packagePath);
+                }
         }
         catch (Exception ex)
         {

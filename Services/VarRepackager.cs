@@ -150,7 +150,11 @@ namespace VPM.Services
                     
                     archivedPath = archiveFilePath;
                     
-                    // Retry logic for moving file
+                    // NOTE: FileAccessController write lock should already be held by the caller
+                    // (MainWindow.ConvertAndRepackageTextures acquires it before calling this method)
+                    // This ensures no image loading can interfere with the file move
+                    
+                    // Retry logic for moving file (should succeed immediately with FileAccessController)
                     bool moveSuccess = false;
                     Exception lastException = null;
                     for (int attempt = 1; attempt <= 3; attempt++)
@@ -166,8 +170,13 @@ namespace VPM.Services
                             lastException = ex;
                             if (attempt < 3)
                             {
-                                await ReleaseFileHandlesAsync(1000 * attempt);
+                                // With FileAccessController, this should rarely happen
+                                // But keep retry logic as a safety net
+                                await ReleaseFileHandlesAsync(500 * attempt);
                                 if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                                
+                                // Also invalidate FileAccessController state
+                                FileAccessController.Instance.InvalidateFile(sourceVarPath);
                             }
                         }
                     }

@@ -10,6 +10,9 @@ using SharpCompress.Archives.Zip;
 
 namespace VPM.Services
 {
+    // NOTE: This class now integrates with FileAccessController for centralized lock management.
+    // All file access goes through FileAccessController to prevent file lock conflicts
+    // during optimization operations.
     /// <summary>
     /// Represents a cached entry from a ZIP archive.
     /// Data is loaded on-demand and can be released under memory pressure.
@@ -240,6 +243,9 @@ namespace VPM.Services
         /// 
         /// IMPORTANT: This only reads the SPECIFIC entry requested, not the whole archive.
         /// For a 500MB package with one 50KB preview, only 50KB is read into memory.
+        /// 
+        /// THREAD SAFETY: Uses FileAccessController to coordinate with write operations.
+        /// If a write operation (optimization) is pending, this will throw OperationCanceledException.
         /// </summary>
         public byte[] ReadEntryData(string path)
         {
@@ -254,6 +260,13 @@ namespace VPM.Services
             {
                 LastAccessed = DateTime.UtcNow;
                 return cachedData;
+            }
+            
+            // CRITICAL: Check if file is locked for writing BEFORE attempting to read
+            // This prevents file lock conflicts during optimization
+            if (FileAccessController.Instance.IsFileLockedForWriting(FilePath))
+            {
+                return null; // Fail fast - file is being optimized
             }
             
             _accessLock.EnterUpgradeableReadLock();
@@ -274,6 +287,12 @@ namespace VPM.Services
                 _accessLock.EnterWriteLock();
                 try
                 {
+                    // Acquire read access from FileAccessController
+                    // This will throw if a writer is waiting/active
+                    using var fileAccess = FileAccessController.Instance
+                        .AcquireReadAccessAsync(FilePath, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    
                     // Read ONLY the requested entry - file is opened and closed within this block
                     // The archive is NOT fully loaded into memory - only the specific entry is decompressed
                     using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
@@ -303,6 +322,11 @@ namespace VPM.Services
                             return data;
                         }
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    // File is locked for writing - return null to indicate failure
+                    return null;
                 }
                 finally
                 {
@@ -351,6 +375,8 @@ namespace VPM.Services
         /// This is the preferred method for loading multiple images from the same package.
         /// Example: Loading 5 preview images from a 500MB package opens the file once,
         /// reads only those 5 entries (~250KB total), and closes immediately.
+        /// 
+        /// THREAD SAFETY: Uses FileAccessController to coordinate with write operations.
         /// </summary>
         public Dictionary<string, byte[]> ReadEntriesBatch(IEnumerable<string> paths)
         {
@@ -359,6 +385,12 @@ namespace VPM.Services
             
             var pathsList = paths.ToList();
             if (pathsList.Count == 0) return results;
+            
+            // CRITICAL: Check if file is locked for writing BEFORE attempting to read
+            if (FileAccessController.Instance.IsFileLockedForWriting(FilePath))
+            {
+                return results; // Fail fast - file is being optimized
+            }
             
             // First, check what's already cached
             var uncachedPaths = new List<string>();
@@ -393,6 +425,12 @@ namespace VPM.Services
                     IsValid = false;
                     return results;
                 }
+                
+                // Acquire read access from FileAccessController
+                // This will throw if a writer is waiting/active
+                using var fileAccess = FileAccessController.Instance
+                    .AcquireReadAccessAsync(FilePath, CancellationToken.None)
+                    .GetAwaiter().GetResult();
                 
                 // SINGLE file open for ALL requested entries
                 using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
@@ -431,6 +469,10 @@ namespace VPM.Services
                 }
                 
                 LastAccessed = DateTime.UtcNow;
+            }
+            catch (OperationCanceledException)
+            {
+                // File is locked for writing - return what we have cached
             }
             finally
             {

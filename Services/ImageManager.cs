@@ -228,39 +228,64 @@ namespace VPM.Services
             var pathsToRelease = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var packageNamesList = packageNames.ToList();
             
-            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Starting release for {packageNamesList.Count} packages");
-            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex contains {ImageIndex.Count} entries");
+            // PERFORMANCE FIX: Build prefix index once instead of scanning all keys for each package
+            // Previously: O(n × k) where n = packages to release, k = total indexed packages
+            // Now: O(k) to build index + O(n) lookups = O(n + k)
+            Dictionary<string, List<string>> prefixIndex = null;
+            
+            void EnsurePrefixIndex()
+            {
+                if (prefixIndex != null) return;
+                
+                _varArchiveLock.EnterReadLock();
+                try
+                {
+                    prefixIndex = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var key in ImageIndex.Keys)
+                    {
+                        // Extract base name (Creator.Package from Creator.Package.Version)
+                        var lastDot = key.LastIndexOf('.');
+                        if (lastDot > 0)
+                        {
+                            var baseName = key.Substring(0, lastDot);
+                            if (!prefixIndex.TryGetValue(baseName, out var list))
+                            {
+                                list = new List<string>();
+                                prefixIndex[baseName] = list;
+                            }
+                            list.Add(key);
+                        }
+                    }
+                }
+                finally
+                {
+                    _varArchiveLock.ExitReadLock();
+                }
+            }
             
             foreach (var packageName in packageNamesList)
             {
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Processing package: {packageName}");
-                
                 // Invalidate all caches for this package (bitmap, preview index, signatures)
                 // This now handles both exact matches and base name prefix matches
                 InvalidatePackageCache(packageName);
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Invalidated cache for {packageName}");
                 
                 // Try to find path from ImageIndex - first try exact match
                 bool foundInIndex = ImageIndex.TryGetValue(packageName, out var locations);
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ImageIndex lookup: {(foundInIndex ? "FOUND" : "NOT FOUND")}");
                 
                 if (foundInIndex && locations != null && locations.Count > 0)
                 {
                     var varPath = locations[0].VarFilePath;
                     pathsToRelease.Add(varPath);
-                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Found in ImageIndex: {varPath}");
                 }
                 else
                 {
                     // If exact match failed, try prefix match for base names (e.g., "Creator.Package" matches "Creator.Package.1")
                     // This is important for dependents which use base names without version numbers
-                    _varArchiveLock.EnterReadLock();
-                    try
+                    // PERFORMANCE FIX: Use pre-built prefix index for O(1) lookup
+                    EnsurePrefixIndex();
+                    
+                    if (prefixIndex.TryGetValue(packageName, out var matchingKeys))
                     {
-                        var matchingKeys = ImageIndex.Keys
-                            .Where(k => k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase))
-                            .ToList();
-                        
                         foreach (var matchingKey in matchingKeys)
                         {
                             if (ImageIndex.TryGetValue(matchingKey, out var matchingLocations) && 
@@ -272,58 +297,43 @@ namespace VPM.Services
                             }
                         }
                     }
-                    finally
-                    {
-                        _varArchiveLock.ExitReadLock();
-                    }
                 }
                 
                 // Also check metadata provider if not in index
                 var metadata = _metadataProvider.GetCachedPackageMetadata(packageName);
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata lookup: {(metadata != null ? "FOUND" : "NOT FOUND")}");
                 
                 if (metadata != null)
                 {
-                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Metadata FilePath: {metadata.FilePath}");
                     if (!string.IsNullOrEmpty(metadata.FilePath))
                     {
                         pathsToRelease.Add(metadata.FilePath);
-                        // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Added from metadata: {metadata.FilePath}");
                     }
                 }
             }
             
-            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Total paths to release: {pathsToRelease.Count}");
             foreach (var path in pathsToRelease)
             {
-                // Console.WriteLine($"  - {path}");
-                
                 // Remove and dispose shared pool for this path
                 if (_sharedArchivePools.TryRemove(path, out var pool))
                 {
                     pool.Dispose();
-                    // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Disposed shared pool for {path}");
                 }
+                
+                // CRITICAL: Invalidate FileAccessController state for this path
+                // This ensures any cached lock state is cleared
+                FileAccessController.Instance.InvalidateFile(path);
             }
             
             // Release file locks from async pool (handles open streams)
             if (pathsToRelease.Count > 0)
             {
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] Calling ReleaseFileLocksAsync");
                 await _asyncPool.ReleaseFileLocksAsync(pathsToRelease);
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] ReleaseFileLocksAsync completed");
-            }
-            else
-            {
-                // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] WARNING: No paths found to release! Dependencies may not be indexed.");
             }
             
             // Only force GC once at the end of the batch operation, not per package
             // This significantly reduces overhead when releasing many packages
             GC.Collect();
             GC.WaitForPendingFinalizers();
-            
-            // Console.WriteLine($"[ImageManager.ReleasePackagesAsync] === COMPLETE ===");
         }
 
         /// <summary>

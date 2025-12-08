@@ -157,16 +157,67 @@ namespace VPM.Services
                     if (prop.Value.TryGetProperty("dependencies", out var subDepsElement) &&
                         subDepsElement.ValueKind == JsonValueKind.Object)
                     {
-                        var subDepsCount = subDepsElement.EnumerateObject().Count();
-                        depItem.HasSubDependencies = subDepsCount > 0;
-                        depItem.SubDependencyCount = subDepsCount;
+                        // PERFORMANCE FIX: Enumerate once and materialize to avoid double enumeration
+                        // Previously: EnumerateObject().Count() then EnumerateObject() again in recursion
+                        var subDepsList = subDepsElement.EnumerateObject().ToList();
+                        depItem.HasSubDependencies = subDepsList.Count > 0;
+                        depItem.SubDependencyCount = subDepsList.Count;
                         
                         dependencies.Add(depItem);
                         
-                        // Recursively parse subdependencies
-                        if (subDepsCount > 0)
+                        // Recursively parse subdependencies (uses already-enumerated list)
+                        if (subDepsList.Count > 0)
                         {
-                            ParseDependenciesRecursive(subDepsElement, dependencies, depth + 1, prop.Name);
+                            ParseDependenciesRecursiveFromList(subDepsList, dependencies, depth + 1, prop.Name);
+                        }
+                    }
+                    else
+                    {
+                        dependencies.Add(depItem);
+                    }
+                }
+                else
+                {
+                    dependencies.Add(depItem);
+                }
+            }
+        }
+
+        /// <summary>
+        /// PERFORMANCE FIX: Helper method that works with pre-enumerated list to avoid double enumeration
+        /// </summary>
+        private void ParseDependenciesRecursiveFromList(List<JsonProperty> properties, List<DependencyItemModel> dependencies, int depth, string parentName)
+        {
+            foreach (var prop in properties)
+            {
+                var depItem = new DependencyItemModel
+                {
+                    Name = prop.Name,
+                    Depth = depth,
+                    IsEnabled = true,
+                    ParentName = parentName
+                };
+
+                if (prop.Value.ValueKind == JsonValueKind.Object)
+                {
+                    if (prop.Value.TryGetProperty("licenseType", out var licenseElement))
+                    {
+                        depItem.LicenseType = licenseElement.GetString() ?? "";
+                    }
+
+                    // Check for nested dependencies
+                    if (prop.Value.TryGetProperty("dependencies", out var subDepsElement) &&
+                        subDepsElement.ValueKind == JsonValueKind.Object)
+                    {
+                        var subDepsList = subDepsElement.EnumerateObject().ToList();
+                        depItem.HasSubDependencies = subDepsList.Count > 0;
+                        depItem.SubDependencyCount = subDepsList.Count;
+                        
+                        dependencies.Add(depItem);
+                        
+                        if (subDepsList.Count > 0)
+                        {
+                            ParseDependenciesRecursiveFromList(subDepsList, dependencies, depth + 1, prop.Name);
                         }
                     }
                     else

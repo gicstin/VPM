@@ -27,28 +27,51 @@ namespace VPM.Services
         
         /// <summary>
         /// Reads entry data from an archive without holding file locks.
+        /// Returns null if the file is locked for writing (optimization in progress).
         /// </summary>
         public byte[] ReadEntryData(string archivePath, string entryPath)
         {
             if (_disposed) return null;
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
+            {
+                return null; // File is being optimized
+            }
+            
             return _cache.ReadEntryData(archivePath, entryPath);
         }
         
         /// <summary>
         /// Reads entry data asynchronously.
+        /// Returns null if the file is locked for writing (optimization in progress).
         /// </summary>
         public Task<byte[]> ReadEntryDataAsync(string archivePath, string entryPath)
         {
             if (_disposed) return Task.FromResult<byte[]>(null);
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
+            {
+                return Task.FromResult<byte[]>(null); // File is being optimized
+            }
+            
             return _cache.ReadEntryDataAsync(archivePath, entryPath);
         }
         
         /// <summary>
         /// Reads only the header of an entry (for image dimension detection).
+        /// Returns null if the file is locked for writing (optimization in progress).
         /// </summary>
         public byte[] ReadEntryHeader(string archivePath, string entryPath, int headerSize = 65536)
         {
             if (_disposed) return null;
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
+            {
+                return null; // File is being optimized
+            }
             
             var archive = _cache.GetOrCreateArchive(archivePath);
             return archive?.ReadEntryHeader(entryPath, headerSize);
@@ -66,10 +89,19 @@ namespace VPM.Services
         /// 
         /// Example: For a 500MB package with 100 textures but only 3 preview images,
         /// this reads ~150KB (the 3 previews) not 500MB.
+        /// 
+        /// Returns empty dictionary if the file is locked for writing (optimization in progress).
         /// </summary>
         public Dictionary<string, byte[]> ReadEntriesBatch(string archivePath, IEnumerable<string> entryPaths)
         {
             if (_disposed) return new Dictionary<string, byte[]>();
+            
+            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
+            {
+                return new Dictionary<string, byte[]>(); // File is being optimized
+            }
+            
             return _cache.ReadEntriesBatch(archivePath, entryPaths);
         }
         

@@ -116,12 +116,24 @@ namespace VPM
                 foreach (var fileGroup in fileGroups)
                 {
                     var instances = fileGroup.ToList();
-                    bool hasAddon = instances.Any(f => f.Location == FileLocation.AddonPackages);
-                    bool hasAll = instances.Any(f => f.Location == FileLocation.AllPackages);
                     
-                    // Count how many instances in each location
-                    int addonCount = instances.Count(f => f.Location == FileLocation.AddonPackages);
-                    int allCount = instances.Count(f => f.Location == FileLocation.AllPackages);
+                    // PERFORMANCE FIX: Single pass to categorize instances instead of multiple Any/Count calls
+                    // Previously: 4 separate O(n) scans (Any x2, Count x2)
+                    // Now: Single O(n) pass with categorization
+                    var addonFileInstances = new List<FileInstance>();
+                    var allFileInstances = new List<FileInstance>();
+                    foreach (var inst in instances)
+                    {
+                        if (inst.Location == FileLocation.AddonPackages)
+                            addonFileInstances.Add(inst);
+                        else if (inst.Location == FileLocation.AllPackages)
+                            allFileInstances.Add(inst);
+                    }
+                    
+                    bool hasAddon = addonFileInstances.Count > 0;
+                    bool hasAll = allFileInstances.Count > 0;
+                    int addonCount = addonFileInstances.Count;
+                    int allCount = allFileInstances.Count;
                     
                     // Get file sizes for logging
                     var fileSizes = instances.Select(f => f.FileSize).Distinct().ToList();
@@ -532,6 +544,31 @@ namespace VPM
             var packagesToMove = new Dictionary<string, string>(); // source -> destination
             var packagesRequiringSelection = new List<DuplicatePackageItem>();
             
+            // PERFORMANCE FIX: Cache all disk I/O results upfront to avoid repeated filesystem scans
+            // Previously: GetPackageInstances* called 2-4 times per package (O(n) disk scans each)
+            // Now: Single scan per unique baseName, cached for reuse
+            var instanceCache = new Dictionary<string, (List<string> addon, List<string> all)>(StringComparer.OrdinalIgnoreCase);
+            
+            List<string> GetCachedAddonInstances(string baseName)
+            {
+                if (!instanceCache.TryGetValue(baseName, out var cached))
+                {
+                    cached = (GetPackageInstancesInAddonPackages(baseName), GetPackageInstancesInAllPackages(baseName));
+                    instanceCache[baseName] = cached;
+                }
+                return cached.addon;
+            }
+            
+            List<string> GetCachedAllInstances(string baseName)
+            {
+                if (!instanceCache.TryGetValue(baseName, out var cached))
+                {
+                    cached = (GetPackageInstancesInAddonPackages(baseName), GetPackageInstancesInAllPackages(baseName));
+                    instanceCache[baseName] = cached;
+                }
+                return cached.all;
+            }
+            
             // First pass: identify packages that need subfolder selection
             foreach (var item in _duplicatePackages)
             {
@@ -539,7 +576,7 @@ namespace VPM
                 {
                     // Check if there are multiple instances in AddonPackages that need selection
                     var baseName = ExtractBasePackageName(item.PackageName);
-                    var addonInstances = GetPackageInstancesInAddonPackages(baseName);
+                    var addonInstances = GetCachedAddonInstances(baseName);
                     if (addonInstances.Count > 1)
                     {
                         packagesRequiringSelection.Add(item);
@@ -549,7 +586,7 @@ namespace VPM
                 {
                     // Check if there are multiple instances in AllPackages that need selection
                     var baseName = ExtractBasePackageName(item.PackageName);
-                    var allInstances = GetPackageInstancesInAllPackages(baseName);
+                    var allInstances = GetCachedAllInstances(baseName);
                     if (allInstances.Count > 1)
                     {
                         packagesRequiringSelection.Add(item);
@@ -568,11 +605,11 @@ namespace VPM
                 
                 if (item.KeepInAddonPackages)
                 {
-                    instances = GetPackageInstancesInAddonPackages(baseName);
+                    instances = GetCachedAddonInstances(baseName);
                 }
                 else
                 {
-                    instances = GetPackageInstancesInAllPackages(baseName);
+                    instances = GetCachedAllInstances(baseName);
                 }
                 
                 // Filter to only the specific version the user selected
@@ -616,8 +653,9 @@ namespace VPM
                 if (item.KeepInAddonPackages && !item.KeepInAllPackages)
                 {
                     // Want to keep in AddonPackages
-                    var allPackageInstances = GetPackageInstancesInAllPackages(baseName);
-                    var addonPackageInstances = GetPackageInstancesInAddonPackages(baseName);
+                    // PERFORMANCE FIX: Use cached instances instead of repeated disk scans
+                    var allPackageInstances = GetCachedAllInstances(baseName);
+                    var addonPackageInstances = GetCachedAddonInstances(baseName);
                     
                     // If file doesn't exist in AddonPackages but exists in AllPackages, move it
                     if (addonPackageInstances.Count == 0 && allPackageInstances.Count > 0)
@@ -651,8 +689,9 @@ namespace VPM
                 else if (item.KeepInAllPackages && !item.KeepInAddonPackages)
                 {
                     // Want to keep in AllPackages
-                    var allPackageInstances = GetPackageInstancesInAllPackages(baseName);
-                    var addonPackageInstances = GetPackageInstancesInAddonPackages(baseName);
+                    // PERFORMANCE FIX: Use cached instances instead of repeated disk scans
+                    var allPackageInstances = GetCachedAllInstances(baseName);
+                    var addonPackageInstances = GetCachedAddonInstances(baseName);
                     
                     // If file doesn't exist in AllPackages but exists in AddonPackages, move it
                     if (allPackageInstances.Count == 0 && addonPackageInstances.Count > 0)

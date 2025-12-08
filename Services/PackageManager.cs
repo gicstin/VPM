@@ -1523,10 +1523,14 @@ namespace VPM.Services
             if (string.IsNullOrEmpty(packageName))
                 return;
             
-            // Parse the downloaded package to get base name and version
+            // Parse the downloaded package to get base name and version (done once)
             var downloadedInfo = DependencyVersionInfo.Parse(packageName);
             var baseName = downloadedInfo.BaseName;
             var downloadedVersion = downloadedInfo.VersionNumber ?? 0;
+            
+            // PERFORMANCE FIX: Pre-compute base name prefix for fast string matching
+            // This avoids parsing every dependency - we only parse those that match the prefix
+            var baseNamePrefix = !string.IsNullOrEmpty(baseName) ? baseName + "." : null;
             
             foreach (var kvp in PackageMetadata)
             {
@@ -1538,13 +1542,19 @@ namespace VPM.Services
                 metadata.MissingDependencies.Remove(packageName);
                 
                 // Remove dependencies that this package satisfies
-                if (!string.IsNullOrEmpty(baseName))
+                if (!string.IsNullOrEmpty(baseNamePrefix))
                 {
                     metadata.MissingDependencies.RemoveAll(dep =>
                     {
+                        // PERFORMANCE FIX: Quick prefix check before expensive Parse
+                        // Most dependencies won't match, so this short-circuits early
+                        if (!dep.StartsWith(baseNamePrefix, StringComparison.OrdinalIgnoreCase) &&
+                            !dep.StartsWith(baseName, StringComparison.OrdinalIgnoreCase))
+                            return false;
+                        
                         var depInfo = DependencyVersionInfo.Parse(dep);
                         
-                        // Must be the same base package
+                        // Must be the same base package (double-check after parse)
                         if (!string.Equals(depInfo.BaseName, baseName, StringComparison.OrdinalIgnoreCase))
                             return false;
                         

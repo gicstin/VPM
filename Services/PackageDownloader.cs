@@ -698,7 +698,7 @@ namespace VPM.Services
                 var uri = new Uri(url);
                 var host = uri.Host;
                 
-                // Extract root domain (e.g., "pixeldrain.com" from "dl.pixeldrain.com")
+                // Extract root domain (e.g., "example.com" from "dl.example.com")
                 var parts = host.Split('.');
                 if (parts.Length >= 2)
                 {
@@ -774,19 +774,13 @@ namespace VPM.Services
                 // Ensure destination folder exists
                 Directory.CreateDirectory(_destinationFolder);
 
-                // Build list of URLs to try: Hub first (faster, no speed limit), then Pixeldrain as fallback
+                // Build list of URLs to try
                 var urlsToTry = new List<string>();
                 
                 // Add Hub URLs first (preferred - faster, no speed limit)
                 if (packageInfo.HubUrls != null && packageInfo.HubUrls.Any())
                 {
                     urlsToTry.AddRange(packageInfo.HubUrls);
-                }
-                
-                // Add Pixeldrain URLs as fallback
-                if (packageInfo.PdrUrls != null && packageInfo.PdrUrls.Any())
-                {
-                    urlsToTry.AddRange(packageInfo.PdrUrls);
                 }
                 
                 // If no specific URLs, use the primary URL
@@ -810,9 +804,7 @@ namespace VPM.Services
                     var url = urlsToTry[i];
                     
                     // Detect URL type based on domain
-                    var urlType = url.Contains("hub.virtamate.com", StringComparison.OrdinalIgnoreCase) ? "Hub" :
-                                  url.Contains("pixeldrain.com", StringComparison.OrdinalIgnoreCase) ? "Pixeldrain" :
-                                  "Unknown";
+                    var urlType = url.Contains("hub.virtamate.com", StringComparison.OrdinalIgnoreCase) ? "Hub" : "Unknown";
                     
                     // Try each URL with retries
                     for (int retry = 0; retry < maxRetries; retry++)

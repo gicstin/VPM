@@ -613,6 +613,24 @@ namespace VPM
                     }
                 }
 
+                // PERFORMANCE FIX: Pre-build lookup dictionaries for O(1) access instead of O(n) searches
+                // This changes O(s × n) to O(s) where s = selected items, n = total dependencies
+                var dependencyByName = result.Dependencies.ToDictionary(
+                    d => d.Name, 
+                    d => d, 
+                    StringComparer.OrdinalIgnoreCase);
+                
+                var childrenByParent = result.Dependencies
+                    .Where(d => !string.IsNullOrEmpty(d.ParentName))
+                    .GroupBy(d => d.ParentName, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        g => g.Key, 
+                        g => g.ToList(), 
+                        StringComparer.OrdinalIgnoreCase);
+                
+                // Helper to get enabled count efficiently (cached)
+                int GetEnabledCount() => result.Dependencies.Count(d => d.IsEnabled);
+
                 // Action button handlers
                 enableSelectedButton.Click += (s, e) =>
                 {
@@ -621,24 +639,27 @@ namespace VPM
                         if (item is DependencyItemModel dep)
                         {
                             // If this is a subdependency, automatically enable parent first
-                            if (!string.IsNullOrEmpty(dep.ParentName))
+                            // PERFORMANCE FIX: O(1) lookup instead of O(n) FirstOrDefault
+                            if (!string.IsNullOrEmpty(dep.ParentName) && 
+                                dependencyByName.TryGetValue(dep.ParentName, out var parent) && 
+                                !parent.IsEnabled)
                             {
-                                var parent = result.Dependencies.FirstOrDefault(d => d.Name == dep.ParentName);
-                                if (parent != null && !parent.IsEnabled)
-                                {
-                                    parent.IsEnabled = true;
-                                }
+                                parent.IsEnabled = true;
                             }
                             
                             dep.IsEnabled = true;
                             // Also enable all subdependencies
-                            foreach (var subDep in result.Dependencies.Where(d => d.ParentName == dep.Name))
+                            // PERFORMANCE FIX: O(1) lookup instead of O(n) Where
+                            if (childrenByParent.TryGetValue(dep.Name, out var children))
                             {
-                                subDep.IsEnabled = true;
+                                foreach (var subDep in children)
+                                {
+                                    subDep.IsEnabled = true;
+                                }
                             }
                         }
                     }
-                    summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({result.Dependencies.Count(d => d.IsEnabled)} enabled)";
+                    summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({GetEnabledCount()} enabled)";
                 };
                 
                 disableSelectedButton.Click += (s, e) =>
@@ -651,9 +672,10 @@ namespace VPM
                             dep.IsDisabledByUser = true;
                             
                             // If this is a parent dependency, also disable all its subdependencies
-                            if (dep.HasSubDependencies)
+                            // PERFORMANCE FIX: O(1) lookup instead of O(n) Where
+                            if (dep.HasSubDependencies && childrenByParent.TryGetValue(dep.Name, out var children))
                             {
-                                foreach (var subDep in result.Dependencies.Where(d => d.ParentName == dep.Name))
+                                foreach (var subDep in children)
                                 {
                                     subDep.IsEnabled = false;
                                     subDep.IsDisabledByUser = true;
@@ -661,7 +683,7 @@ namespace VPM
                             }
                         }
                     }
-                    summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({result.Dependencies.Count(d => d.IsEnabled)} enabled)";
+                    summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({GetEnabledCount()} enabled)";
                 };
 
                 // Selection changed handler - show/hide action buttons
@@ -680,7 +702,7 @@ namespace VPM
                     if (string.IsNullOrEmpty(searchText))
                     {
                         dataGrid.ItemsSource = allDependencies;
-                        summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({result.Dependencies.Count(d => d.IsEnabled)} enabled)";
+                        summaryText.Text = $"Found {result.Dependencies.Count} dependencies ({GetEnabledCount()} enabled)";
                     }
                     else
                     {
@@ -734,6 +756,25 @@ namespace VPM
         /// </summary>
         private void AddDependencyToggleColumn(DataGrid dataGrid, List<DependencyItemModel> dependencies, string header, bool targetState, Color color, TextBlock summaryText)
         {
+            // PERFORMANCE FIX: Pre-build lookup dictionaries for O(1) access instead of O(n) searches
+            // Use GroupBy + First to handle potential duplicate dependency names (same dependency referenced multiple times)
+            var dependencyByName = dependencies
+                .GroupBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key, 
+                    g => g.First(), 
+                    StringComparer.OrdinalIgnoreCase);
+            
+            var childrenByParent = dependencies
+                .Where(d => !string.IsNullOrEmpty(d.ParentName))
+                .GroupBy(d => d.ParentName, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    g => g.Key, 
+                    g => g.ToList(), 
+                    StringComparer.OrdinalIgnoreCase);
+            
+            int GetEnabledCount() => dependencies.Count(d => d.IsEnabled);
+
             var column = new DataGridTemplateColumn
             {
                 Header = header,
@@ -785,21 +826,24 @@ namespace VPM
                     if (targetState)
                     {
                         // If this is a subdependency, automatically enable parent first
-                        if (!string.IsNullOrEmpty(dep.ParentName))
+                        // PERFORMANCE FIX: O(1) lookup instead of O(n) FirstOrDefault
+                        if (!string.IsNullOrEmpty(dep.ParentName) && 
+                            dependencyByName.TryGetValue(dep.ParentName, out var parent) && 
+                            !parent.IsEnabled)
                         {
-                            var parent = dependencies.FirstOrDefault(d => d.Name == dep.ParentName);
-                            if (parent != null && !parent.IsEnabled)
-                            {
-                                parent.IsEnabled = true;
-                            }
+                            parent.IsEnabled = true;
                         }
                         
                         dep.IsEnabled = true;
                         
                         // Also enable all subdependencies
-                        foreach (var subDep in dependencies.Where(d => d.ParentName == dep.Name))
+                        // PERFORMANCE FIX: O(1) lookup instead of O(n) Where
+                        if (childrenByParent.TryGetValue(dep.Name, out var children))
                         {
-                            subDep.IsEnabled = true;
+                            foreach (var subDep in children)
+                            {
+                                subDep.IsEnabled = true;
+                            }
                         }
                     }
                     else
@@ -808,9 +852,10 @@ namespace VPM
                         dep.IsDisabledByUser = true;
                         
                         // If this is a parent dependency, also disable all its subdependencies
-                        if (dep.HasSubDependencies)
+                        // PERFORMANCE FIX: O(1) lookup instead of O(n) Where
+                        if (dep.HasSubDependencies && childrenByParent.TryGetValue(dep.Name, out var children))
                         {
-                            foreach (var subDep in dependencies.Where(d => d.ParentName == dep.Name))
+                            foreach (var subDep in children)
                             {
                                 subDep.IsEnabled = false;
                                 subDep.IsDisabledByUser = true;
@@ -819,7 +864,7 @@ namespace VPM
                     }
                     
                     // Update summary text
-                    summaryText.Text = $"Found {dependencies.Count} dependencies ({dependencies.Count(d => d.IsEnabled)} enabled)";
+                    summaryText.Text = $"Found {dependencies.Count} dependencies ({GetEnabledCount()} enabled)";
                     
                     e.Handled = true;
                 }
@@ -863,8 +908,8 @@ namespace VPM
                         else
                         {
                             // Subdependency, only enable if parent is enabled
-                            var parent = dependencies.FirstOrDefault(d => d.Name == dep.ParentName);
-                            if (parent != null && parent.IsEnabled)
+                            // PERFORMANCE FIX: O(1) lookup instead of O(n) FirstOrDefault
+                            if (dependencyByName.TryGetValue(dep.ParentName, out var parent) && parent.IsEnabled)
                             {
                                 dep.IsEnabled = true;
                                 if (dep.IsDisabledByUser)
@@ -886,7 +931,7 @@ namespace VPM
                 }
                 
                 // Update summary text
-                summaryText.Text = $"Found {dependencies.Count} dependencies ({dependencies.Count(d => d.IsEnabled)} enabled)";
+                summaryText.Text = $"Found {dependencies.Count} dependencies ({GetEnabledCount()} enabled)";
                 
                 e.Handled = true;
             }));
