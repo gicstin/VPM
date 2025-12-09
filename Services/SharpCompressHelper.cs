@@ -13,7 +13,13 @@ namespace VPM.Services
 {
     /// <summary>
     /// Wrapper for IArchive that ensures proper disposal of underlying FileStream
-    /// Prevents file locking issues when archives are not properly disposed
+    /// and coordinates with FileAccessController to prevent file lock conflicts.
+    /// 
+    /// CRITICAL: This class now holds a read lock from FileAccessController for the
+    /// entire duration that the archive is open. This ensures that:
+    /// 1. Writers (optimization/move operations) wait for all readers to finish
+    /// 2. No new file handles are opened while a writer is waiting
+    /// 3. File operations are properly coordinated across the application
     /// </summary>
     public class DisposableArchive : IDisposable
     {
@@ -21,12 +27,14 @@ namespace VPM.Services
         private bool _disposed = false;
         private readonly string _filePath;
         private readonly bool _forceGcOnDispose;
+        private readonly IDisposable _readLock; // Holds the FileAccessController read lock
 
-        public DisposableArchive(IArchive archive, string filePath, bool forceGcOnDispose = false)
+        public DisposableArchive(IArchive archive, string filePath, bool forceGcOnDispose = false, IDisposable readLock = null)
         {
             _archive = archive;
             _filePath = filePath;
             _forceGcOnDispose = forceGcOnDispose;
+            _readLock = readLock;
         }
 
         public IArchive Archive => _archive;
@@ -41,10 +49,13 @@ namespace VPM.Services
 
             try
             {
-                // Console.WriteLine($"[DisposableArchive] Disposing archive: {_filePath}");
+                // First dispose the archive to close the file handle
                 _archive?.Dispose();
                 _archive = null;
-                // Console.WriteLine($"[DisposableArchive] Archive disposed successfully");
+                
+                // Then release the read lock - this allows writers to proceed
+                // CRITICAL: Must be done AFTER the file handle is closed
+                _readLock?.Dispose();
                 
                 if (_forceGcOnDispose)
                 {
@@ -61,7 +72,14 @@ namespace VPM.Services
 
     /// <summary>
     /// Phase 4: Archive handle pool for parallel archive access
-    /// Manages reusable archive handles to reduce contention and improve throughput
+    /// Manages reusable archive handles to reduce contention and improve throughput.
+    /// 
+    /// NOTE: This class is used internally by optimization operations that already have
+    /// exclusive control over the files they're processing. It does NOT acquire a read lock
+    /// from FileAccessController because the optimization process itself manages file access.
+    /// 
+    /// For general archive reading (image loading, etc.), use SharpCompressHelper.OpenForRead()
+    /// which properly coordinates with FileAccessController.
     /// </summary>
     public class ArchiveHandlePool : IDisposable
     {
@@ -77,6 +95,11 @@ namespace VPM.Services
         {
             _archivePath = archivePath;
             _maxHandles = Math.Max(1, Math.Min(maxHandles, Environment.ProcessorCount));
+            
+            // NOTE: We intentionally do NOT acquire a FileAccessController read lock here.
+            // ArchiveHandlePool is used by optimization operations that already have exclusive
+            // control over the files. Acquiring a read lock would cause deadlock when the
+            // optimization tries to move/delete the file later.
         }
 
         /// <summary>
@@ -87,12 +110,6 @@ namespace VPM.Services
             LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
-            
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
-            if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-            {
-                throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-            }
 
             if (_availableHandles.TryTake(out var handle))
                 return handle;
@@ -105,13 +122,6 @@ namespace VPM.Services
                     // Check if file exists before attempting to open
                     if (!File.Exists(_archivePath))
                         throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
-                    
-                    // Double-check FileAccessController after potential wait
-                    if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-                    {
-                        _totalCreated--;
-                        throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-                    }
                     
                     // Open file with explicit seek support
                     FileStream fileStream = null;
@@ -136,12 +146,6 @@ namespace VPM.Services
             {
                 if (_disposed)
                     throw new ObjectDisposedException("ArchiveHandlePool");
-                
-                // Check if file became locked for writing while waiting
-                if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-                {
-                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-                }
                 
                 System.Threading.Thread.Sleep(10);
                 waitAttempts++;
@@ -161,12 +165,6 @@ namespace VPM.Services
             LastUsed = DateTime.UtcNow;
             if (_disposed)
                 throw new ObjectDisposedException("ArchiveHandlePool");
-            
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
-            if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-            {
-                throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-            }
 
             if (_availableHandles.TryTake(out var handle))
                 return handle;
@@ -179,13 +177,6 @@ namespace VPM.Services
                     // Check if file exists before attempting to open
                     if (!File.Exists(_archivePath))
                         throw new FileNotFoundException($"Archive file not found: '{_archivePath}'");
-                    
-                    // Double-check FileAccessController after potential wait
-                    if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-                    {
-                        _totalCreated--;
-                        throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-                    }
                     
                     // Open file with explicit seek support
                     FileStream fileStream = null;
@@ -210,12 +201,6 @@ namespace VPM.Services
             {
                 if (_disposed)
                     throw new ObjectDisposedException("ArchiveHandlePool");
-                
-                // Check if file became locked for writing while waiting
-                if (FileAccessController.Instance.IsFileLockedForWriting(_archivePath))
-                {
-                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {_archivePath}");
-                }
                 
                 await Task.Delay(10).ConfigureAwait(false);
                 waitAttempts++;
@@ -249,6 +234,7 @@ namespace VPM.Services
             if (_disposed) return;
             _disposed = true;
 
+            // Dispose all archive handles to close file handles
             while (_availableHandles.TryTake(out var handle))
             {
                 handle?.Dispose();
@@ -267,20 +253,20 @@ namespace VPM.Services
     public static class SharpCompressHelper
     {
         /// <summary>
-        /// Opens a ZIP file for reading
+        /// Opens a ZIP file for reading with proper coordination via FileAccessController.
+        /// 
+        /// CRITICAL: This method now acquires a read lock from FileAccessController that is
+        /// held for the entire duration the archive is open. This ensures:
+        /// 1. Writers wait for all readers to finish before moving/deleting files
+        /// 2. New readers fail fast if a writer is waiting
+        /// 3. No race conditions between checking lock state and opening the file
         /// </summary>
         public static DisposableArchive OpenForRead(string filePath, ImageLoaderAsyncPool asyncPool = null, bool forceGcOnDispose = false)
         {
             FileStream fileStream = null;
+            IDisposable readLock = null;
             try
             {
-                // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
-                // This is the primary mechanism to prevent file lock conflicts during optimization
-                if (FileAccessController.Instance.IsFileLockedForWriting(filePath))
-                {
-                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {filePath}");
-                }
-                
                 // Check if path is cancelled (legacy cancellation system)
                 if (asyncPool != null)
                 {
@@ -298,15 +284,62 @@ namespace VPM.Services
                     }
                 }
                 
+                // CRITICAL FIX: Acquire read lock from FileAccessController BEFORE opening the file
+                // This lock is held for the entire duration the archive is open (until DisposableArchive.Dispose)
+                // If a writer is waiting, this will throw OperationCanceledException immediately (fail-fast)
+                // The lock ensures writers wait for us to finish before moving/deleting the file
+                readLock = FileAccessController.Instance.TryAcquireReadAccessAsync(filePath).GetAwaiter().GetResult();
+                if (readLock == null)
+                {
+                    // Writer is waiting or active - fail fast
+                    throw new OperationCanceledException($"Archive is locked for writing (optimization in progress): {filePath}");
+                }
+                
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
                 var archive = ZipArchive.Open(fileStream);
                 fileStream = null; // Archive now owns the stream
-                return new DisposableArchive(archive, filePath, forceGcOnDispose);
+                
+                // Pass the read lock to DisposableArchive - it will release the lock when disposed
+                var result = new DisposableArchive(archive, filePath, forceGcOnDispose, readLock);
+                readLock = null; // DisposableArchive now owns the lock
+                return result;
             }
             catch (Exception ex)
             {
                 fileStream?.Dispose(); // Dispose stream if archive creation failed
+                readLock?.Dispose(); // Release read lock if we acquired one
+                
+                if (ex is OperationCanceledException)
+                    throw;
+                    
+                throw new InvalidOperationException($"Failed to open archive '{filePath}': {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Opens a ZIP file for reading WITHOUT acquiring a FileAccessController read lock.
+        /// 
+        /// WARNING: This should ONLY be used by optimization operations that already hold
+        /// an exclusive write lock on the file. Using this in other contexts will cause
+        /// file lock conflicts.
+        /// </summary>
+        public static DisposableArchive OpenForReadInternal(string filePath, bool forceGcOnDispose = false)
+        {
+            FileStream fileStream = null;
+            try
+            {
+                // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
+                fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
+                var archive = ZipArchive.Open(fileStream);
+                fileStream = null; // Archive now owns the stream
+                
+                // No read lock - caller is responsible for ensuring exclusive access
+                return new DisposableArchive(archive, filePath, forceGcOnDispose, readLock: null);
+            }
+            catch (Exception ex)
+            {
+                fileStream?.Dispose();
                 throw new InvalidOperationException($"Failed to open archive '{filePath}': {ex.Message}", ex);
             }
         }

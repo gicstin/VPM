@@ -74,8 +74,9 @@ namespace VPM.Services
             _downloader.DownloadCompleted += OnDownloadCompleted;
             _downloader.DownloadError += OnDownloadError;
             
-            // Start processing queue
-            _processingTask = Task.Run(ProcessQueueAsync);
+            // Start processing queue with cancellation token
+            // FIXED: Pass cancellation token to Task.Run to ensure proper cancellation propagation
+            _processingTask = Task.Run(ProcessQueueAsync, _cancellationTokenSource.Token);
         }
         
         /// <summary>

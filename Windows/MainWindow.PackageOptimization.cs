@@ -228,9 +228,9 @@ namespace VPM
                     });
                     
                     // Acquire exclusive write access - this blocks until all readers finish
-                    // Timeout of 30 seconds should be more than enough for any pending image loads
+                    // Timeout of 60 seconds to handle large images and slow systems
                     writeAccess = await Services.FileAccessController.Instance
-                        .AcquireWriteAccessAsync(packagePath, TimeSpan.FromSeconds(30));
+                        .AcquireWriteAccessAsync(packagePath, TimeSpan.FromSeconds(60));
                     
                     // Build conversion dictionary with texture details (only where target differs from current)
                     var conversions = new Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)>();
@@ -323,9 +323,19 @@ namespace VPM
                 catch (TimeoutException tex)
                 {
                     progressDialog.Close();
+                    
+                    // Try to identify what process might be holding the file
+                    var processInfo = GetProcessUsingFile(packagePath);
+                    var processHint = !string.IsNullOrEmpty(processInfo) 
+                        ? $"\n\nPossible cause: {processInfo}" 
+                        : "";
+                    
                     MessageBox.Show($"Could not acquire exclusive access to the file.\n\n" +
-                                  $"The file may still be in use by image loading operations.\n\n" +
-                                  $"Please try again in a few seconds.\n\n" +
+                                  $"The file may still be in use by image loading operations or another application.{processHint}\n\n" +
+                                  $"Suggestions:\n" +
+                                  $"• Wait a few seconds and try again\n" +
+                                  $"• Close VaM if it's running\n" +
+                                  $"• Check if antivirus is scanning the file\n\n" +
                                   $"Technical details: {tex.Message}", "File Access Timeout",
                                   MessageBoxButton.OK, MessageBoxImage.Warning);
                     SetStatus($" Texture conversion failed: File access timeout");
@@ -2854,7 +2864,43 @@ namespace VPM
             {
                 pkgInfo = _packageFileManager?.GetPackageFileInfoByMetadataKey(packageItem.MetadataKey);
             }
-            else
+            
+            // Fallback: try to find by MetadataKey directly from package metadata
+            if ((pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath)) && _packageManager?.PackageMetadata != null)
+            {
+                // Try exact match first
+                if (_packageManager.PackageMetadata.TryGetValue(packageName, out var metadata) && !string.IsNullOrEmpty(metadata.FilePath))
+                {
+                    pkgInfo = new PackageFileInfo 
+                    { 
+                        PackageName = packageName, 
+                        CurrentPath = metadata.FilePath,
+                        Status = metadata.Status ?? "Unknown"
+                    };
+                }
+                else
+                {
+                    // Try partial match (package name without version)
+                    var matchingMetadata = _packageManager.PackageMetadata
+                        .Where(kvp => kvp.Key.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase) ||
+                                     kvp.Key.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                        .OrderByDescending(kvp => kvp.Value.Version)
+                        .FirstOrDefault();
+                    
+                    if (!string.IsNullOrEmpty(matchingMetadata.Value?.FilePath))
+                    {
+                        pkgInfo = new PackageFileInfo 
+                        { 
+                            PackageName = matchingMetadata.Key, 
+                            CurrentPath = matchingMetadata.Value.FilePath,
+                            Status = matchingMetadata.Value.Status ?? "Unknown"
+                        };
+                    }
+                }
+            }
+            
+            // Final fallback: use PackageFileManager
+            if (pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath))
             {
                 pkgInfo = _packageFileManager?.GetPackageFileInfo(packageName);
             }

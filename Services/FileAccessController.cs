@@ -42,7 +42,9 @@ namespace VPM.Services
             public volatile bool WriterActive;
             public DateTime LastAccess = DateTime.UtcNow;
             public CancellationTokenSource ReaderCancellation;
-            private bool _disposed;
+            private volatile bool _disposed;
+            
+            public bool IsDisposed => _disposed;
             
             public void Dispose()
             {
@@ -61,8 +63,11 @@ namespace VPM.Services
         
         private readonly ConcurrentDictionary<string, FileLockState> _fileLocks = new(StringComparer.OrdinalIgnoreCase);
         private readonly Timer _cleanupTimer;
-        private readonly TimeSpan _staleTimeout = TimeSpan.FromMinutes(5);
+        private readonly TimeSpan _staleTimeout = TimeSpan.FromMinutes(10); // Increased from 5 to 10 minutes for safety
         private bool _disposed;
+        
+        // Lock for atomic state transitions to prevent race conditions
+        private readonly object _writerTransitionLock = new();
         
         // Statistics
         private long _totalReadAcquisitions;
@@ -185,7 +190,7 @@ namespace VPM.Services
         
         /// <summary>
         /// Acquires exclusive write access to a file. This will:
-        /// 1. Immediately block new readers (WriterWaiting = true)
+        /// 1. Immediately block new readers (WriterWaiting = true) - ATOMICALLY
         /// 2. Cancel any pending read operations for this file
         /// 3. Wait for existing readers to finish (up to timeout)
         /// 4. Return exclusive access token
@@ -202,14 +207,20 @@ namespace VPM.Services
             var normalizedPath = NormalizePath(filePath);
             var state = GetOrCreateState(normalizedPath);
             
-            // Signal that writer is waiting - new readers will fail fast immediately
-            state.WriterWaiting = true;
-            
-            // Cancel any pending read operations for this file
-            // This causes in-progress AcquireReadAccessAsync calls to throw
-            state.ReaderCancellation?.Cancel();
-            state.ReaderCancellation?.Dispose();
-            state.ReaderCancellation = new CancellationTokenSource();
+            // CRITICAL FIX: Use lock to atomically set WriterWaiting and cancel readers
+            // This prevents race condition where a reader could slip through between
+            // the flag set and the cancellation
+            lock (_writerTransitionLock)
+            {
+                // Signal that writer is waiting - new readers will fail fast immediately
+                state.WriterWaiting = true;
+                
+                // Cancel any pending read operations for this file
+                // This causes in-progress AcquireReadAccessAsync calls to throw
+                state.ReaderCancellation?.Cancel();
+                state.ReaderCancellation?.Dispose();
+                state.ReaderCancellation = new CancellationTokenSource();
+            }
             
             try
             {
@@ -299,6 +310,20 @@ namespace VPM.Services
         }
         
         /// <summary>
+        /// Forces a full garbage collection to release file handles held by finalizers.
+        /// Call this before critical file operations (move, delete) when other methods fail.
+        /// WARNING: This is expensive and blocks the calling thread. Use sparingly.
+        /// </summary>
+        public static void ForceReleaseFileHandles()
+        {
+            // Force full GC to release any file handles held by finalizers
+            // This is necessary because SharpCompress may hold handles until finalization
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+        }
+        
+        /// <summary>
         /// Resets statistics counters.
         /// </summary>
         public void ResetStatistics()
@@ -371,21 +396,45 @@ namespace VPM.Services
         
         private void ReleaseReadLock(string normalizedPath, FileLockState state)
         {
-            Interlocked.Decrement(ref state.ActiveReaders);
-            state.Lock.ExitReadLock();
-            state.LastAccess = DateTime.UtcNow;
+            // CRITICAL: Check if state was disposed by cleanup timer
+            if (state.IsDisposed) return;
+            
+            try
+            {
+                Interlocked.Decrement(ref state.ActiveReaders);
+                state.Lock.ExitReadLock();
+                state.LastAccess = DateTime.UtcNow;
+            }
+            catch (ObjectDisposedException)
+            {
+                // State was disposed between check and operation - ignore
+            }
         }
         
         private void ReleaseWriteLock(string normalizedPath, FileLockState state)
         {
-            state.WriterActive = false;
-            state.Lock.ExitWriteLock();
-            state.LastAccess = DateTime.UtcNow;
+            // CRITICAL: Check if state was disposed by cleanup timer
+            if (state.IsDisposed) return;
             
-            // Reset reader cancellation so new reads can proceed
-            state.ReaderCancellation?.Dispose();
-            state.ReaderCancellation = null;
+            try
+            {
+                state.WriterActive = false;
+                state.Lock.ExitWriteLock();
+                state.LastAccess = DateTime.UtcNow;
+                
+                // Reset reader cancellation so new reads can proceed
+                state.ReaderCancellation?.Dispose();
+                state.ReaderCancellation = null;
+            }
+            catch (ObjectDisposedException)
+            {
+                // State was disposed between check and operation - ignore
+            }
         }
+        
+        // Track consecutive cleanup failures for logging/diagnostics
+        private int _consecutiveCleanupFailures = 0;
+        private const int MaxConsecutiveCleanupFailures = 5;
         
         private void CleanupStaleEntries(object state)
         {
@@ -401,9 +450,11 @@ namespace VPM.Services
                     var lockState = kvp.Value;
                     
                     // Only remove if no active readers/writers and stale
+                    // Use longer timeout (10 minutes) to be extra safe
                     if (lockState.ActiveReaders == 0 && 
                         !lockState.WriterWaiting && 
                         !lockState.WriterActive &&
+                        !lockState.IsDisposed &&
                         now - lockState.LastAccess > _staleTimeout)
                     {
                         keysToRemove.Add(kvp.Key);
@@ -412,15 +463,37 @@ namespace VPM.Services
                 
                 foreach (var key in keysToRemove)
                 {
-                    if (_fileLocks.TryRemove(key, out var removedState))
+                    // Double-check before removal to avoid race conditions
+                    if (_fileLocks.TryGetValue(key, out var checkState))
                     {
-                        removedState.Dispose();
+                        // Re-verify the state hasn't changed
+                        if (checkState.ActiveReaders == 0 && 
+                            !checkState.WriterWaiting && 
+                            !checkState.WriterActive &&
+                            !checkState.IsDisposed)
+                        {
+                            if (_fileLocks.TryRemove(key, out var removedState))
+                            {
+                                removedState.Dispose();
+                            }
+                        }
                     }
                 }
+                
+                // Reset failure counter on success
+                _consecutiveCleanupFailures = 0;
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore cleanup errors
+                // FIXED: Track consecutive failures instead of silently ignoring
+                // This helps diagnose persistent cleanup issues
+                _consecutiveCleanupFailures++;
+                
+                if (_consecutiveCleanupFailures >= MaxConsecutiveCleanupFailures)
+                {
+                    // Log to debug output after repeated failures
+                    System.Diagnostics.Debug.WriteLine($"[FileAccessController] Cleanup failed {_consecutiveCleanupFailures} times. Last error: {ex.Message}");
+                }
             }
         }
         
@@ -531,6 +604,9 @@ namespace VPM.Services
     /// Async-compatible reader-writer lock implementation.
     /// Allows multiple concurrent readers OR a single exclusive writer.
     /// Writer requests have priority - when a writer is waiting, new readers are blocked.
+    /// 
+    /// FIXED: Race condition between checking _writerWaiting and acquiring lock.
+    /// Now uses atomic lock acquisition with proper state checking inside the lock.
     /// </summary>
     public sealed class AsyncReaderWriterLock : IDisposable
     {
@@ -548,36 +624,51 @@ namespace VPM.Services
         /// </summary>
         public async Task EnterReadLockAsync(CancellationToken ct = default)
         {
-            // Check if writer is waiting - if so, wait for writer to finish first
-            // This gives writers priority over new readers
-            if (_writerWaiting)
-            {
-                await _writerWaitingSemaphore.WaitAsync(ct).ConfigureAwait(false);
-                _writerWaitingSemaphore.Release();
-            }
-            
+            // Acquire read semaphore first to serialize reader entry
             await _readSemaphore.WaitAsync(ct).ConfigureAwait(false);
+            
+            bool acquiredWriteSemaphore = false;
+            bool incrementedReaderCount = false;
+            
             try
             {
+                // CRITICAL FIX: Check writer state INSIDE the lock to prevent race condition
+                // Previously, a writer could set _writerWaiting between the check and semaphore acquisition
                 lock (_countLock)
                 {
+                    // If writer is waiting or active, fail fast
+                    if (_writerWaiting)
+                    {
+                        throw new OperationCanceledException("Writer is waiting for exclusive access");
+                    }
+                    
                     if (++_readerCount == 1)
                     {
+                        incrementedReaderCount = true;
                         // First reader acquires write semaphore to block writers
                         if (!_writeSemaphore.Wait(0))
                         {
-                            // Writer has the lock, wait for it
+                            // Writer has the lock, revert and fail
                             _readerCount--;
-                            _readSemaphore.Release();
+                            incrementedReaderCount = false;
                             throw new OperationCanceledException("Writer has exclusive access");
                         }
+                        acquiredWriteSemaphore = true;
+                    }
+                    else
+                    {
+                        incrementedReaderCount = true;
                     }
                 }
             }
-            finally
+            catch
             {
+                // Clean up on failure - only release read semaphore, write semaphore handled above
                 _readSemaphore.Release();
+                throw;
             }
+            
+            _readSemaphore.Release();
         }
         
         /// <summary>
@@ -585,13 +676,30 @@ namespace VPM.Services
         /// </summary>
         public void ExitReadLock()
         {
-            lock (_countLock)
+            if (_disposed) return; // Don't try to release if already disposed
+            
+            try
             {
-                if (--_readerCount == 0)
+                lock (_countLock)
                 {
-                    // Last reader releases write semaphore
-                    _writeSemaphore.Release();
+                    // FIXED: Guard against underflow
+                    if (_readerCount <= 0)
+                    {
+                        // Already at zero or negative - this is a bug in calling code
+                        // but we shouldn't corrupt state further
+                        return;
+                    }
+                    
+                    if (--_readerCount == 0)
+                    {
+                        // Last reader releases write semaphore
+                        _writeSemaphore.Release();
+                    }
                 }
+            }
+            catch (ObjectDisposedException)
+            {
+                // Semaphores were disposed - ignore
             }
         }
         
@@ -601,9 +709,12 @@ namespace VPM.Services
         /// </summary>
         public async Task EnterWriteLockAsync(CancellationToken ct = default)
         {
-            // Signal that writer is waiting - this blocks new readers
-            _writerWaiting = true;
+            // Acquire the writer-waiting semaphore first
             await _writerWaitingSemaphore.WaitAsync(ct).ConfigureAwait(false);
+            
+            // CRITICAL: Set writer waiting flag AFTER acquiring semaphore to prevent race
+            // This ensures only one writer can set the flag at a time
+            _writerWaiting = true;
             
             try
             {
@@ -623,9 +734,18 @@ namespace VPM.Services
         /// </summary>
         public void ExitWriteLock()
         {
-            _writeSemaphore.Release();
-            _writerWaiting = false;
-            _writerWaitingSemaphore.Release();
+            if (_disposed) return; // Don't try to release if already disposed
+            
+            try
+            {
+                _writeSemaphore.Release();
+                _writerWaiting = false;
+                _writerWaitingSemaphore.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Semaphores were disposed - ignore
+            }
         }
         
         public void Dispose()

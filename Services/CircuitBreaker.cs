@@ -18,7 +18,7 @@ namespace VPM.Services
     /// - Per-operation circuit breakers
     /// - Metrics tracking
     /// </summary>
-    public class CircuitBreaker
+    public class CircuitBreaker : IDisposable
     {
         /// <summary>
         /// Circuit breaker states
@@ -95,6 +95,7 @@ namespace VPM.Services
         private long _totalRequests = 0;
         private long _totalFailures = 0;
         private readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+        private bool _disposed;
 
         public CircuitBreaker(CircuitBreakerConfig config = null)
         {
@@ -104,46 +105,67 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Get current circuit state
+        /// Get current circuit state.
+        /// FIXED: No longer does lock upgrade which could cause deadlock.
+        /// Uses write lock directly when state transition is needed.
         /// </summary>
         public CircuitState State
         {
             get
             {
+                // First, check if we might need to transition (quick read)
+                bool needsTransition = false;
+                CircuitState currentState;
+                
                 _lock.EnterReadLock();
                 try
                 {
-                    // Check if timeout has elapsed and transition to HalfOpen
+                    currentState = _state;
                     if (_state == CircuitState.Open && DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
                     {
-                        _lock.ExitReadLock();
-                        _lock.EnterWriteLock();
-                        try
-                        {
-                            TransitionToHalfOpen();
-                        }
-                        finally
-                        {
-                            _lock.ExitWriteLock();
-                        }
-                        _lock.EnterReadLock();
+                        needsTransition = true;
                     }
-                    return _state;
                 }
                 finally
                 {
                     _lock.ExitReadLock();
                 }
+                
+                // If transition needed, acquire write lock and re-check
+                if (needsTransition)
+                {
+                    _lock.EnterWriteLock();
+                    try
+                    {
+                        // Double-check condition after acquiring write lock
+                        if (_state == CircuitState.Open && DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
+                        {
+                            TransitionToHalfOpen();
+                        }
+                        return _state;
+                    }
+                    finally
+                    {
+                        _lock.ExitWriteLock();
+                    }
+                }
+                
+                return currentState;
             }
         }
 
         /// <summary>
-        /// Check if circuit is open (rejecting requests)
+        /// Check if circuit is open (rejecting requests).
+        /// FIXED: No longer does lock upgrade which could cause deadlock.
         /// </summary>
         public bool IsOpen
         {
             get
             {
+                // First, quick read check
+                bool needsTransition = false;
+                bool isCurrentlyOpen = false;
+                
                 _lock.EnterReadLock();
                 try
                 {
@@ -153,28 +175,42 @@ namespace VPM.Services
                     if (_state == CircuitState.HalfOpen)
                         return false;
 
-                    // Check if timeout has elapsed
+                    // State is Open - check if timeout has elapsed
                     if (DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
                     {
-                        _lock.ExitReadLock();
-                        _lock.EnterWriteLock();
-                        try
-                        {
-                            TransitionToHalfOpen();
-                        }
-                        finally
-                        {
-                            _lock.ExitWriteLock();
-                        }
-                        return false;
+                        needsTransition = true;
                     }
-
-                    return true;
+                    else
+                    {
+                        isCurrentlyOpen = true;
+                    }
                 }
                 finally
                 {
                     _lock.ExitReadLock();
                 }
+                
+                // If transition needed, acquire write lock and re-check
+                if (needsTransition)
+                {
+                    _lock.EnterWriteLock();
+                    try
+                    {
+                        // Double-check condition after acquiring write lock
+                        if (_state == CircuitState.Open && DateTime.UtcNow - _openedAt >= TimeSpan.FromMilliseconds(_currentTimeoutMs))
+                        {
+                            TransitionToHalfOpen();
+                        }
+                        // After transition to HalfOpen, circuit is not "open" (allows test requests)
+                        return _state == CircuitState.Open;
+                    }
+                    finally
+                    {
+                        _lock.ExitWriteLock();
+                    }
+                }
+                
+                return isCurrentlyOpen;
             }
         }
 
@@ -300,6 +336,17 @@ namespace VPM.Services
                 _lock.ExitWriteLock();
             }
         }
+        
+        /// <summary>
+        /// Dispose resources. FIXED: ReaderWriterLockSlim was not being disposed.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            
+            _lock?.Dispose();
+        }
 
         /// <summary>
         /// Get circuit breaker metrics
@@ -351,12 +398,14 @@ namespace VPM.Services
     }
 
     /// <summary>
-    /// Registry for managing multiple circuit breakers
+    /// Registry for managing multiple circuit breakers.
+    /// FIXED: Now implements IDisposable to properly dispose all circuit breakers.
     /// </summary>
-    public class CircuitBreakerRegistry
+    public class CircuitBreakerRegistry : IDisposable
     {
         private readonly ConcurrentDictionary<string, CircuitBreaker> _breakers;
         private readonly CircuitBreaker.CircuitBreakerConfig _defaultConfig;
+        private bool _disposed;
 
         public CircuitBreakerRegistry(CircuitBreaker.CircuitBreakerConfig defaultConfig = null)
         {
@@ -435,6 +484,22 @@ namespace VPM.Services
             }
 
             return report.ToString();
+        }
+        
+        /// <summary>
+        /// Dispose all circuit breakers.
+        /// FIXED: CircuitBreakers were never being disposed, leaking ReaderWriterLockSlim handles.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            
+            foreach (var breaker in _breakers.Values)
+            {
+                breaker.Dispose();
+            }
+            _breakers.Clear();
         }
     }
 }

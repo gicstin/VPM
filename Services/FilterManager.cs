@@ -565,7 +565,10 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.Categories != null)
                 {
@@ -643,7 +646,10 @@ namespace VPM.Services
                 ["Unoptimized"] = 0
             };
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.IsOptimized)
                     counts["Optimized"]++;
@@ -662,7 +668,10 @@ namespace VPM.Services
                 ["Old"] = 0
             };
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.IsOldVersion)
                     counts["Old"]++;
@@ -684,14 +693,16 @@ namespace VPM.Services
                 ["No Dependencies"] = 0
             };
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.DependentsCount == 0)
                     counts["No Dependents"]++;
                 if (package.DependencyCount == 0)
                     counts["No Dependencies"]++;
             }
-            
             
             return counts;
         }
@@ -700,7 +711,10 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 var license = string.IsNullOrEmpty(package.LicenseType) ? "Unknown" : package.LicenseType;
                 // Use TryGetValue for single lookup instead of ContainsKey + indexer (3x faster)
@@ -745,7 +759,10 @@ namespace VPM.Services
                 ["Large"] = 0
             };
 
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+
+            foreach (var package in packageValues)
             {
                 double fileSizeMB = package.FileSize / (1024.0 * 1024.0);
 
@@ -769,7 +786,10 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+
+            foreach (var package in packageValues)
             {
                 string subfolder = ExtractSubfolderFromMetadata(package);
                 
@@ -1060,7 +1080,10 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.ClothingTags == null || package.ClothingTags.Count == 0)
                     continue;
@@ -1088,7 +1111,10 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            foreach (var package in packages.Values)
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
+            foreach (var package in packageValues)
             {
                 if (package.HairTags == null || package.HairTags.Count == 0)
                     continue;
@@ -1113,8 +1139,11 @@ namespace VPM.Services
         /// </summary>
         public int GetPackagesWithClothingTagsCount(Dictionary<string, VarMetadata> packages)
         {
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
             int count = 0;
-            foreach (var package in packages.Values)
+            foreach (var package in packageValues)
             {
                 if (package.ClothingTags != null && package.ClothingTags.Count > 0)
                     count++;
@@ -1127,8 +1156,11 @@ namespace VPM.Services
         /// </summary>
         public int GetPackagesWithHairTagsCount(Dictionary<string, VarMetadata> packages)
         {
+            // Create snapshot to avoid "Collection was modified" exception
+            var packageValues = packages.Values.ToList();
+            
             int count = 0;
-            foreach (var package in packages.Values)
+            foreach (var package in packageValues)
             {
                 if (package.HairTags != null && package.HairTags.Count > 0)
                     count++;

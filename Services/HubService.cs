@@ -702,9 +702,20 @@ namespace VPM.Services
             DownloadQueued?.Invoke(this, queuedDownload);
             
             // Start processing queue on background thread if needed
+            // FIXED: Wrap in try-catch to prevent unobserved task exceptions
             if (shouldStartProcessing)
             {
-                Task.Run(() => ProcessDownloadQueueAsync());
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await ProcessDownloadQueueAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[HubService] Download queue processing error: {ex.Message}");
+                    }
+                });
             }
 
             return queuedDownload;

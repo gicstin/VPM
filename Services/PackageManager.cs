@@ -13,8 +13,9 @@ using VPM.Models;
 
 namespace VPM.Services
 {
-    public class PackageManager
+    public class PackageManager : IDisposable
     {
+        private bool _disposed;
         private const int BUFFER_SIZE = 81920; // 80KB buffer
         private static readonly ArrayPool<byte> _arrayPool = ArrayPool<byte>.Shared;
         private readonly Regex _varPattern;
@@ -2378,6 +2379,36 @@ namespace VPM.Services
             return value.Equals("true", StringComparison.OrdinalIgnoreCase) || 
                    value.Equals("True", StringComparison.Ordinal);
         }
+        
+        #region IDisposable
+        
+        /// <summary>
+        /// Dispose resources.
+        /// Releases all SemaphoreSlim instances to prevent handle leaks.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            
+            // Dispose the main throttle semaphore
+            _throttle?.Dispose();
+            
+            // Dispose all per-package locks
+            foreach (var packageLock in _packageLocks.Values)
+            {
+                packageLock?.Dispose();
+            }
+            _packageLocks.Clear();
+            
+            // Dispose binary cache
+            _binaryCache?.Dispose();
+            
+            // Dispose var scanner if it implements IDisposable
+            (_varScanner as IDisposable)?.Dispose();
+        }
+        
+        #endregion
     }
 }
 

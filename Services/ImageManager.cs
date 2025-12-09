@@ -1403,7 +1403,8 @@ namespace VPM.Services
                         // Will be marked as invalid and removed after releasing read lock
                         _cacheMisses++;
                         // Schedule cleanup (can't modify while holding read lock)
-                        _ = Task.Run(() => RemoveInvalidCacheEntry(cacheKey));
+                        // FIXED: Wrap in try-catch to prevent unobserved exceptions
+                        _ = Task.Run(() => { try { RemoveInvalidCacheEntry(cacheKey); } catch { } });
                         return null;
                     }
                     
@@ -1426,7 +1427,8 @@ namespace VPM.Services
                     if (bitmap.PixelWidth < MinValidImageSize || bitmap.PixelHeight < MinValidImageSize)
                     {
                         _cacheMisses++;
-                        _ = Task.Run(() => RemoveInvalidCacheEntry(cacheKey));
+                        // FIXED: Wrap in try-catch to prevent unobserved exceptions
+                        _ = Task.Run(() => { try { RemoveInvalidCacheEntry(cacheKey); } catch { } });
                         return null;
                     }
                     
@@ -1997,7 +1999,8 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Disposes resources
+        /// Disposes resources.
+        /// FIXED: Now properly disposes all ReaderWriterLockSlim instances and SemaphoreSlim.
         /// </summary>
         public void Dispose()
         {
@@ -2025,6 +2028,15 @@ namespace VPM.Services
             
             // Ensure disk cache is saved before exit
             _diskCache?.SaveCacheSynchronous();
+            
+            // FIXED: Dispose all ReaderWriterLockSlim instances to release unmanaged handles
+            _signatureLock?.Dispose();
+            _bitmapCacheLock?.Dispose();
+            _varArchiveLock?.Dispose();
+            _parallelMetricsLock?.Dispose();
+            
+            // FIXED: Dispose SemaphoreSlim
+            _preloadLock?.Dispose();
         }
 
         /// <summary>

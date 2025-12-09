@@ -143,7 +143,9 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Executes a file operation with proper resource management and retries
+        /// Executes a file operation with proper resource management and retries.
+        /// FIXED: Resource lock is now properly released even if ExecuteWithResiliencyAsync
+        /// throws before the inner lambda executes (e.g., circuit breaker is open).
         /// </summary>
         public async Task<T> ExecuteFileOperationAsync<T>(
             string filePath,
@@ -171,22 +173,33 @@ namespace VPM.Services
                 // Add lock
                 _resourceLocks.TryAdd(filePath, DateTime.UtcNow);
 
-                return await ExecuteWithResiliencyAsync(
-                    operationKey,
-                    async () =>
-                    {
-                        try
+                // FIXED: Wrap in try-finally to ensure lock is released even if
+                // ExecuteWithResiliencyAsync throws before the inner lambda executes
+                try
+                {
+                    return await ExecuteWithResiliencyAsync(
+                        operationKey,
+                        async () =>
                         {
-                            // Add jitter to reduce contention (Random.Shared is thread-safe)
-                            await Task.Delay(Random.Shared.Next(50));
-                            return await operation();
-                        }
-                        finally
-                        {
-                            _resourceLocks.TryRemove(filePath, out _);
-                        }
-                    },
-                    maxRetries);
+                            try
+                            {
+                                // Add jitter to reduce contention (Random.Shared is thread-safe)
+                                await Task.Delay(Random.Shared.Next(50));
+                                return await operation();
+                            }
+                            catch
+                            {
+                                // Re-throw but don't remove lock here - outer finally handles it
+                                throw;
+                            }
+                        },
+                        maxRetries);
+                }
+                finally
+                {
+                    // Always remove the resource lock, regardless of how we exit
+                    _resourceLocks.TryRemove(filePath, out _);
+                }
             }
             finally
             {

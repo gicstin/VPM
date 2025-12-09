@@ -145,6 +145,23 @@ namespace VPM.Services
         {
             if (_disposed) return false;
             
+            // CRITICAL FIX: Acquire read lock from FileAccessController BEFORE opening the file
+            IDisposable readLock = null;
+            try
+            {
+                readLock = FileAccessController.Instance.TryAcquireReadAccessAsync(FilePath).GetAwaiter().GetResult();
+                if (readLock == null)
+                {
+                    IsValid = false;
+                    return false; // Writer is waiting or active
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                IsValid = false;
+                return false;
+            }
+            
             _accessLock.EnterWriteLock();
             try
             {
@@ -189,6 +206,7 @@ namespace VPM.Services
             finally
             {
                 _accessLock.ExitWriteLock();
+                readLock?.Dispose(); // Release the FileAccessController read lock
             }
         }
         
@@ -245,7 +263,10 @@ namespace VPM.Services
         /// For a 500MB package with one 50KB preview, only 50KB is read into memory.
         /// 
         /// THREAD SAFETY: Uses FileAccessController to coordinate with write operations.
-        /// If a write operation (optimization) is pending, this will throw OperationCanceledException.
+        /// If a write operation (optimization) is pending, this will return null.
+        /// 
+        /// FIXED: Replaced UpgradeableReadLock pattern with simpler write lock acquisition
+        /// to prevent potential lock corruption on I/O errors during the upgrade.
         /// </summary>
         public byte[] ReadEntryData(string path)
         {
@@ -254,7 +275,7 @@ namespace VPM.Services
             var entry = GetEntry(path);
             if (entry == null || entry.IsDirectory) return null;
             
-            // Check if already cached in memory
+            // Check if already cached in memory (no lock needed for this check)
             var cachedData = entry.GetData();
             if (cachedData != null)
             {
@@ -262,14 +283,25 @@ namespace VPM.Services
                 return cachedData;
             }
             
-            // CRITICAL: Check if file is locked for writing BEFORE attempting to read
-            // This prevents file lock conflicts during optimization
-            if (FileAccessController.Instance.IsFileLockedForWriting(FilePath))
+            // CRITICAL FIX: Acquire read lock from FileAccessController BEFORE opening the file
+            // This ensures proper coordination with writers (optimization/move operations)
+            // If a writer is waiting, this returns null immediately (fail-fast)
+            IDisposable readLock = null;
+            try
             {
-                return null; // Fail fast - file is being optimized
+                readLock = FileAccessController.Instance.TryAcquireReadAccessAsync(FilePath).GetAwaiter().GetResult();
+                if (readLock == null)
+                {
+                    return null; // Writer is waiting or active - fail fast
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return null; // File is being optimized
             }
             
-            _accessLock.EnterUpgradeableReadLock();
+            // Use internal write lock for cache consistency
+            _accessLock.EnterWriteLock();
             try
             {
                 // Double-check after acquiring lock
@@ -284,62 +316,45 @@ namespace VPM.Services
                     return null;
                 }
                 
-                _accessLock.EnterWriteLock();
-                try
+                // Read ONLY the requested entry - file is opened and closed within this block
+                // The archive is NOT fully loaded into memory - only the specific entry is decompressed
+                using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
+                using (var archive = ZipArchive.Open(fileStream))
                 {
-                    // Acquire read access from FileAccessController
-                    // This will throw if a writer is waiting/active
-                    using var fileAccess = FileAccessController.Instance
-                        .AcquireReadAccessAsync(FilePath, CancellationToken.None)
-                        .GetAwaiter().GetResult();
-                    
-                    // Read ONLY the requested entry - file is opened and closed within this block
-                    // The archive is NOT fully loaded into memory - only the specific entry is decompressed
-                    using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
-                    using (var archive = ZipArchive.Open(fileStream))
-                    {
-                        var archiveEntry = archive.Entries.FirstOrDefault(e => 
-                            e.Key.Equals(path, StringComparison.OrdinalIgnoreCase));
-                            
-                        if (archiveEntry == null)
-                            return null;
+                    var archiveEntry = archive.Entries.FirstOrDefault(e => 
+                        e.Key.Equals(path, StringComparison.OrdinalIgnoreCase));
                         
-                        // Only decompress this specific entry (e.g., 50KB preview from 500MB package)
-                        using (var entryStream = archiveEntry.OpenEntryStream())
-                        using (var memoryStream = new MemoryStream())
-                        {
-                            entryStream.CopyTo(memoryStream);
-                            var data = memoryStream.ToArray();
-                            
-                            // Cache the data with memory management
-                            // Small entries (< 1MB) use strong references
-                            // Large entries use weak references to allow GC collection
-                            bool demoteToWeak = data.Length > 1024 * 1024 || 
-                                               Interlocked.Add(ref _totalCachedBytes, data.Length) > MaxCachedBytesPerArchive;
-                            entry.SetData(data, demoteToWeak);
-                            
-                            LastAccessed = DateTime.UtcNow;
-                            return data;
-                        }
+                    if (archiveEntry == null)
+                        return null;
+                    
+                    // Only decompress this specific entry (e.g., 50KB preview from 500MB package)
+                    using (var entryStream = archiveEntry.OpenEntryStream())
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        entryStream.CopyTo(memoryStream);
+                        var data = memoryStream.ToArray();
+                        
+                        // Cache the data with memory management
+                        // Small entries (< 1MB) use strong references
+                        // Large entries use weak references to allow GC collection
+                        bool demoteToWeak = data.Length > 1024 * 1024 || 
+                                           Interlocked.Add(ref _totalCachedBytes, data.Length) > MaxCachedBytesPerArchive;
+                        entry.SetData(data, demoteToWeak);
+                        
+                        LastAccessed = DateTime.UtcNow;
+                        return data;
                     }
-                }
-                catch (OperationCanceledException)
-                {
-                    // File is locked for writing - return null to indicate failure
-                    return null;
-                }
-                finally
-                {
-                    _accessLock.ExitWriteLock();
                 }
             }
             catch (Exception)
             {
+                // Return null on any error (I/O, file locked, etc.)
                 return null;
             }
             finally
             {
-                _accessLock.ExitUpgradeableReadLock();
+                _accessLock.ExitWriteLock();
+                readLock?.Dispose(); // Release the FileAccessController read lock
             }
         }
         
@@ -386,12 +401,6 @@ namespace VPM.Services
             var pathsList = paths.ToList();
             if (pathsList.Count == 0) return results;
             
-            // CRITICAL: Check if file is locked for writing BEFORE attempting to read
-            if (FileAccessController.Instance.IsFileLockedForWriting(FilePath))
-            {
-                return results; // Fail fast - file is being optimized
-            }
-            
             // First, check what's already cached
             var uncachedPaths = new List<string>();
             foreach (var path in pathsList)
@@ -417,6 +426,21 @@ namespace VPM.Services
                 return results;
             }
             
+            // CRITICAL FIX: Acquire read lock from FileAccessController BEFORE opening the file
+            IDisposable readLock = null;
+            try
+            {
+                readLock = FileAccessController.Instance.TryAcquireReadAccessAsync(FilePath).GetAwaiter().GetResult();
+                if (readLock == null)
+                {
+                    return results; // Writer is waiting or active - return cached results only
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return results; // File is being optimized
+            }
+            
             _accessLock.EnterWriteLock();
             try
             {
@@ -425,12 +449,6 @@ namespace VPM.Services
                     IsValid = false;
                     return results;
                 }
-                
-                // Acquire read access from FileAccessController
-                // This will throw if a writer is waiting/active
-                using var fileAccess = FileAccessController.Instance
-                    .AcquireReadAccessAsync(FilePath, CancellationToken.None)
-                    .GetAwaiter().GetResult();
                 
                 // SINGLE file open for ALL requested entries
                 using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
@@ -477,6 +495,7 @@ namespace VPM.Services
             finally
             {
                 _accessLock.ExitWriteLock();
+                readLock?.Dispose(); // Release the FileAccessController read lock
             }
             
             return results;
@@ -567,6 +586,10 @@ namespace VPM.Services
         private long _cacheHits;
         private long _cacheMisses;
         private long _bytesRead;
+        
+        // Track consecutive cleanup failures for diagnostics
+        private int _consecutiveCleanupFailures = 0;
+        private const int MaxConsecutiveCleanupFailures = 5;
         
         public VirtualArchiveCache(long maxTotalCacheBytes = 500 * 1024 * 1024) // 500MB default
         {
@@ -819,10 +842,19 @@ namespace VPM.Services
                             break;
                     }
                 }
+                
+                // Reset failure counter on success
+                _consecutiveCleanupFailures = 0;
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore cleanup errors
+                // FIXED: Track consecutive failures instead of silently ignoring
+                _consecutiveCleanupFailures++;
+                
+                if (_consecutiveCleanupFailures >= MaxConsecutiveCleanupFailures)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[VirtualArchiveCache] Cleanup failed {_consecutiveCleanupFailures} times. Last error: {ex.Message}");
+                }
             }
         }
         

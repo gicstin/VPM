@@ -111,7 +111,8 @@ namespace VPM.Services
             
             // Build package status index eagerly in background to avoid lazy initialization delays
             // This prevents lock contention on first access
-            _ = Task.Run(() => BuildPackageStatusIndex());
+            // FIXED: Wrap in try-catch to prevent unobserved exceptions
+            _ = Task.Run(() => { try { BuildPackageStatusIndex(); } catch { } });
         }
 
         private void EnsureDirectoriesExist()
@@ -615,64 +616,86 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Safely moves a file with retry logic and atomic operations
+        /// Safely moves a file with retry logic using File.Copy + File.Delete pattern.
+        /// This is more robust than File.Move because:
+        /// 1. File.Copy only needs read access to source (more forgiving)
+        /// 2. Each operation can be retried independently
+        /// 3. Partial failures are recoverable
         /// </summary>
-        private async Task<(bool success, string error)> SafeMoveFileAsync(string sourcePath, string destinationPath, int maxRetries = 3, bool skipVarValidation = false)
+        private async Task<(bool success, string error)> SafeMoveFileAsync(string sourcePath, string destinationPath, int maxRetries = 10, bool skipVarValidation = false)
         {
-            Exception lastException = null;
             string lastError = null;
-            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            
+            // Check if we can move the file
+            var (canMove, error) = await CanMoveFileAsync(sourcePath, skipVarValidation);
+            if (!canMove)
+            {
+                return (false, error);
+            }
+
+            // Ensure destination directory exists
+            var destinationDir = Path.GetDirectoryName(destinationPath);
+            Directory.CreateDirectory(destinationDir);
+
+            // Check if destination already exists
+            if (File.Exists(destinationPath))
+            {
+                return (false, "Destination file already exists");
+            }
+
+            // Close any file handles before attempting the move
+            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePath);
+            FileAccessController.Instance.InvalidateFile(sourcePath);
+            
+            // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
+            // Step 1: Copy the file with retries
+            for (int copyAttempt = 1; copyAttempt <= maxRetries; copyAttempt++)
             {
                 try
                 {
-                    // Check if we can move the file
-                    var (canMove, error) = await CanMoveFileAsync(sourcePath, skipVarValidation);
-                    if (!canMove)
-                    {
-                        lastError = error;
-                        return (false, error);
-                    }
-
-                    // Ensure destination directory exists
-                    var destinationDir = Path.GetDirectoryName(destinationPath);
-                    Directory.CreateDirectory(destinationDir);
-
-                    // Check if destination already exists
-                    if (File.Exists(destinationPath))
-                    {
-                        lastError = "Destination file already exists";
-                        return (false, lastError);
-                    }
-
-                    // Perform atomic move
-                    File.Move(sourcePath, destinationPath);
-                    return (true, "");
+                    File.Copy(sourcePath, destinationPath, overwrite: false);
+                    break;
                 }
-                catch (IOException ex) when (ex.Message.Contains("being used by another process") || ex.Message.Contains("cannot access the file"))
+                catch (IOException ex) when (copyAttempt < maxRetries)
                 {
-                    lastException = ex;
-                    lastError = $"Attempt {attempt} failed: File is in use";
-                    if (attempt == maxRetries)
-                    {
-                        return (false, $"Failed after {maxRetries} attempts. Last error: The process cannot access the file because it is being used by another process.");
-                    }
-                    // Wait progressively longer before retry (100ms, 300ms, 600ms, 1000ms, 1500ms)
-                    int delay = attempt == 1 ? 100 : (attempt * attempt * 100);
-                    await Task.Delay(delay);
+                    lastError = $"Copy attempt {copyAttempt} failed: {ex.Message}";
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePath);
+                    FileAccessController.Instance.InvalidateFile(sourcePath);
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    await Task.Delay(100 * copyAttempt);
                 }
-                catch (Exception ex)
+                catch (IOException ex)
                 {
-                    lastException = ex;
-                    lastError = $"Attempt {attempt} failed: {ex.GetType().Name}: {ex.Message}";
-                    if (attempt == maxRetries)
-                    {
-                        return (false, $"Failed after {maxRetries} attempts. Last error: {ex.GetType().Name}: {ex.Message}");
-                    }
-                    // Wait before retry
-                    await Task.Delay(500 * attempt);
+                    return (false, $"Failed to copy file after {maxRetries} attempts: {ex.Message}");
                 }
             }
-            // Should not reach here, but return last error if it does
+            
+            // Step 2: Delete the source file with retries
+            for (int deleteAttempt = 1; deleteAttempt <= maxRetries; deleteAttempt++)
+            {
+                try
+                {
+                    File.Delete(sourcePath);
+                    return (true, "");
+                }
+                catch (IOException ex) when (deleteAttempt < maxRetries)
+                {
+                    lastError = $"Delete attempt {deleteAttempt} failed: {ex.Message}";
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePath);
+                    FileAccessController.Instance.InvalidateFile(sourcePath);
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    await Task.Delay(100 * deleteAttempt);
+                }
+                catch (IOException ex)
+                {
+                    // Copy succeeded but delete failed - this is still a partial success
+                    // The file exists in both locations, which is better than losing data
+                    return (false, $"File copied but could not delete source after {maxRetries} attempts: {ex.Message}");
+                }
+            }
+            
             return (false, lastError ?? "Unexpected error in retry logic");
         }
 
@@ -1641,6 +1664,10 @@ namespace VPM.Services
                 {
                     packageLock?.Dispose();
                 }
+                
+                // FIXED: Dispose ReaderWriterLockSlim to release unmanaged handles
+                _packageIndexLock?.Dispose();
+                
                 _disposed = true;
             }
         }

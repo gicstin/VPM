@@ -385,19 +385,29 @@ namespace VPM.Services
                 _saveInProgress = true;
             }
 
-            Task.Run(() =>
+            // FIXED: Wrap in try-catch to prevent unobserved exceptions
+            _ = Task.Run(() =>
             {
-                SaveCacheDatabase();
-
-                lock (_cacheLock)
+                try
                 {
-                    _saveInProgress = false;
-
-                    // If another save was requested while we were saving, trigger it now
-                    if (_savePending)
+                    SaveCacheDatabase();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ImageDiskCache] Save error: {ex.Message}");
+                }
+                finally
+                {
+                    lock (_cacheLock)
                     {
-                        _savePending = false;
-                        TriggerAsyncSave();
+                        _saveInProgress = false;
+
+                        // If another save was requested while we were saving, trigger it now
+                        if (_savePending)
+                        {
+                            _savePending = false;
+                            TriggerAsyncSave();
+                        }
                     }
                 }
             });

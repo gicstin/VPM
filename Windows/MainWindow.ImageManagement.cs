@@ -1801,6 +1801,45 @@ namespace VPM
                 if (string.IsNullOrEmpty(varFilePath) || string.IsNullOrEmpty(internalImagePath))
                     return 0;
 
+                // CRITICAL FIX: Check if file exists before trying to open it
+                // This prevents errors when packages have been moved between AllPackages and AddonPackages
+                // but the ImageIndex hasn't been updated yet
+                string actualFilePath = varFilePath;
+                if (!System.IO.File.Exists(varFilePath))
+                {
+                    // Try to find the file at the alternative location
+                    var fileName = System.IO.Path.GetFileName(varFilePath);
+                    var gameFolder = _settingsManager?.Settings?.SelectedFolder;
+                    
+                    if (!string.IsNullOrEmpty(gameFolder))
+                    {
+                        // Check AddonPackages if original was in AllPackages
+                        if (varFilePath.Contains("AllPackages", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var addonPath = System.IO.Path.Combine(gameFolder, "AddonPackages", fileName);
+                            if (System.IO.File.Exists(addonPath))
+                            {
+                                actualFilePath = addonPath;
+                            }
+                        }
+                        // Check AllPackages if original was in AddonPackages
+                        else if (varFilePath.Contains("AddonPackages", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var allPath = System.IO.Path.Combine(gameFolder, "AllPackages", fileName);
+                            if (System.IO.File.Exists(allPath))
+                            {
+                                actualFilePath = allPath;
+                            }
+                        }
+                    }
+                    
+                    // If still not found, return 0 silently (file may have been deleted or moved elsewhere)
+                    if (!System.IO.File.Exists(actualFilePath))
+                    {
+                        return 0;
+                    }
+                }
+
                 // Get the base name without extension (e.g., "Scene" from "Scene.jpg")
                 var baseName = System.IO.Path.GetFileNameWithoutExtension(internalImagePath);
                 var directoryPath = System.IO.Path.GetDirectoryName(internalImagePath);
@@ -1812,7 +1851,7 @@ namespace VPM
 
                 try
                 {
-                    using var archive = VPM.Services.SharpCompressHelper.OpenForRead(varFilePath);
+                    using var archive = VPM.Services.SharpCompressHelper.OpenForRead(actualFilePath);
 
                     // Find all files in the archive with the same base name in the same directory
                     var relatedEntries = archive.Entries
@@ -1833,6 +1872,11 @@ namespace VPM
                     {
                         totalSize += entry.Size;
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    // File is locked for writing (optimization in progress) - return 0 silently
+                    return 0;
                 }
                 catch (Exception ex)
                 {

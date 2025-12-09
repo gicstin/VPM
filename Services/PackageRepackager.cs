@@ -109,6 +109,24 @@ namespace VPM.Services
             // Create error log file for debugging
             string errorLogPath = Path.Combine(Path.GetTempPath(), "VPM_OptimizationErrors.log");
             
+            // CRITICAL FIX: Acquire exclusive write access at the START of optimization
+            // This blocks ALL image loading operations from opening the file while we work on it.
+            // The lock is held for the entire duration of the optimization process.
+            IDisposable writeLock = null;
+            try
+            {
+                // First, close any existing file handles
+                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                await ReleaseFileHandlesAsync(100);
+                
+                // Now acquire exclusive write access - this will wait for any remaining readers to finish
+                writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(sourceVarPath, TimeSpan.FromSeconds(30));
+            }
+            catch (TimeoutException)
+            {
+                throw new IOException($"Could not acquire exclusive access to '{Path.GetFileName(sourceVarPath)}' - file may be in use by image loading operations. Please try again.");
+            }
+            
             try
             {
                 string directory = Path.GetDirectoryName(sourceVarPath);
@@ -272,40 +290,25 @@ namespace VPM.Services
                     
                     archivedPath = archiveFilePath;
                     
-                    // NOTE: FileAccessController write lock should already be held by the caller
-                    // (MainWindow.ApplyPackageOptimizations acquires it before calling this method)
-                    // This ensures no image loading can interfere with the file move
-                    
-                    // Retry logic for moving file (should succeed immediately with FileAccessController)
-                    bool moveSuccess = false;
-                    Exception lastException = null;
-                    for (int attempt = 1; attempt <= 3; attempt++)
+                    // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
+                    // File.Move can fail even with write lock if any stale handle exists
+                    for (int moveAttempt = 1; moveAttempt <= 10; moveAttempt++)
                     {
                         try
                         {
-                            File.Move(sourceVarPath, archivedPath);
-                            moveSuccess = true;
+                            File.Copy(sourceVarPath, archivedPath, overwrite: true);
+                            File.Delete(sourceVarPath);
                             break;
                         }
-                        catch (IOException ex)
+                        catch (IOException) when (moveAttempt < 10)
                         {
-                            lastException = ex;
-                            if (attempt < 3)
-                            {
-                                // With FileAccessController, this should rarely happen
-                                // But keep retry logic as a safety net
-                                await ReleaseFileHandlesAsync(500 * attempt);
-                                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
-                                
-                                // Also invalidate FileAccessController state
-                                FileAccessController.Instance.InvalidateFile(sourceVarPath);
-                            }
+                            // Aggressive cleanup on each retry
+                            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
+                            FileAccessController.Instance.InvalidateFile(sourceVarPath);
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                            await Task.Delay(100 * moveAttempt);
                         }
-                    }
-                    
-                    if (!moveSuccess)
-                    {
-                        throw new IOException($"Could not move file to archive after 3 attempts. Please close any programs accessing this file. Error: {lastException?.Message}", lastException);
                     }
                     
                     sourcePathForProcessing = archivedPath; // Read from archive
@@ -388,6 +391,8 @@ namespace VPM.Services
                             await ReleaseFileHandlesAsync(100);
                             
                             // Copy archive to final output location
+                            // NOTE: We already hold write lock for sourceVarPath, and finalOutputPath
+                            // is a new file we're creating, so no lock needed
                             if (File.Exists(finalOutputPath))
                             {
                                 File.Delete(finalOutputPath);
@@ -400,7 +405,8 @@ namespace VPM.Services
                         await ReleaseFileHandlesAsync(100);
                         
                         // Use SharpCompress to read and re-write the archive with metadata updates
-                        using (var archive = SharpCompressHelper.OpenForRead(fileToModify))
+                        // NOTE: Use OpenForReadInternal because we already hold the write lock
+                        using (var archive = SharpCompressHelper.OpenForReadInternal(fileToModify))
                         {
                             string originalMetaJson = null;
                             DateTime? originalMetaJsonDate = null;
@@ -501,8 +507,9 @@ namespace VPM.Services
                     _performanceTimer.Start("Package Analysis");
                     
                     // Open source VAR (from archive or original location)
+                    // NOTE: Use OpenForReadInternal because we already hold the write lock
                     // Use forceGcOnDispose to ensure file handles are released before we try to delete/replace
-                    using (var sourceArchive = SharpCompressHelper.OpenForRead(sourcePathForProcessing, null, forceGcOnDispose: true))
+                    using (var sourceArchive = SharpCompressHelper.OpenForReadInternal(sourcePathForProcessing, forceGcOnDispose: true))
                     using (var outputMemoryStream = new MemoryStream())
                     using (var outputArchive = ZipArchive.Create())
                     {
@@ -1260,27 +1267,52 @@ namespace VPM.Services
                         }
                         else
                         {
-                            // Overwriting in the same location - delete the old file with retry
-                            for (int attempt = 1; attempt <= 5; attempt++)
+                            // GUARANTEED FIX: Use retry loop with aggressive handle release
+                            // File.Move requires exclusive access to BOTH source and dest, which is fragile
+                            // Instead, we delete with retries, then copy, then delete temp
+                            for (int deleteAttempt = 1; deleteAttempt <= 10; deleteAttempt++)
                             {
                                 try
                                 {
                                     File.Delete(finalOutputPath);
                                     break;
                                 }
-                                catch (IOException) when (attempt < 5)
+                                catch (IOException) when (deleteAttempt < 10)
                                 {
-                                    // Force GC and wait for file handles to be released
+                                    // Aggressive cleanup on each retry
+                                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(finalOutputPath);
+                                    FileAccessController.Instance.InvalidateFile(finalOutputPath);
                                     GC.Collect();
                                     GC.WaitForPendingFinalizers();
-                                    await ReleaseFileHandlesAsync(500 * attempt);
-                                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(finalOutputPath);
-                                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePathForProcessing);
+                                    await Task.Delay(100 * deleteAttempt);
                                 }
                             }
                         }
                     }
-                    File.Move(tempOutputPath, finalOutputPath);
+                    
+                    // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
+                    // File.Move requires exclusive access to destination which can fail if any handle is open
+                    // File.Copy is more forgiving - it only needs read access to source
+                    for (int copyAttempt = 1; copyAttempt <= 10; copyAttempt++)
+                    {
+                        try
+                        {
+                            File.Copy(tempOutputPath, finalOutputPath, overwrite: true);
+                            break;
+                        }
+                        catch (IOException) when (copyAttempt < 10)
+                        {
+                            // Aggressive cleanup on each retry
+                            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(finalOutputPath);
+                            FileAccessController.Instance.InvalidateFile(finalOutputPath);
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                            await Task.Delay(100 * copyAttempt);
+                        }
+                    }
+                    
+                    // Delete temp file (best effort - not critical if it fails)
+                    try { File.Delete(tempOutputPath); } catch { }
                     
                     // Clean up temp source file if we created one (SCENARIO 2/2B)
                     if (sourcePathForProcessing != sourceVarPath && sourcePathForProcessing != archiveFilePath && 
@@ -1334,7 +1366,13 @@ namespace VPM.Services
                         // Only restore if we moved the file to archive (createBackup was true)
                         if (createBackup && File.Exists(archivedPath) && !File.Exists(sourceVarPath))
                         {
-                            File.Move(archivedPath, sourceVarPath);
+                            // Use Copy+Delete instead of Move for reliability
+                            try
+                            {
+                                File.Copy(archivedPath, sourceVarPath, overwrite: false);
+                                File.Delete(archivedPath);
+                            }
+                            catch { /* Best effort restore */ }
                         }
                         
                         // If we were re-optimizing from archive and created a file in main folder, delete it
@@ -1352,6 +1390,12 @@ namespace VPM.Services
                 progressCallback?.Invoke("Error: " + ex.Message, 0, 0);
                 // Rethrow the exception so the caller knows the optimization failed
                 throw;
+            }
+            finally
+            {
+                // CRITICAL: Always release the write lock when optimization completes (success or failure)
+                // This allows image loading operations to resume
+                writeLock?.Dispose();
             }
         }
 

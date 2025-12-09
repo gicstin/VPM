@@ -318,17 +318,41 @@ namespace VPM.Services
         public bool IsRunning => _isRunning;
 
         /// <summary>
-        /// Dispose resources
+        /// Dispose resources.
+        /// FIXED: Replaced blocking .Wait() calls with proper async disposal pattern
+        /// to prevent deadlocks when called from UI thread context.
+        /// FIXED: Now disposes CircuitBreakerRegistry to release ReaderWriterLockSlim handles.
         /// </summary>
         public void Dispose()
         {
             if (_isRunning)
             {
-                StopAsync().Wait();
+                // Use GetAwaiter().GetResult() with ConfigureAwait(false) to avoid deadlock
+                // This is safer than .Wait() as it doesn't capture SynchronizationContext
+                try
+                {
+                    StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+                }
+                catch (Exception)
+                {
+                    // Ignore exceptions during disposal
+                }
             }
 
             _scheduler?.Dispose();
-            _dashboard?.StopAsync().Wait();
+            
+            // Same pattern for dashboard
+            try
+            {
+                _dashboard?.StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                // Ignore exceptions during disposal
+            }
+            
+            // Dispose circuit breakers to release ReaderWriterLockSlim handles
+            _circuitBreakers?.Dispose();
         }
     }
 }

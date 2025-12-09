@@ -452,11 +452,16 @@ namespace VPM.Services
                 var optimizer = _parallelOptimizer;
                 _parallelOptimizer = null;
                 
-                // Stop asynchronously without blocking
-                _ = optimizer.StopAsync().ContinueWith(t =>
+                // FIXED: Properly await the stop and dispose instead of fire-and-forget
+                // This ensures exceptions are observed and disposal completes
+                try
+                {
+                    await optimizer.StopAsync().ConfigureAwait(false);
+                }
+                finally
                 {
                     optimizer.Dispose();
-                });
+                }
             }
             finally
             {
@@ -466,12 +471,25 @@ namespace VPM.Services
 
         /// <summary>
         /// Disposes resources.
+        /// FIXED: Properly dispose ReaderWriterLockSlim and SemaphoreSlim.
+        /// FIXED: Use non-blocking disposal pattern.
         /// </summary>
         public void Dispose()
         {
-            StopParallelOptimizerAsync().Wait(5000);
+            // Use ConfigureAwait(false).GetAwaiter().GetResult() to avoid deadlock
+            try
+            {
+                StopParallelOptimizerAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                // Ignore exceptions during disposal
+            }
+            
             _parallelOptimizer?.Dispose();
             _cpuCounter?.Dispose();
+            _lock?.Dispose();
+            _parallelLock?.Dispose();
         }
     }
 

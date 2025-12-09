@@ -390,6 +390,8 @@ namespace VPM.Services
         {
             _schedulerCts?.Dispose();
             _workQueue?.Clear();
+            _workerLock?.Dispose();
+            _adaptiveOptimizer?.Dispose();
         }
     }
 

@@ -13,7 +13,7 @@ namespace VPM.Services
     /// Provides 5-10x faster loading compared to JSON deserialization
     /// Based on _VB project's VarPackageMgr binary caching strategy
     /// </summary>
-    public class BinaryMetadataCache
+    public class BinaryMetadataCache : IDisposable
     {
         private const int CACHE_VERSION = 13; // Added ClothingTags and HairTags
         private readonly string _cacheFilePath;
@@ -725,6 +725,24 @@ namespace VPM.Services
             };
         }
 
+        #endregion
+        
+        #region IDisposable
+        
+        private bool _disposed;
+        
+        /// <summary>
+        /// Dispose resources.
+        /// FIXED: ReaderWriterLockSlim was not being disposed.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            
+            _cacheLock?.Dispose();
+        }
+        
         #endregion
     }
 }
