@@ -45,11 +45,10 @@ namespace VPM.Windows
 
             double itemMargin = 3.0; // Must match the Grid Margin in the template
             
-            // Account for scrollbar width (typically 17 pixels in WPF)
+            // Account for scrollbar width - use SystemParameters to get actual scrollbar width
             double scrollbarWidth = SystemParameters.VerticalScrollBarWidth;
             
-            // Calculate available width (accounting for margins on both sides and scrollbar)
-            // Only account for left and right margins, not column-based margins
+            // Calculate available width (accounting for margins on both sides)
             double totalMarginWidth = 2 * itemMargin;
             double availableRowWidth = availableSize.Width - totalMarginWidth - scrollbarWidth;
             
@@ -90,6 +89,7 @@ namespace VPM.Windows
 
             // Second pass: calculate total height based on rows
             double totalHeight = itemMargin;  // Start with top margin
+            double bottomPadding = 20.0; // Extra padding at bottom to avoid overlay controls
             int childIndex = 0;
             
             foreach (int itemsInRow in rowItemCounts)
@@ -118,7 +118,7 @@ namespace VPM.Windows
                 totalHeight += rowHeight + itemMargin;  // Add row height plus margin after row
             }
 
-            return new Size(availableSize.Width, totalHeight);
+            return new Size(availableSize.Width, totalHeight + bottomPadding);
         }
 
         protected override Size ArrangeOverride(Size finalSize)
@@ -135,11 +135,10 @@ namespace VPM.Windows
 
             double itemMargin = 3.0; // Must match the Grid Margin in the template
             
-            // Account for scrollbar width (typically 17 pixels in WPF)
+            // Account for scrollbar width - use SystemParameters to get actual scrollbar width
             double scrollbarWidth = SystemParameters.VerticalScrollBarWidth;
             
-            // Calculate available width (accounting for margins on both sides and scrollbar)
-            // Only account for left and right margins, not column-based margins
+            // Calculate available width (accounting for margins on both sides)
             double totalMarginWidth = 2 * itemMargin;
             double availableRowWidth = finalSize.Width - totalMarginWidth - scrollbarWidth;
             
@@ -235,8 +234,12 @@ namespace VPM.Windows
                 x += itemWidth + itemMargin;
             }
 
-            // Return the final size - don't call base.ArrangeOverride as it would override our arrangement
-            return finalSize;
+            // Calculate actual content height (y is at start of last row, add last row height + bottom margin)
+            double bottomPadding = 20.0; // Extra padding at bottom to avoid overlay controls
+            double actualHeight = y + rowHeight + itemMargin + bottomPadding;
+            
+            // Return the actual content size so ScrollViewer knows the full extent
+            return new Size(finalSize.Width, actualHeight);
         }
 
         private T FindVisualChild<T>(DependencyObject obj) where T : DependencyObject

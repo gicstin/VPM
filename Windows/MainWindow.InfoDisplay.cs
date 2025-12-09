@@ -441,6 +441,7 @@ namespace VPM
         
         private void ClearCategoryTabs()
         {
+            // Keep Package Info tab (index 0), remove all dynamically added category tabs
             while (PackageInfoTabControl.Items.Count > 1)
             {
                 PackageInfoTabControl.Items.RemoveAt(PackageInfoTabControl.Items.Count - 1);

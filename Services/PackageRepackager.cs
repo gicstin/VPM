@@ -113,14 +113,84 @@ namespace VPM.Services
             // This blocks ALL image loading operations from opening the file while we work on it.
             // The lock is held for the entire duration of the optimization process.
             IDisposable writeLock = null;
+            string tempOutputPath = null; // Track temp file for cleanup in finally block
+            
+            // Declare these at method scope so they're available in both try blocks
+            string directory = Path.GetDirectoryName(sourceVarPath);
+            string filename = Path.GetFileName(sourceVarPath);
+            bool isSourceInArchive = sourceVarPath.Contains(Path.DirectorySeparatorChar + "ArchivedPackages" + Path.DirectorySeparatorChar) ||
+                                   sourceVarPath.Contains(Path.AltDirectorySeparatorChar + "ArchivedPackages" + Path.AltDirectorySeparatorChar);
+            
             try
             {
                 // First, close any existing file handles
                 if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                 await ReleaseFileHandlesAsync(100);
                 
-                // Now acquire exclusive write access - this will wait for any remaining readers to finish
-                writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(sourceVarPath, TimeSpan.FromSeconds(30));
+                // CRITICAL: We must acquire write access to BOTH sourceVarPath and the final output location
+                // because finalOutputPath may differ from sourceVarPath in many scenarios (archive, re-optimization, etc.)
+                // Without locking finalOutputPath, image loaders can still hold handles to it, causing File.Delete to fail
+                var filesToLock = new List<string> { sourceVarPath };
+                
+                // Pre-determine finalOutputPath to include it in the lock
+                // We need to check all scenarios to know where the output will go
+                string archiveFilePath = Path.Combine(archivedFolder, filename);
+                
+                string predictedFinalOutputPath = sourceVarPath; // Default
+                
+                if (isSourceInArchive && createBackup)
+                {
+                    // SCENARIO 3: Output goes to AddonPackages or AllPackages
+                    string gameRoot = Path.GetDirectoryName(archivedFolder);
+                    string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
+                    if (Directory.Exists(addonPackagesFolder))
+                    {
+                        predictedFinalOutputPath = Path.Combine(addonPackagesFolder, filename);
+                    }
+                    else
+                    {
+                        string allPackagesFolder = Path.Combine(gameRoot, "AllPackages");
+                        if (Directory.Exists(allPackagesFolder))
+                        {
+                            predictedFinalOutputPath = Path.Combine(allPackagesFolder, filename);
+                        }
+                    }
+                }
+                else if (isSourceInArchive && !createBackup)
+                {
+                    // SCENARIO 3B: Output goes to AddonPackages or AllPackages
+                    string gameRoot = Path.GetDirectoryName(archivedFolder);
+                    string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
+                    if (Directory.Exists(addonPackagesFolder))
+                    {
+                        predictedFinalOutputPath = Path.Combine(addonPackagesFolder, filename);
+                    }
+                    else
+                    {
+                        string allPackagesFolder = Path.Combine(gameRoot, "AllPackages");
+                        if (Directory.Exists(allPackagesFolder))
+                        {
+                            predictedFinalOutputPath = Path.Combine(allPackagesFolder, filename);
+                        }
+                    }
+                }
+                // For other scenarios, finalOutputPath == sourceVarPath, so no additional lock needed
+                
+                // Only add to lock list if it's different from sourceVarPath
+                if (!predictedFinalOutputPath.Equals(sourceVarPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    filesToLock.Add(predictedFinalOutputPath);
+                }
+                
+                // Now acquire exclusive write access for all files that might be modified
+                if (filesToLock.Count > 1)
+                {
+                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(filesToLock, TimeSpan.FromSeconds(30));
+                }
+                else
+                {
+                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(sourceVarPath, TimeSpan.FromSeconds(30));
+                }
             }
             catch (TimeoutException)
             {
@@ -129,9 +199,6 @@ namespace VPM.Services
             
             try
             {
-                string directory = Path.GetDirectoryName(sourceVarPath);
-                string filename = Path.GetFileName(sourceVarPath);
-                
                 // Validate that ArchivedPackages folder is not inside AllPackages or AddonPackages
                 if (archivedFolder.Contains("AllPackages") || archivedFolder.Contains("AddonPackages"))
                 {
@@ -142,20 +209,17 @@ namespace VPM.Services
                 
                 string sourcePathForProcessing;
                 string archivedPath = null;
-                bool isSourceInArchive = false;
                 string finalOutputPath = sourceVarPath; // Default to source location
+                string archiveFilePath = Path.Combine(archivedFolder, filename); // Path where archive will be stored
                 long originalFileSize = new FileInfo(sourceVarPath).Length; // Capture original size before any processing
                 
                 // Track JSON minification sizes
                 long jsonSizeBeforeMinify = 0;
                 long jsonSizeAfterMinify = 0;
                 
-                // Determine if source is in archive folder
-                isSourceInArchive = sourceVarPath.Contains(Path.DirectorySeparatorChar + "ArchivedPackages" + Path.DirectorySeparatorChar) ||
-                                   sourceVarPath.Contains(Path.AltDirectorySeparatorChar + "ArchivedPackages" + Path.AltDirectorySeparatorChar);
-                
                 Directory.CreateDirectory(archivedFolder);
-                string archiveFilePath = Path.Combine(archivedFolder, filename);
+                
+                // Note: isSourceInArchive was already determined during lock acquisition
                 
                 if (isSourceInArchive && createBackup)
                 {
@@ -348,7 +412,7 @@ namespace VPM.Services
                 // STEP 2: Process the file (from archive or original location)
                 // Use the directory of the final output path for temp file
                 string outputDirectory = Path.GetDirectoryName(finalOutputPath);
-                string tempOutputPath = Path.Combine(outputDirectory, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + filename);
+                tempOutputPath = Path.Combine(outputDirectory, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + filename);
                 
                 if (File.Exists(tempOutputPath))
                 {
@@ -1393,6 +1457,13 @@ namespace VPM.Services
             }
             finally
             {
+                // CRITICAL: Always clean up temp file if it exists
+                // This prevents leftover ~temp_ files when operations fail or are interrupted
+                if (!string.IsNullOrEmpty(tempOutputPath))
+                {
+                    try { if (File.Exists(tempOutputPath)) File.Delete(tempOutputPath); } catch { }
+                }
+                
                 // CRITICAL: Always release the write lock when optimization completes (success or failure)
                 // This allows image loading operations to resume
                 writeLock?.Dispose();

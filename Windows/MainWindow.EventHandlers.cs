@@ -114,6 +114,9 @@ namespace VPM
             UpdateAutoinstallCounter();
             UpdateHideCounter();
             
+            // Update Hub Overview tab visibility based on selection count
+            UpdateHubOverviewTabVisibility();
+            
             if (_suppressSelectionEvents) return;
 
             if (PackageDataGrid?.SelectedItems?.Count == 0)

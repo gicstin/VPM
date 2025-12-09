@@ -105,6 +105,9 @@ namespace VPM.Models
         // Hub Browser Settings
         private string _oldVersionHandling = "No Change";
         
+        // Image Area Tab Settings
+        private string _preferredImageAreaTab = "Images"; // "Images" or "Hub"
+        
         // Package Optimizer Settings
         private bool _forceLatestDependencies = true;
         private bool _disableMorphPreload = true;
@@ -145,6 +148,12 @@ namespace VPM.Models
         {
             get => _imageMatchWidth;
             set => SetProperty(ref _imageMatchWidth, value);
+        }
+
+        public string PreferredImageAreaTab
+        {
+            get => _preferredImageAreaTab;
+            set => SetProperty(ref _preferredImageAreaTab, value ?? "Images");
         }
 
         public string SelectedFolder

@@ -6,6 +6,7 @@
     xmlns:local="clr-namespace:VPM"
     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
     xmlns:windows="clr-namespace:VPM.Windows"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
     x:Name="VPMWindow"
     Title="VPM - Ready"
     Width="1200"
@@ -4704,469 +4705,601 @@
                         </Grid>
                     </Border>
 
-                    <!--  Main images area with overlay controls  -->
-                    <Grid Grid.Row="1">
-                        <windows:ImageListView
-                            x:Name="ImagesListView"
-                            Margin="0,0,0,0"
-                            Background="Transparent"
-                            BorderThickness="0"
-                            ItemsSource="{Binding Source={StaticResource PreviewImagesView}}"
-                            PreviewMouseWheel="ImagesListView_PreviewMouseWheel"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                            ScrollViewer.VerticalScrollBarVisibility="Auto"
-                            SizeChanged="ImagesListView_SizeChanged">
-                            <windows:ImageListView.Template>
-                                <ControlTemplate TargetType="windows:ImageListView">
-                                    <Border
-                                        Background="{TemplateBinding Background}"
-                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                        BorderThickness="{TemplateBinding BorderThickness}">
-                                        <ScrollViewer
-                                            Focusable="false"
-                                            HorizontalScrollBarVisibility="Disabled"
-                                            VerticalScrollBarVisibility="Auto">
-                                            <StackPanel Orientation="Vertical">
-                                                <ItemsPresenter />
-                                            </StackPanel>
-                                        </ScrollViewer>
-                                    </Border>
-                                </ControlTemplate>
-                            </windows:ImageListView.Template>
+                    <!--  Main images/Hub area with TabControl  -->
+                    <TabControl
+                        x:Name="ImageAreaTabControl"
+                        Grid.Row="1"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        SelectionChanged="ImageAreaTabControl_SelectionChanged">
+                        <TabControl.Resources>
+                            <Style TargetType="TabItem">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="TabItem">
+                                            <Border
+                                                Name="Border"
+                                                Height="36"
+                                                Margin="0,4,4,4"
+                                                Padding="16,0"
+                                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                                BorderThickness="1"
+                                                CornerRadius="3">
+                                                <ContentPresenter
+                                                    x:Name="ContentSite"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    ContentSource="Header" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                                </Trigger>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Border" Property="Background" Value="{DynamicResource {x:Static SystemColors.WindowBrushKey}}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </TabControl.Resources>
 
-                            <windows:ImageListView.ItemContainerStyle>
-                                <Style BasedOn="{StaticResource {x:Type ListBoxItem}}" TargetType="ListViewItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                    <Setter Property="VerticalContentAlignment" Value="Top" />
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="Margin" Value="0" />
-                                    <Setter Property="BorderThickness" Value="0" />
-                                    <Setter Property="BorderBrush" Value="Transparent" />
-                                </Style>
-                            </windows:ImageListView.ItemContainerStyle>
+                        <!--  Images Tab  -->
+                        <TabItem x:Name="ImagesTab" Header="📷 Previews">
+                            <Grid>
+                                <windows:ImageListView
+                                    x:Name="ImagesListView"
+                                    Margin="0,0,0,0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    ItemsSource="{Binding Source={StaticResource PreviewImagesView}}"
+                                    PreviewMouseWheel="ImagesListView_PreviewMouseWheel"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                    SizeChanged="ImagesListView_SizeChanged">
+                                    <windows:ImageListView.Template>
+                                        <ControlTemplate TargetType="windows:ImageListView">
+                                            <Border
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                                <ScrollViewer
+                                                    Focusable="false"
+                                                    HorizontalScrollBarVisibility="Disabled"
+                                                    VerticalScrollBarVisibility="Auto"
+                                                    CanContentScroll="False">
+                                                    <ItemsPresenter />
+                                                </ScrollViewer>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </windows:ImageListView.Template>
 
-                            <windows:ImageListView.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <windows:ImageWrapPanel
-                                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=windows:ImageListView}, Converter={StaticResource PanelWidthConverter}}"
-                                        Height="Auto"
-                                        Margin="0"
-                                        VerticalAlignment="Top"
-                                        Columns="{Binding ImageColumns, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        ImageMatchWidth="{Binding ImageMatchWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Orientation="Horizontal" />
-                                </ItemsPanelTemplate>
-                            </windows:ImageListView.ItemsPanel>
-
-                            <windows:ImageListView.GroupStyle>
-                                <GroupStyle>
-                                    <GroupStyle.ContainerStyle>
-                                        <Style TargetType="{x:Type GroupItem}">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="{x:Type GroupItem}">
-                                                        <StackPanel Height="Auto" Orientation="Vertical">
-                                                            <!--  Package header spanning full width  -->
-                                                            <Border
-                                                                Height="36"
-                                                                Margin="0,6,0,3"
-                                                                Padding="4,4"
-                                                                HorizontalAlignment="Stretch"
-                                                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
-                                                                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
-                                                                BorderThickness="1"
-                                                                CornerRadius="3">
-                                                                <Grid>
-                                                                    <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="*" MinWidth="10" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                    </Grid.ColumnDefinitions>
-
-                                                                    <!--  Load/Unload button (hidden in Custom mode)  -->
-                                                                    <Button
-                                                                        x:Name="PackageHeaderLoadUnloadButton"
-                                                                        Grid.Column="0"
-                                                                        Width="96"
-                                                                        Height="26"
-                                                                        Margin="0,0,3,0"
-                                                                        Padding="0,0"
-                                                                        Click="PackageHeaderLoadUnload_Click"
-                                                                        Content="{Binding Items[0].PackageItem.Status, Converter={StaticResource PackageStatusToLoadButtonConverter}}"
-                                                                        FontSize="11"
-                                                                        FontWeight="SemiBold"
-                                                                        ToolTip="Load/Unload package"
-                                                                        Visibility="{Binding Items[0].ShowLoadButton, Converter={StaticResource BoolToVis}}">
-                                                                        <Button.Style>
-                                                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
-                                                                        </Button.Style>
-                                                                    </Button>
-
-
-                                                                    <!--  Status line  -->
-                                                                    <Border
-                                                                        Grid.Column="1"
-                                                                        Width="6"
-                                                                        Height="24"
-                                                                        Margin="3,0,6,0"
-                                                                        VerticalAlignment="Center"
-                                                                        Background="{Binding Items[0].StatusBrush}"
-                                                                        CornerRadius="2" />
-
-                                                                    <!--  Package name with clipping  -->
-                                                                    <StackPanel
-                                                                        Grid.Column="2"
-                                                                        VerticalAlignment="Center"
-                                                                        Orientation="Horizontal">
-                                                                        <TextBlock
-                                                                            Margin="0,0,0,0"
-                                                                            FontSize="15"
-                                                                            FontWeight="SemiBold"
-                                                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                                                            Text="{Binding Items[0].PackageName}"
-                                                                            TextTrimming="CharacterEllipsis" />
-                                                                    </StackPanel>
-
-                                                                    <!--  Delete extracted items button (hidden in Custom mode)  -->
-                                                                    <Button
-                                                                        x:Name="DeletePackageButton"
-                                                                        Grid.Column="3"
-                                                                        Width="28"
-                                                                        Height="26"
-                                                                        Margin="0,0,8,0"
-                                                                        Padding="0"
-                                                                        Background="#CC803030"
-                                                                        BorderBrush="Transparent"
-                                                                        BorderThickness="1"
-                                                                        Click="DeletePackageExtractedContent_Click"
-                                                                        Cursor="Hand"
-                                                                        Foreground="White"
-                                                                        ToolTip="Delete all extracted items in this package">
-                                                                        <Button.Visibility>
-                                                                            <MultiBinding Converter="{StaticResource HasExtractedItemsConverter}">
-                                                                                <Binding Path="Items" />
-                                                                                <Binding Path="Items[0].ShowLoadButton" />
-                                                                            </MultiBinding>
-                                                                        </Button.Visibility>
-                                                                        <TextBlock
-                                                                            FontSize="12"
-                                                                            FontWeight="Bold"
-                                                                            Text="✕" />
-                                                                        <Button.Style>
-                                                                            <Style TargetType="Button">
-                                                                                <Setter Property="Template">
-                                                                                    <Setter.Value>
-                                                                                        <ControlTemplate TargetType="Button">
-                                                                                            <Border
-                                                                                                Background="{TemplateBinding Background}"
-                                                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                                                CornerRadius="3">
-                                                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                                            </Border>
-                                                                                            <ControlTemplate.Triggers>
-                                                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                                                    <Setter Property="Opacity" Value="0.9" />
-                                                                                                </Trigger>
-                                                                                            </ControlTemplate.Triggers>
-                                                                                        </ControlTemplate>
-                                                                                    </Setter.Value>
-                                                                                </Setter>
-                                                                            </Style>
-                                                                        </Button.Style>
-                                                                    </Button>
-
-                                                                    <!--  Package size (always visible)  -->
-                                                                    <TextBlock
-                                                                        Grid.Column="4"
-                                                                        Margin="8,0,16,0"
-                                                                        VerticalAlignment="Center"
-                                                                        FontSize="16"
-                                                                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                                        Text="{Binding Items[0].ItemFileSizeFormatted}" />
-                                                                </Grid>
-                                                            </Border>
-                                                            <!--  Items container  -->
-                                                            <ItemsPresenter />
-                                                        </StackPanel>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
+                                    <windows:ImageListView.ItemContainerStyle>
+                                        <Style BasedOn="{StaticResource {x:Type ListBoxItem}}" TargetType="ListViewItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="VerticalContentAlignment" Value="Top" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="0" />
+                                            <Setter Property="BorderThickness" Value="0" />
+                                            <Setter Property="BorderBrush" Value="Transparent" />
                                         </Style>
-                                    </GroupStyle.ContainerStyle>
-                                </GroupStyle>
-                            </windows:ImageListView.GroupStyle>
+                                    </windows:ImageListView.ItemContainerStyle>
 
-                            <windows:ImageListView.ItemTemplate>
-                                <DataTemplate>
-                                    <!--  Image with rounded corners using LazyLoadImage  -->
-                                    <Grid Margin="3">
-                                        <windows:LazyLoadImage
+                                    <windows:ImageListView.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <windows:ImageWrapPanel
+                                                Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=windows:ImageListView}, Converter={StaticResource PanelWidthConverter}}"
+                                                Height="Auto"
+                                                Margin="0"
+                                                VerticalAlignment="Top"
+                                                Columns="{Binding ImageColumns, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ImageMatchWidth="{Binding ImageMatchWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </windows:ImageListView.ItemsPanel>
+
+                                    <windows:ImageListView.GroupStyle>
+                                        <GroupStyle>
+                                            <GroupStyle.ContainerStyle>
+                                                <Style TargetType="{x:Type GroupItem}">
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                                <StackPanel Height="Auto" Orientation="Vertical">
+                                                                    <!--  Package header spanning full width  -->
+                                                                    <Border
+                                                                        Height="36"
+                                                                        Margin="0,0,0,3"
+                                                                        Padding="4,4"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                                        BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="3">
+                                                                        <Grid>
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="*" MinWidth="10" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                            </Grid.ColumnDefinitions>
+
+                                                                            <!--  Load/Unload button (hidden in Custom mode)  -->
+                                                                            <Button
+                                                                                x:Name="PackageHeaderLoadUnloadButton"
+                                                                                Grid.Column="0"
+                                                                                Width="96"
+                                                                                Height="26"
+                                                                                Margin="0,0,3,0"
+                                                                                Padding="0,0"
+                                                                                Click="PackageHeaderLoadUnload_Click"
+                                                                                Content="{Binding Items[0].PackageItem.Status, Converter={StaticResource PackageStatusToLoadButtonConverter}}"
+                                                                                FontSize="11"
+                                                                                FontWeight="SemiBold"
+                                                                                ToolTip="Load/Unload package"
+                                                                                Visibility="{Binding Items[0].ShowLoadButton, Converter={StaticResource BoolToVis}}">
+                                                                                <Button.Style>
+                                                                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
+                                                                                </Button.Style>
+                                                                            </Button>
+
+
+                                                                            <!--  Status line  -->
+                                                                            <Border
+                                                                                Grid.Column="1"
+                                                                                Width="6"
+                                                                                Height="24"
+                                                                                Margin="3,0,6,0"
+                                                                                VerticalAlignment="Center"
+                                                                                Background="{Binding Items[0].StatusBrush}"
+                                                                                CornerRadius="2" />
+
+                                                                            <!--  Package name with clipping  -->
+                                                                            <StackPanel
+                                                                                Grid.Column="2"
+                                                                                VerticalAlignment="Center"
+                                                                                Orientation="Horizontal">
+                                                                                <TextBlock
+                                                                                    Margin="0,0,0,0"
+                                                                                    FontSize="15"
+                                                                                    FontWeight="SemiBold"
+                                                                                    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                                                                    Text="{Binding Items[0].PackageName}"
+                                                                                    TextTrimming="CharacterEllipsis" />
+                                                                            </StackPanel>
+
+                                                                            <!--  Delete extracted items button (hidden in Custom mode)  -->
+                                                                            <Button
+                                                                                x:Name="DeletePackageButton"
+                                                                                Grid.Column="3"
+                                                                                Width="28"
+                                                                                Height="26"
+                                                                                Margin="0,0,8,0"
+                                                                                Padding="0"
+                                                                                Background="#CC803030"
+                                                                                BorderBrush="Transparent"
+                                                                                BorderThickness="1"
+                                                                                Click="DeletePackageExtractedContent_Click"
+                                                                                Cursor="Hand"
+                                                                                Foreground="White"
+                                                                                ToolTip="Delete all extracted items in this package">
+                                                                                <Button.Visibility>
+                                                                                    <MultiBinding Converter="{StaticResource HasExtractedItemsConverter}">
+                                                                                        <Binding Path="Items" />
+                                                                                        <Binding Path="Items[0].ShowLoadButton" />
+                                                                                    </MultiBinding>
+                                                                                </Button.Visibility>
+                                                                                <TextBlock
+                                                                                    FontSize="12"
+                                                                                    FontWeight="Bold"
+                                                                                    Text="✕" />
+                                                                                <Button.Style>
+                                                                                    <Style TargetType="Button">
+                                                                                        <Setter Property="Template">
+                                                                                            <Setter.Value>
+                                                                                                <ControlTemplate TargetType="Button">
+                                                                                                    <Border
+                                                                                                        Background="{TemplateBinding Background}"
+                                                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                                                        CornerRadius="3">
+                                                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                                                    </Border>
+                                                                                                    <ControlTemplate.Triggers>
+                                                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                                                            <Setter Property="Opacity" Value="0.9" />
+                                                                                                        </Trigger>
+                                                                                                    </ControlTemplate.Triggers>
+                                                                                                </ControlTemplate>
+                                                                                            </Setter.Value>
+                                                                                        </Setter>
+                                                                                    </Style>
+                                                                                </Button.Style>
+                                                                            </Button>
+
+                                                                            <!--  Package size (always visible)  -->
+                                                                            <TextBlock
+                                                                                Grid.Column="4"
+                                                                                Margin="8,0,16,0"
+                                                                                VerticalAlignment="Center"
+                                                                                FontSize="16"
+                                                                                Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                                                Text="{Binding Items[0].ItemFileSizeFormatted}" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                    <!--  Items container  -->
+                                                                    <ItemsPresenter />
+                                                                </StackPanel>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                </Style>
+                                            </GroupStyle.ContainerStyle>
+                                        </GroupStyle>
+                                    </windows:ImageListView.GroupStyle>
+
+                                    <windows:ImageListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <!--  Image with rounded corners using LazyLoadImage  -->
+                                            <Grid Margin="3">
+                                                <windows:LazyLoadImage
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Stretch"
+                                                    ImageHeight="{Binding ImageHeight}"
+                                                    ImageWidth="{Binding ImageWidth}"
+                                                    InternalImagePath="{Binding InternalPath}"
+                                                    IsExtracted="{Binding IsExtracted}"
+                                                    LoadImageCallback="{Binding LoadImageCallback}"
+                                                    Loaded="LazyLoadImage_Loaded"
+                                                    PackageKey="{Binding PackageName}"
+                                                    Unloaded="LazyLoadImage_Unloaded"
+                                                    VarFilePath="{Binding VarFilePath}">
+                                                    <windows:LazyLoadImage.Width>
+                                                        <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
+                                                            <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
+                                                            <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                            <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                        </MultiBinding>
+                                                    </windows:LazyLoadImage.Width>
+                                                    <windows:LazyLoadImage.MaxWidth>
+                                                        <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
+                                                            <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
+                                                            <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                            <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                        </MultiBinding>
+                                                    </windows:LazyLoadImage.MaxWidth>
+                                                    <windows:LazyLoadImage.Height>
+                                                        <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
+                                                            <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
+                                                            <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                            <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                        </MultiBinding>
+                                                    </windows:LazyLoadImage.Height>
+                                                    <windows:LazyLoadImage.CornerRadius>3</windows:LazyLoadImage.CornerRadius>
+                                                </windows:LazyLoadImage>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </windows:ImageListView.ItemTemplate>
+                                </windows:ImageListView>
+
+                                <!--  Hoverable overlay controls - positioned at bottom right of image area  -->
+                                <Border
+                                    x:Name="ImageControlsOverlay"
+                                    Margin="0,0,16,16"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Bottom"
+                                    Panel.ZIndex="10"
+                                    Background="#CC000000"
+                                    CornerRadius="9"
+                                    Opacity="0.5">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Opacity" Value="1" />
+                                                    <Setter Property="Background" Value="#E6000000" />
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <Grid Margin="6,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!--  Image statistics display on the left  -->
+                                        <StackPanel
+                                            Grid.Column="0"
+                                            Margin="4,0,12,0"
+                                            VerticalAlignment="Center"
+                                            Orientation="Vertical">
+                                            <TextBlock
+                                                x:Name="ImageStatsTextBlock"
+                                                FontSize="11"
+                                                FontWeight="SemiBold"
+                                                Foreground="White"
+                                                Text="0 images" />
+                                            <TextBlock
+                                                x:Name="ImageExtractedStatsTextBlock"
+                                                FontSize="10"
+                                                Foreground="#AAAAAA"
+                                                Text="0 extracted items" />
+                                        </StackPanel>
+
+                                        <!--  Filter button in the middle - stretch to fill space  -->
+                                        <StackPanel
+                                            Grid.Column="1"
                                             HorizontalAlignment="Stretch"
-                                            VerticalAlignment="Stretch"
-                                            ImageHeight="{Binding ImageHeight}"
-                                            ImageWidth="{Binding ImageWidth}"
-                                            InternalImagePath="{Binding InternalPath}"
-                                            IsExtracted="{Binding IsExtracted}"
-                                            LoadImageCallback="{Binding LoadImageCallback}"
-                                            Loaded="LazyLoadImage_Loaded"
-                                            PackageKey="{Binding PackageName}"
-                                            Unloaded="LazyLoadImage_Unloaded"
-                                            VarFilePath="{Binding VarFilePath}">
-                                            <windows:LazyLoadImage.Width>
-                                                <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
-                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
-                                                    <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                    <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                </MultiBinding>
-                                            </windows:LazyLoadImage.Width>
-                                            <windows:LazyLoadImage.MaxWidth>
-                                                <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
-                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
-                                                    <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                    <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                </MultiBinding>
-                                            </windows:LazyLoadImage.MaxWidth>
-                                            <windows:LazyLoadImage.Height>
-                                                <MultiBinding Converter="{StaticResource ImageWidthConverter}" ConverterParameter="3,1">
-                                                    <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=windows:ImageListView}" />
-                                                    <Binding Path="ImageColumns" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                    <Binding Path="ImageMatchWidth" RelativeSource="{RelativeSource AncestorType=Window}" />
-                                                </MultiBinding>
-                                            </windows:LazyLoadImage.Height>
-                                            <windows:LazyLoadImage.CornerRadius>3</windows:LazyLoadImage.CornerRadius>
-                                        </windows:LazyLoadImage>
+                                            VerticalAlignment="Center"
+                                            Orientation="Horizontal">
+                                            <Button
+                                                x:Name="ToggleExtractedFilterButton"
+                                                Height="26"
+                                                Margin="0,0,8,0"
+                                                Padding="0,0"
+                                                HorizontalAlignment="Stretch"
+                                                Click="ToggleExtractedFilter_Click"
+                                                Content="  Extracted  "
+                                                FontSize="10"
+                                                FontWeight="Regular"
+                                                ToolTip="Toggle: Show only extracted items (pressed) or all images (released)">
+                                                <Button.Style>
+                                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border
+                                                                        Background="{TemplateBinding Background}"
+                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                        CornerRadius="3">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#80FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsPressed" Value="True">
+                                                                            <Setter Property="Background" Value="#A0FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ImageShowOnlyExtracted, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                                <Setter Property="Background" Value="#80FFFFFF" />
+                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </StackPanel>
+
+                                        <!--  Column adjustment buttons on the right  -->
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <Button
+                                                x:Name="MatchWidthButton"
+                                                Height="26"
+                                                Margin="0,0,8,0"
+                                                Padding="0,0"
+                                                Click="ToggleMatchWidth_Click"
+                                                Content="  Adaptive  "
+                                                FontSize="10"
+                                                FontWeight="Regular"
+                                                ToolTip="Toggle match width (fill last row)">
+                                                <Button.Style>
+                                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border
+                                                                        Background="{TemplateBinding Background}"
+                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                        CornerRadius="3">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#80FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsPressed" Value="True">
+                                                                            <Setter Property="Background" Value="#A0FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ImageMatchWidth, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                                                <Setter Property="Background" Value="#80FFFFFF" />
+                                                                <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <Button
+                                                Width="26"
+                                                Height="26"
+                                                Margin="0,0,6,0"
+                                                Padding="0,0"
+                                                Click="DecreaseImageColumns_Click"
+                                                Content="−"
+                                                FontSize="12"
+                                                FontWeight="Bold"
+                                                ToolTip="Decrease columns (Ctrl+-)">
+                                                <Button.Style>
+                                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border
+                                                                        Background="{TemplateBinding Background}"
+                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                        CornerRadius="3">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#80FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsPressed" Value="True">
+                                                                            <Setter Property="Background" Value="#A0FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <Button
+                                                Width="26"
+                                                Height="26"
+                                                Padding="0,0"
+                                                Click="IncreaseImageColumns_Click"
+                                                Content="+"
+                                                FontSize="12"
+                                                FontWeight="Bold"
+                                                ToolTip="Increase columns (Ctrl++)">
+                                                <Button.Style>
+                                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border
+                                                                        Background="{TemplateBinding Background}"
+                                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                                        CornerRadius="3">
+                                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter Property="Background" Value="#80FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                        <Trigger Property="IsPressed" Value="True">
+                                                                            <Setter Property="Background" Value="#A0FFFFFF" />
+                                                                            <Setter Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                        </StackPanel>
                                     </Grid>
-                                </DataTemplate>
-                            </windows:ImageListView.ItemTemplate>
-                        </windows:ImageListView>
-
-                        <!--  Hoverable overlay controls - positioned at bottom right of image area  -->
-                        <Border
-                            x:Name="ImageControlsOverlay"
-                            Margin="0,0,16,16"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Bottom"
-                            Panel.ZIndex="10"
-                            Background="#CC000000"
-                            CornerRadius="9"
-                            Opacity="0.5">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Opacity" Value="1" />
-                                            <Setter Property="Background" Value="#E6000000" />
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-                            <Grid Margin="6,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <!--  Image statistics display on the left  -->
-                                <StackPanel
-                                    Grid.Column="0"
-                                    Margin="4,0,12,0"
-                                    VerticalAlignment="Center"
-                                    Orientation="Vertical">
-                                    <TextBlock
-                                        x:Name="ImageStatsTextBlock"
-                                        FontSize="11"
-                                        FontWeight="SemiBold"
-                                        Foreground="White"
-                                        Text="0 images" />
-                                    <TextBlock
-                                        x:Name="ImageExtractedStatsTextBlock"
-                                        FontSize="10"
-                                        Foreground="#AAAAAA"
-                                        Text="0 extracted items" />
-                                </StackPanel>
-
-                                <!--  Filter button in the middle - stretch to fill space  -->
-                                <StackPanel
-                                    Grid.Column="1"
-                                    HorizontalAlignment="Stretch"
-                                    VerticalAlignment="Center"
-                                    Orientation="Horizontal">
-                                    <Button
-                                        x:Name="ToggleExtractedFilterButton"
-                                        Height="26"
-                                        Margin="0,0,8,0"
-                                        Padding="0,0"
-                                        HorizontalAlignment="Stretch"
-                                        Click="ToggleExtractedFilter_Click"
-                                        Content="  Extracted  "
-                                        FontSize="10"
-                                        FontWeight="Regular"
-                                        ToolTip="Toggle: Show only extracted items (pressed) or all images (released)">
-                                        <Button.Style>
-                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="3">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#80FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter Property="Background" Value="#A0FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ImageShowOnlyExtracted, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                                        <Setter Property="Background" Value="#80FFFFFF" />
-                                                        <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                </StackPanel>
-
-                                <!--  Column adjustment buttons on the right  -->
-                                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                    <Button
-                                        x:Name="MatchWidthButton"
-                                        Height="26"
-                                        Margin="0,0,8,0"
-                                        Padding="0,0"
-                                        Click="ToggleMatchWidth_Click"
-                                        Content="  Adaptive  "
-                                        FontSize="10"
-                                        FontWeight="Regular"
-                                        ToolTip="Toggle match width (fill last row)">
-                                        <Button.Style>
-                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="3">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#80FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter Property="Background" Value="#A0FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding ImageMatchWidth, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                                        <Setter Property="Background" Value="#80FFFFFF" />
-                                                        <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                    <Button
-                                        Width="26"
-                                        Height="26"
-                                        Margin="0,0,6,0"
-                                        Padding="0,0"
-                                        Click="DecreaseImageColumns_Click"
-                                        Content="−"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        ToolTip="Decrease columns (Ctrl+-)">
-                                        <Button.Style>
-                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="3">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#80FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter Property="Background" Value="#A0FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                    <Button
-                                        Width="26"
-                                        Height="26"
-                                        Padding="0,0"
-                                        Click="IncreaseImageColumns_Click"
-                                        Content="+"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        ToolTip="Increase columns (Ctrl++)">
-                                        <Button.Style>
-                                            <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                                <Setter Property="Template">
-                                                    <Setter.Value>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="3">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter Property="Background" Value="#80FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                                <Trigger Property="IsPressed" Value="True">
-                                                                    <Setter Property="Background" Value="#A0FFFFFF" />
-                                                                    <Setter Property="BorderBrush" Value="#FFFFFFFF" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
-                                </StackPanel>
+                                </Border>
                             </Grid>
-                        </Border>
-                    </Grid>
+                        </TabItem>
+
+                        <!--  Hub Overview Tab - only visible when single package selected  -->
+                        <TabItem
+                            x:Name="HubOverviewTab"
+                            Header="🌐 Hub Overview"
+                            Visibility="Collapsed">
+                            <Grid>
+                                <!--  Loading Overlay  -->
+                                <Border
+                                    x:Name="HubOverviewLoadingOverlay"
+                                    Panel.ZIndex="10"
+                                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                    Visibility="Collapsed">
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            FontSize="14"
+                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                            Text="Loading Hub overview..." />
+                                        <ProgressBar
+                                            Width="200"
+                                            Height="4"
+                                            Margin="0,12,0,0"
+                                            IsIndeterminate="True" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!--  WebView2 Browser  -->
+                                <wv2:WebView2 x:Name="HubOverviewWebView" DefaultBackgroundColor="#1E1E1E" />
+
+                                <!--  Placeholder when no resource found  -->
+                                <Border
+                                    x:Name="HubOverviewPlaceholder"
+                                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                    Visibility="Visible">
+                                    <StackPanel
+                                        Margin="20"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            FontSize="36"
+                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                            Text="🌐" />
+                                        <TextBlock
+                                            x:Name="HubOverviewPlaceholderText"
+                                            Margin="0,12,0,0"
+                                            HorizontalAlignment="Center"
+                                            FontSize="12"
+                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                            Text="Select a single package to view Hub overview"
+                                            TextAlignment="Center"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!--  Error Panel  -->
+                                <Border
+                                    x:Name="HubOverviewErrorPanel"
+                                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                    Visibility="Collapsed">
+                                    <StackPanel
+                                        Margin="20"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            FontSize="36"
+                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                            Text="⚠️" />
+                                        <TextBlock
+                                            x:Name="HubOverviewErrorText"
+                                            Margin="0,12,0,0"
+                                            HorizontalAlignment="Center"
+                                            FontSize="12"
+                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                            Text="Unable to load Hub content"
+                                            TextAlignment="Center"
+                                            TextWrapping="Wrap" />
+                                        <Button
+                                            x:Name="HubOverviewOpenInBrowserButton"
+                                            Margin="0,16,0,0"
+                                            Padding="16,8"
+                                            Click="HubOverviewOpenInBrowser_Click"
+                                            Content="🔗 Open in Browser" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
 
                     <!--  Preview Panel Splitter  -->
                     <GridSplitter

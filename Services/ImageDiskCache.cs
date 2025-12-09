@@ -11,9 +11,10 @@ using Microsoft.IO;
 namespace VPM.Services
 {
     /// <summary>
-    /// Disk-based image cache for fast retrieval without extracting from VAR files
-    /// Stores images in encrypted binary container files (one per package) for privacy
-    /// Based on _VB project's ImageCache strategy with enhanced security
+    /// Disk-based image cache for fast retrieval without extracting from VAR files.
+    /// Uses LAZY LOADING: only loads index at startup, reads image bytes on-demand from disk.
+    /// This dramatically reduces memory usage (from GBs to MBs).
+    /// Stores images in encrypted binary container files for privacy.
     /// </summary>
     public class ImageDiskCache
     {
@@ -28,7 +29,19 @@ namespace VPM.Services
         private long _totalBytesRead = 0;
 
         private readonly string _cacheFilePath;
-        private readonly Dictionary<string, PackageImageCache> _memoryCache = new();
+        
+        // LAZY LOADING: Index only stores file offsets, not image bytes
+        // Image bytes are read from disk on-demand
+        private readonly Dictionary<string, PackageImageIndex> _indexCache = new();
+        
+        // Small in-memory LRU cache for recently accessed images (keeps ~50 images in RAM)
+        private const int MAX_MEMORY_CACHE_SIZE = 50;
+        private readonly Dictionary<string, byte[]> _memoryLruCache = new();
+        private readonly LinkedList<string> _memoryLruOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> _memoryLruNodes = new();
+        
+        // Pending writes that haven't been saved to disk yet
+        private readonly Dictionary<string, PackageImageCache> _pendingWrites = new();
         
         // Track invalid cache entries to prevent reload loops
         // Key format: "packageKey::internalPath"
@@ -40,6 +53,9 @@ namespace VPM.Services
         // Save throttling
         private bool _saveInProgress = false;
         private bool _savePending = false;
+        
+        // Cache file format version (2 = lazy loading with offsets)
+        private const int CACHE_VERSION = 2;
 
         public ImageDiskCache()
         {
@@ -55,20 +71,15 @@ namespace VPM.Services
             
             // Generate machine-specific encryption key (not stored, derived from machine ID)
             _encryptionKey = GenerateMachineKey();
-            
-            // Don't load cache database here - it will be loaded asynchronously
-            // to avoid blocking the UI thread during startup
-            
-            // Console.WriteLine($"[ImageDiskCache] Cache location: {_cacheFilePath}");
         }
         
         /// <summary>
-        /// Loads the cache database asynchronously
-        /// Call this after UI initialization to avoid blocking startup
+        /// Loads the cache INDEX asynchronously (not image bytes - those are loaded on-demand).
+        /// Call this after UI initialization to avoid blocking startup.
         /// </summary>
         public async Task LoadCacheDatabaseAsync()
         {
-            await Task.Run(() => LoadCacheDatabase());
+            await Task.Run(() => LoadCacheIndex());
         }
 
         /// <summary>
@@ -100,41 +111,87 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Container for all images from one package
+        /// Index entry for a single image - stores file offset and size, NOT the bytes
+        /// </summary>
+        private class ImageIndexEntry
+        {
+            public long FileOffset { get; set; }  // Position in cache file
+            public int DataLength { get; set; }   // Length of encrypted data
+        }
+        
+        /// <summary>
+        /// Index for all images from one package - stores offsets only, not image bytes
+        /// </summary>
+        private class PackageImageIndex
+        {
+            public Dictionary<string, ImageIndexEntry> ImageOffsets { get; set; } = new();
+            public List<string> ImagePaths { get; set; } = new(); // For quick path lookup
+        }
+        
+        /// <summary>
+        /// Container for pending writes (images not yet saved to disk)
         /// </summary>
         private class PackageImageCache
         {
             public Dictionary<string, byte[]> Images { get; set; } = new Dictionary<string, byte[]>();
-            public List<string> ImagePaths { get; set; } = new List<string>(); // For quick index lookup
+            public List<string> ImagePaths { get; set; } = new List<string>();
         }
 
         /// <summary>
-        /// Tries to load an image from disk cache
-        /// Returns null if not cached, invalid, or previously marked as invalid
+        /// Tries to load an image from disk cache using LAZY LOADING.
+        /// First checks LRU memory cache, then pending writes, then reads from disk on-demand.
+        /// Returns null if not cached, invalid, or previously marked as invalid.
         /// </summary>
         public BitmapImage TryGetCached(string varPath, string internalPath, long fileSize, long lastWriteTicks)
         {
             try
             {
                 var packageKey = GetPackageCacheKey(varPath, fileSize, lastWriteTicks);
-                var invalidKey = $"{packageKey}::{internalPath}";
+                var cacheKey = $"{packageKey}::{internalPath}";
 
                 lock (_cacheLock)
                 {
                     // Check if this entry was previously marked as invalid (prevents reload loops)
-                    if (_invalidEntries.Contains(invalidKey))
+                    if (_invalidEntries.Contains(cacheKey))
                     {
                         _cacheMisses++;
                         return null;
                     }
                     
-                    if (!_memoryCache.TryGetValue(packageKey, out var packageCache))
+                    byte[] encryptedData = null;
+                    
+                    // 1. Check LRU memory cache first (fastest)
+                    if (_memoryLruCache.TryGetValue(cacheKey, out encryptedData))
                     {
-                        _cacheMisses++;
-                        return null;
+                        // Move to front of LRU
+                        if (_memoryLruNodes.TryGetValue(cacheKey, out var node))
+                        {
+                            _memoryLruOrder.Remove(node);
+                            _memoryLruOrder.AddFirst(node);
+                        }
                     }
-
-                    if (!packageCache.Images.TryGetValue(internalPath, out var encryptedData))
+                    // 2. Check pending writes (not yet saved to disk)
+                    else if (_pendingWrites.TryGetValue(packageKey, out var pendingCache) &&
+                             pendingCache.Images.TryGetValue(internalPath, out encryptedData))
+                    {
+                        // Found in pending writes, add to LRU cache
+                        AddToMemoryLruCache(cacheKey, encryptedData);
+                    }
+                    // 3. Read from disk on-demand using index
+                    else if (_indexCache.TryGetValue(packageKey, out var packageIndex) &&
+                             packageIndex.ImageOffsets.TryGetValue(internalPath, out var indexEntry))
+                    {
+                        // Read from disk - release lock during I/O
+                        encryptedData = ReadImageFromDisk(indexEntry.FileOffset, indexEntry.DataLength);
+                        
+                        if (encryptedData != null)
+                        {
+                            // Add to LRU cache for faster subsequent access
+                            AddToMemoryLruCache(cacheKey, encryptedData);
+                        }
+                    }
+                    
+                    if (encryptedData == null)
                     {
                         _cacheMisses++;
                         return null;
@@ -148,8 +205,7 @@ namespace VPM.Services
                     bitmap.CacheOption = BitmapCacheOption.OnLoad;
                     bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
                     
-                    // Use a non-pooled MemoryStream for BitmapImage to avoid disposal issues in .NET 10
-                    // BitmapImage holds a reference to the stream, so we can't use a pooled stream
+                    // Use a non-pooled MemoryStream for BitmapImage to avoid disposal issues
                     var stream = new MemoryStream(decryptedData);
                     bitmap.StreamSource = stream;
                     bitmap.EndInit();
@@ -159,10 +215,9 @@ namespace VPM.Services
                     // Validate image dimensions - reject tiny images (like 80x80 EXIF thumbnails)
                     if (bitmap.PixelWidth < MinValidImageSize || bitmap.PixelHeight < MinValidImageSize)
                     {
-                        // Mark as invalid to prevent reload loops, remove from cache
-                        _invalidEntries.Add(invalidKey);
-                        packageCache.Images.Remove(internalPath);
-                        packageCache.ImagePaths.Remove(internalPath);
+                        // Mark as invalid to prevent reload loops
+                        _invalidEntries.Add(cacheKey);
+                        RemoveFromMemoryLruCache(cacheKey);
                         _cacheMisses++;
                         return null;
                     }
@@ -179,9 +234,73 @@ namespace VPM.Services
                 return null;
             }
         }
+        
+        /// <summary>
+        /// Reads encrypted image data from disk at the specified offset
+        /// </summary>
+        private byte[] ReadImageFromDisk(long fileOffset, int dataLength)
+        {
+            try
+            {
+                if (!File.Exists(_cacheFilePath))
+                    return null;
+                    
+                using var stream = new FileStream(_cacheFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                stream.Seek(fileOffset, SeekOrigin.Begin);
+                
+                var data = new byte[dataLength];
+                var bytesRead = stream.Read(data, 0, dataLength);
+                
+                if (bytesRead != dataLength)
+                    return null;
+                    
+                return data;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        
+        /// <summary>
+        /// Adds encrypted image data to the LRU memory cache with eviction
+        /// </summary>
+        private void AddToMemoryLruCache(string cacheKey, byte[] encryptedData)
+        {
+            // Evict oldest if at capacity
+            while (_memoryLruCache.Count >= MAX_MEMORY_CACHE_SIZE && _memoryLruOrder.Count > 0)
+            {
+                var oldest = _memoryLruOrder.Last;
+                if (oldest != null)
+                {
+                    _memoryLruOrder.RemoveLast();
+                    _memoryLruNodes.Remove(oldest.Value);
+                    _memoryLruCache.Remove(oldest.Value);
+                }
+            }
+            
+            // Add new entry
+            _memoryLruCache[cacheKey] = encryptedData;
+            var newNode = _memoryLruOrder.AddFirst(cacheKey);
+            _memoryLruNodes[cacheKey] = newNode;
+        }
+        
+        /// <summary>
+        /// Removes an entry from the LRU memory cache
+        /// </summary>
+        private void RemoveFromMemoryLruCache(string cacheKey)
+        {
+            _memoryLruCache.Remove(cacheKey);
+            if (_memoryLruNodes.TryGetValue(cacheKey, out var node))
+            {
+                _memoryLruOrder.Remove(node);
+                _memoryLruNodes.Remove(cacheKey);
+            }
+        }
 
         /// <summary>
-        /// Gets cached image paths for a package (avoids opening VAR to scan)
+        /// Gets cached image paths for a package (avoids opening VAR to scan).
+        /// Checks both index cache and pending writes.
         /// </summary>
         public List<string> GetCachedImagePaths(string varPath, long fileSize, long lastWriteTicks)
         {
@@ -191,9 +310,16 @@ namespace VPM.Services
 
                 lock (_cacheLock)
                 {
-                    if (_memoryCache.TryGetValue(packageKey, out var packageCache))
+                    // Check index cache first
+                    if (_indexCache.TryGetValue(packageKey, out var packageIndex))
                     {
-                        return new List<string>(packageCache.ImagePaths);
+                        return new List<string>(packageIndex.ImagePaths);
+                    }
+                    
+                    // Check pending writes
+                    if (_pendingWrites.TryGetValue(packageKey, out var pendingCache))
+                    {
+                        return new List<string>(pendingCache.ImagePaths);
                     }
                 }
             }
@@ -206,9 +332,8 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// MEDIUM PRIORITY FIX 5: Batch lookup for multiple images from same VAR
-        /// Returns dictionary of found images and list of uncached paths
-        /// Reduces I/O operations by batching lookups instead of sequential checks
+        /// Batch lookup for multiple images from same VAR using lazy loading.
+        /// Returns dictionary of found images and list of uncached paths.
         /// </summary>
         public (Dictionary<string, BitmapImage> cached, List<string> uncached) TryGetCachedBatch(
             string varPath, List<string> internalPaths, long fileSize, long lastWriteTicks)
@@ -222,7 +347,11 @@ namespace VPM.Services
 
                 lock (_cacheLock)
                 {
-                    if (!_memoryCache.TryGetValue(packageKey, out var packageCache))
+                    // Check if package exists in index or pending writes
+                    var hasIndex = _indexCache.TryGetValue(packageKey, out var packageIndex);
+                    var hasPending = _pendingWrites.TryGetValue(packageKey, out var pendingCache);
+                    
+                    if (!hasIndex && !hasPending)
                     {
                         // Package not cached, all paths are uncached
                         uncached.AddRange(internalPaths);
@@ -233,60 +362,84 @@ namespace VPM.Services
                     // Check each image in batch with validation
                     foreach (var internalPath in internalPaths)
                     {
-                        var invalidKey = $"{packageKey}::{internalPath}";
+                        var cacheKey = $"{packageKey}::{internalPath}";
                         
                         // Skip if previously marked as invalid
-                        if (_invalidEntries.Contains(invalidKey))
+                        if (_invalidEntries.Contains(cacheKey))
                         {
                             uncached.Add(internalPath);
                             _cacheMisses++;
                             continue;
                         }
                         
-                        if (packageCache.Images.TryGetValue(internalPath, out var encryptedData))
+                        byte[] encryptedData = null;
+                        
+                        // 1. Check LRU memory cache
+                        if (_memoryLruCache.TryGetValue(cacheKey, out encryptedData))
                         {
-                            try
+                            // Move to front of LRU
+                            if (_memoryLruNodes.TryGetValue(cacheKey, out var node))
                             {
-                                // Decrypt and load image
-                                var decryptedData = Decrypt(encryptedData);
-                                
-                                var bitmap = new BitmapImage();
-                                bitmap.BeginInit();
-                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
-                                
-                                // Use non-pooled MemoryStream for BitmapImage
-                                var stream = new MemoryStream(decryptedData);
-                                bitmap.StreamSource = stream;
-                                bitmap.EndInit();
-                                bitmap.Freeze();
-
-                                // Validate image dimensions - reject tiny images (like 80x80 EXIF thumbnails)
-                                if (bitmap.PixelWidth < MinValidImageSize || bitmap.PixelHeight < MinValidImageSize)
-                                {
-                                    // Mark as invalid to prevent reload loops, remove from cache
-                                    _invalidEntries.Add(invalidKey);
-                                    packageCache.Images.Remove(internalPath);
-                                    packageCache.ImagePaths.Remove(internalPath);
-                                    uncached.Add(internalPath);
-                                    _cacheMisses++;
-                                    continue;
-                                }
-
-                                cached[internalPath] = bitmap;
-                                _cacheHits++;
-                                _totalBytesRead += decryptedData.Length;
-                            }
-                            catch
-                            {
-                                // Decryption/loading failed, treat as uncached
-                                uncached.Add(internalPath);
-                                _cacheMisses++;
+                                _memoryLruOrder.Remove(node);
+                                _memoryLruOrder.AddFirst(node);
                             }
                         }
-                        else
+                        // 2. Check pending writes
+                        else if (hasPending && pendingCache.Images.TryGetValue(internalPath, out encryptedData))
                         {
-                            // Image not in cache
+                            AddToMemoryLruCache(cacheKey, encryptedData);
+                        }
+                        // 3. Read from disk using index
+                        else if (hasIndex && packageIndex.ImageOffsets.TryGetValue(internalPath, out var indexEntry))
+                        {
+                            encryptedData = ReadImageFromDisk(indexEntry.FileOffset, indexEntry.DataLength);
+                            if (encryptedData != null)
+                            {
+                                AddToMemoryLruCache(cacheKey, encryptedData);
+                            }
+                        }
+                        
+                        if (encryptedData == null)
+                        {
+                            uncached.Add(internalPath);
+                            _cacheMisses++;
+                            continue;
+                        }
+                        
+                        try
+                        {
+                            // Decrypt and load image
+                            var decryptedData = Decrypt(encryptedData);
+                            
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+                            
+                            // Use non-pooled MemoryStream for BitmapImage
+                            var stream = new MemoryStream(decryptedData);
+                            bitmap.StreamSource = stream;
+                            bitmap.EndInit();
+                            bitmap.Freeze();
+
+                            // Validate image dimensions - reject tiny images (like 80x80 EXIF thumbnails)
+                            if (bitmap.PixelWidth < MinValidImageSize || bitmap.PixelHeight < MinValidImageSize)
+                            {
+                                // Mark as invalid to prevent reload loops
+                                _invalidEntries.Add(cacheKey);
+                                RemoveFromMemoryLruCache(cacheKey);
+                                uncached.Add(internalPath);
+                                _cacheMisses++;
+                                continue;
+                            }
+
+                            cached[internalPath] = bitmap;
+                            _cacheHits++;
+                            _totalBytesRead += decryptedData.Length;
+                        }
+                        catch
+                        {
+                            // Decryption/loading failed, treat as uncached
                             uncached.Add(internalPath);
                             _cacheMisses++;
                         }
@@ -304,7 +457,8 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Saves a BitmapImage to disk cache (encrypted database)
+        /// Saves a BitmapImage to pending writes (will be persisted to disk asynchronously).
+        /// Also adds to LRU memory cache for immediate access.
         /// </summary>
         public bool TrySaveToCache(string varPath, string internalPath, long fileSize, long lastWriteTicks, BitmapImage bitmap)
         {
@@ -319,18 +473,20 @@ namespace VPM.Services
                 }
                 
                 var packageKey = GetPackageCacheKey(varPath, fileSize, lastWriteTicks);
+                var cacheKey = $"{packageKey}::{internalPath}";
 
                 lock (_cacheLock)
                 {
-                    // Get or create package cache
-                    if (!_memoryCache.TryGetValue(packageKey, out var packageCache))
+                    // Check if already in index (already persisted)
+                    if (_indexCache.TryGetValue(packageKey, out var existingIndex) &&
+                        existingIndex.ImageOffsets.ContainsKey(internalPath))
                     {
-                        packageCache = new PackageImageCache();
-                        _memoryCache[packageKey] = packageCache;
+                        return true;
                     }
-
-                    // Check if image already cached
-                    if (packageCache.Images.ContainsKey(internalPath))
+                    
+                    // Check if already in pending writes
+                    if (_pendingWrites.TryGetValue(packageKey, out var existingPending) &&
+                        existingPending.Images.ContainsKey(internalPath))
                     {
                         return true;
                     }
@@ -343,15 +499,24 @@ namespace VPM.Services
                     encoder.Save(memoryStream);
                     var imageData = memoryStream.ToArray();
 
-                    // Encrypt and add to cache
+                    // Encrypt the image data
                     var encryptedData = Encrypt(imageData);
-                    packageCache.Images[internalPath] = encryptedData;
                     
-                    // Maintain image paths list for index
-                    if (!packageCache.ImagePaths.Contains(internalPath))
+                    // Add to pending writes
+                    if (!_pendingWrites.TryGetValue(packageKey, out var pendingCache))
                     {
-                        packageCache.ImagePaths.Add(internalPath);
+                        pendingCache = new PackageImageCache();
+                        _pendingWrites[packageKey] = pendingCache;
                     }
+                    
+                    pendingCache.Images[internalPath] = encryptedData;
+                    if (!pendingCache.ImagePaths.Contains(internalPath))
+                    {
+                        pendingCache.ImagePaths.Add(internalPath);
+                    }
+                    
+                    // Also add to LRU cache for immediate access
+                    AddToMemoryLruCache(cacheKey, encryptedData);
 
                     _totalBytesWritten += imageData.Length;
                 }
@@ -459,9 +624,11 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Loads the cache database from disk into memory
+        /// Loads only the cache INDEX from disk (not image bytes).
+        /// Image bytes are read on-demand using file offsets.
+        /// This dramatically reduces memory usage at startup.
         /// </summary>
-        private void LoadCacheDatabase()
+        private void LoadCacheIndex()
         {
             try
             {
@@ -470,7 +637,8 @@ namespace VPM.Services
                     return;
                 }
 
-                using var reader = new BinaryReader(File.OpenRead(_cacheFilePath));
+                using var stream = new FileStream(_cacheFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+                using var reader = new BinaryReader(stream);
                 
                 // Read header
                 var magic = reader.ReadInt32();
@@ -480,7 +648,18 @@ namespace VPM.Services
                 }
 
                 var version = reader.ReadInt32();
-                if (version != 1)
+                
+                // Handle version 1 (old format) - migrate by reading all data
+                if (version == 1)
+                {
+                    LoadCacheIndexFromV1(reader);
+                    // Trigger save to upgrade to v2 format
+                    TriggerAsyncSave();
+                    return;
+                }
+                
+                // Version 2: Lazy loading format with offsets
+                if (version != CACHE_VERSION)
                 {
                     return;
                 }
@@ -496,7 +675,7 @@ namespace VPM.Services
 
                     // Read image count for this package
                     var imageCount = reader.ReadInt32();
-                    var packageCache = new PackageImageCache();
+                    var packageIndex = new PackageImageIndex();
 
                     for (int j = 0; j < imageCount; j++)
                     {
@@ -505,73 +684,215 @@ namespace VPM.Services
                         var pathBytes = reader.ReadBytes(pathLength);
                         var imagePath = Encoding.UTF8.GetString(pathBytes);
 
-                        // Read encrypted image data
+                        // Read file offset and data length (NOT the actual data)
+                        var fileOffset = reader.ReadInt64();
                         var dataLength = reader.ReadInt32();
-                        var imageData = reader.ReadBytes(dataLength);
 
-                        packageCache.Images[imagePath] = imageData;
-                        packageCache.ImagePaths.Add(imagePath); // Populate paths list
+                        packageIndex.ImageOffsets[imagePath] = new ImageIndexEntry
+                        {
+                            FileOffset = fileOffset,
+                            DataLength = dataLength
+                        };
+                        packageIndex.ImagePaths.Add(imagePath);
                     }
 
-                    _memoryCache[packageKey] = packageCache;
+                    _indexCache[packageKey] = packageIndex;
                 }
-
             }
             catch (Exception)
             {
-                _memoryCache.Clear();
+                _indexCache.Clear();
+            }
+        }
+        
+        /// <summary>
+        /// Migrates from v1 format (all data in memory) to v2 format (lazy loading).
+        /// Reads all image data and stores in pending writes for re-save.
+        /// </summary>
+        private void LoadCacheIndexFromV1(BinaryReader reader)
+        {
+            try
+            {
+                var packageCount = reader.ReadInt32();
+
+                for (int i = 0; i < packageCount; i++)
+                {
+                    // Read package key (hashed)
+                    var keyLength = reader.ReadInt32();
+                    var keyBytes = reader.ReadBytes(keyLength);
+                    var packageKey = Encoding.UTF8.GetString(keyBytes);
+
+                    // Read image count for this package
+                    var imageCount = reader.ReadInt32();
+                    var pendingCache = new PackageImageCache();
+
+                    for (int j = 0; j < imageCount; j++)
+                    {
+                        // Read image path
+                        var pathLength = reader.ReadInt32();
+                        var pathBytes = reader.ReadBytes(pathLength);
+                        var imagePath = Encoding.UTF8.GetString(pathBytes);
+
+                        // Read encrypted image data (v1 stores data inline)
+                        var dataLength = reader.ReadInt32();
+                        var imageData = reader.ReadBytes(dataLength);
+
+                        pendingCache.Images[imagePath] = imageData;
+                        pendingCache.ImagePaths.Add(imagePath);
+                    }
+
+                    // Store in pending writes for migration to v2
+                    _pendingWrites[packageKey] = pendingCache;
+                }
+            }
+            catch (Exception)
+            {
+                _pendingWrites.Clear();
             }
         }
 
         /// <summary>
-        /// Saves the cache database to disk atomically
+        /// Saves the cache database to disk atomically with v2 format (lazy loading with offsets).
+        /// Merges pending writes with existing index data.
         /// </summary>
         private void SaveCacheDatabase()
         {
             try
             {
                 var tempPath = _cacheFilePath + ".tmp";
-
+                
+                // Collect all data to write (merge index + pending writes)
+                Dictionary<string, PackageImageCache> allData;
+                
                 lock (_cacheLock)
                 {
-                    using (var writer = new BinaryWriter(File.Create(tempPath)))
+                    allData = new Dictionary<string, PackageImageCache>();
+                    
+                    // First, read existing data from disk for packages in index
+                    foreach (var kvp in _indexCache)
                     {
-                        // Write header
-                        writer.Write(0x56504D49); // "VPMI" magic
-                        writer.Write(1); // Version
-                        writer.Write(_memoryCache.Count);
-
-                        foreach (var package in _memoryCache)
+                        var packageKey = kvp.Key;
+                        var packageIndex = kvp.Value;
+                        var cache = new PackageImageCache();
+                        
+                        foreach (var imgKvp in packageIndex.ImageOffsets)
                         {
-                            // Write package key (hashed)
-                            var keyBytes = Encoding.UTF8.GetBytes(package.Key);
-                            writer.Write(keyBytes.Length);
-                            writer.Write(keyBytes);
-
-                            // Write image count
-                            writer.Write(package.Value.Images.Count);
-
-                            foreach (var image in package.Value.Images)
+                            var imagePath = imgKvp.Key;
+                            var indexEntry = imgKvp.Value;
+                            
+                            // Read data from disk
+                            var data = ReadImageFromDisk(indexEntry.FileOffset, indexEntry.DataLength);
+                            if (data != null)
                             {
-                                // Write image path
-                                var pathBytes = Encoding.UTF8.GetBytes(image.Key);
-                                writer.Write(pathBytes.Length);
-                                writer.Write(pathBytes);
-
-                                // Write encrypted image data
-                                writer.Write(image.Value.Length);
-                                writer.Write(image.Value);
+                                cache.Images[imagePath] = data;
+                                cache.ImagePaths.Add(imagePath);
+                            }
+                        }
+                        
+                        allData[packageKey] = cache;
+                    }
+                    
+                    // Merge pending writes (overwrites existing)
+                    foreach (var kvp in _pendingWrites)
+                    {
+                        var packageKey = kvp.Key;
+                        var pendingCache = kvp.Value;
+                        
+                        if (!allData.TryGetValue(packageKey, out var cache))
+                        {
+                            cache = new PackageImageCache();
+                            allData[packageKey] = cache;
+                        }
+                        
+                        foreach (var imgKvp in pendingCache.Images)
+                        {
+                            cache.Images[imgKvp.Key] = imgKvp.Value;
+                            if (!cache.ImagePaths.Contains(imgKvp.Key))
+                            {
+                                cache.ImagePaths.Add(imgKvp.Key);
                             }
                         }
                     }
                 }
 
-                // Atomic replace
-                if (File.Exists(_cacheFilePath))
+                // Write to temp file with v2 format
+                // First pass: write header and index with placeholder offsets
+                // Second pass: write image data and update offsets
+                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new BinaryWriter(stream))
                 {
-                    File.Delete(_cacheFilePath);
+                    // Write header
+                    writer.Write(0x56504D49); // "VPMI" magic
+                    writer.Write(CACHE_VERSION); // Version 2
+                    writer.Write(allData.Count);
+
+                    // Track where we'll write image data (after all index entries)
+                    var indexEntries = new List<(string packageKey, string imagePath, long offsetPosition)>();
+                    
+                    // First pass: write index structure with placeholder offsets
+                    foreach (var package in allData)
+                    {
+                        // Write package key (hashed)
+                        var keyBytes = Encoding.UTF8.GetBytes(package.Key);
+                        writer.Write(keyBytes.Length);
+                        writer.Write(keyBytes);
+
+                        // Write image count
+                        writer.Write(package.Value.Images.Count);
+
+                        foreach (var image in package.Value.Images)
+                        {
+                            // Write image path
+                            var pathBytes = Encoding.UTF8.GetBytes(image.Key);
+                            writer.Write(pathBytes.Length);
+                            writer.Write(pathBytes);
+
+                            // Remember position for offset (will update later)
+                            indexEntries.Add((package.Key, image.Key, stream.Position));
+                            
+                            // Write placeholder offset and length
+                            writer.Write(0L); // FileOffset placeholder
+                            writer.Write(image.Value.Length); // DataLength
+                        }
+                    }
+                    
+                    // Second pass: write image data and update offsets
+                    var entryIndex = 0;
+                    foreach (var package in allData)
+                    {
+                        foreach (var image in package.Value.Images)
+                        {
+                            var entry = indexEntries[entryIndex++];
+                            var dataOffset = stream.Position;
+                            
+                            // Write encrypted image data
+                            writer.Write(image.Value);
+                            
+                            // Go back and update the offset
+                            var currentPos = stream.Position;
+                            stream.Seek(entry.offsetPosition, SeekOrigin.Begin);
+                            writer.Write(dataOffset);
+                            stream.Seek(currentPos, SeekOrigin.Begin);
+                        }
+                    }
                 }
-                File.Move(tempPath, _cacheFilePath);
+
+                // Atomic replace
+                lock (_cacheLock)
+                {
+                    if (File.Exists(_cacheFilePath))
+                    {
+                        File.Delete(_cacheFilePath);
+                    }
+                    File.Move(tempPath, _cacheFilePath);
+                    
+                    // Clear pending writes and rebuild index
+                    _pendingWrites.Clear();
+                    _indexCache.Clear();
+                }
+                
+                // Reload index from new file
+                LoadCacheIndex();
             }
             catch (Exception)
             {
@@ -595,7 +916,12 @@ namespace VPM.Services
             {
                 lock (_cacheLock)
                 {
-                    _memoryCache.Clear();
+                    _indexCache.Clear();
+                    _pendingWrites.Clear();
+                    _memoryLruCache.Clear();
+                    _memoryLruOrder.Clear();
+                    _memoryLruNodes.Clear();
+                    _invalidEntries.Clear();
                     _cacheHits = 0;
                     _cacheMisses = 0;
                     _totalBytesWritten = 0;
@@ -643,7 +969,10 @@ namespace VPM.Services
                 var total = _cacheHits + _cacheMisses;
                 var hitRate = total > 0 ? (_cacheHits * 100.0 / total) : 0;
                 
-                var imageCount = _memoryCache.Sum(p => p.Value.Images.Count);
+                // Count images from index + pending writes
+                var indexCount = _indexCache.Sum(p => p.Value.ImagePaths.Count);
+                var pendingCount = _pendingWrites.Sum(p => p.Value.Images.Count);
+                var imageCount = indexCount + pendingCount;
                 
                 return (_cacheHits, _cacheMisses, hitRate, _totalBytesWritten, _totalBytesRead, imageCount);
             }
@@ -676,7 +1005,11 @@ namespace VPM.Services
         {
             lock (_cacheLock)
             {
-                _memoryCache.Clear();
+                _indexCache.Clear();
+                _pendingWrites.Clear();
+                _memoryLruCache.Clear();
+                _memoryLruOrder.Clear();
+                _memoryLruNodes.Clear();
                 _invalidEntries.Clear();
                 _cacheHits = 0;
                 _cacheMisses = 0;

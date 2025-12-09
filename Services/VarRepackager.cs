@@ -71,6 +71,7 @@ namespace VPM.Services
             // CRITICAL FIX: Acquire exclusive write access at the START of optimization
             // This blocks ALL image loading operations from opening the file while we work on it.
             IDisposable writeLock = null;
+            string tempOutputPath = null; // Track temp file for cleanup in finally block
             try
             {
                 // First, close any existing file handles
@@ -193,7 +194,7 @@ namespace VPM.Services
                 // STEP 2: Now work with the source file (from archive or after moving to archive)
                 // Create temp file for the converted version in the output directory
                 string outputDirectory = Path.GetDirectoryName(finalOutputPath);
-                string tempOutputPath = Path.Combine(outputDirectory, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + filename);
+                tempOutputPath = Path.Combine(outputDirectory, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + filename);
                 
                 // Delete temp file if it already exists
                 if (File.Exists(tempOutputPath))
@@ -477,6 +478,13 @@ namespace VPM.Services
             }
             finally
             {
+                // CRITICAL: Always clean up temp file if it exists
+                // This prevents leftover ~temp_ files when operations fail or are interrupted
+                if (!string.IsNullOrEmpty(tempOutputPath))
+                {
+                    try { if (File.Exists(tempOutputPath)) File.Delete(tempOutputPath); } catch { }
+                }
+                
                 // CRITICAL: Always release the write lock when optimization completes
                 writeLock?.Dispose();
             }

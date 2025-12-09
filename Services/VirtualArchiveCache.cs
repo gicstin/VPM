@@ -578,9 +578,15 @@ namespace VPM.Services
     {
         private readonly ConcurrentDictionary<string, VirtualArchive> _archives = new(StringComparer.OrdinalIgnoreCase);
         private readonly Timer _cleanupTimer;
-        private readonly TimeSpan _archiveTimeout = TimeSpan.FromMinutes(5);
+        private readonly TimeSpan _archiveTimeout = TimeSpan.FromMinutes(2); // Reduced from 5 minutes
         private readonly long _maxTotalCacheBytes;
         private bool _disposed;
+        
+        // MEMORY FIX: Limit number of cached archives to prevent memory bloat
+        // Each VirtualArchive with ~50 entries uses ~10KB of overhead (entry objects + strings)
+        // With 20,000 packages averaging 50 entries each = 1M entries = ~150MB overhead
+        // Limiting to 500 archives keeps overhead under ~5MB
+        private const int MaxCachedArchives = 500;
         
         // Statistics
         private long _cacheHits;
@@ -595,8 +601,8 @@ namespace VPM.Services
         {
             _maxTotalCacheBytes = maxTotalCacheBytes;
             
-            // Cleanup timer runs every 30 seconds
-            _cleanupTimer = new Timer(CleanupCallback, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+            // Cleanup timer runs every 10 seconds (more aggressive)
+            _cleanupTimer = new Timer(CleanupCallback, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
         }
         
         /// <summary>
@@ -624,6 +630,12 @@ namespace VPM.Services
             
             Interlocked.Increment(ref _cacheMisses);
             
+            // MEMORY FIX: Enforce archive count limit before adding new one
+            if (_archives.Count >= MaxCachedArchives)
+            {
+                EvictOldestArchives(MaxCachedArchives / 4); // Evict 25% when at limit
+            }
+            
             // Create new archive
             var archive = new VirtualArchive(filePath);
             if (!archive.Initialize())
@@ -642,6 +654,36 @@ namespace VPM.Services
             archive.Dispose();
             _archives.TryGetValue(filePath, out existing);
             return existing;
+        }
+        
+        /// <summary>
+        /// Evicts the oldest archives from the cache.
+        /// </summary>
+        private void EvictOldestArchives(int count)
+        {
+            try
+            {
+                // Take a snapshot of keys and values to avoid concurrent modification issues
+                var archivesToEvict = _archives
+                    .ToArray() // Snapshot
+                    .Where(kvp => kvp.Value != null) // Filter out null values
+                    .OrderBy(kvp => kvp.Value?.LastAccessed ?? DateTime.MinValue)
+                    .Take(count)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+                    
+                foreach (var key in archivesToEvict)
+                {
+                    if (_archives.TryRemove(key, out var archive))
+                    {
+                        archive?.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore eviction errors
+            }
         }
         
         /// <summary>
@@ -823,6 +865,13 @@ namespace VPM.Services
                     {
                         archive.Dispose();
                     }
+                }
+                
+                // MEMORY FIX: Enforce archive count limit
+                if (_archives.Count > MaxCachedArchives)
+                {
+                    var excessCount = _archives.Count - MaxCachedArchives;
+                    EvictOldestArchives(excessCount + MaxCachedArchives / 10); // Evict excess + 10% buffer
                 }
                 
                 // Check total memory usage

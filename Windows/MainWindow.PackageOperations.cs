@@ -1583,30 +1583,30 @@ namespace VPM
         }
 
         /// <summary>
-        /// Efficiently updates status for multiple packages in bulk without expensive per-package operations
+        /// Efficiently updates status for multiple packages in bulk without expensive per-package operations.
+        /// IMPORTANT: This method preserves DataGrid selections across the update operation.
+        /// NOTE: Does NOT sync with filters - packages remain visible even if they no longer match filters.
+        /// This is intentional so users can see the status change result.
         /// </summary>
         private async Task BulkUpdatePackageStatus(List<string> packageNames, string newStatus)
         {
             if (packageNames == null || packageNames.Count == 0)
                 return;
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-
             try
             {
                 // Create a HashSet for O(1) lookup
                 var packageNameSet = new HashSet<string>(packageNames, StringComparer.OrdinalIgnoreCase);
-                int updatedCount = 0;
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    // Update packages in main grid
+                    // Update packages in main grid - just update the Status property
+                    // PackageItem.Status setter triggers PropertyChanged which updates StatusColor binding
                     foreach (var package in Packages)
                     {
                         if (packageNameSet.Contains(package.Name))
                         {
                             package.Status = newStatus;
-                            updatedCount++;
                         }
                     }
 
@@ -1638,54 +1638,31 @@ namespace VPM
                         }
                     }
 
-                }, System.Windows.Threading.DispatcherPriority.Normal);
-                
-                var selectedNames = await Dispatcher.InvokeAsync(() => PreserveDataGridSelections());
-                
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    _suppressSelectionEvents = true;
-                    try
+                    // Update reactive filter counts without full refresh
+                    if (_reactiveFilterManager != null)
                     {
-                        PackageDataGrid.Items.Refresh();
-
-                        if (_reactiveFilterManager != null)
+                        _reactiveFilterManager.InvalidateCounts();
+                        
+                        if (_cascadeFiltering)
                         {
-                            _reactiveFilterManager.InvalidateCounts();
-                            
-                            if (_cascadeFiltering)
-                            {
-                                var currentFilters = GetSelectedFilters();
-                                UpdateCascadeFilteringLive(currentFilters);
-                            }
-                            else
-                            {
-                                UpdateFilterCountsLive();
-                            }
+                            var currentFilters = GetSelectedFilters();
+                            UpdateCascadeFilteringLive(currentFilters);
                         }
-
-                        SyncPackageDisplayWithFilters();
-
-                        UpdatePackageButtonBar();
-                        UpdateDependenciesButtonBar();
+                        else
+                        {
+                            UpdateFilterCountsLive();
+                        }
                     }
-                    finally
-                    {
-                        _suppressSelectionEvents = false;
-                    }
+
+                    // NOTE: Do NOT call SyncPackageDisplayWithFilters() here!
+                    // This would remove packages that no longer match filters, causing selection loss.
+                    // Users should see the status change result - they can manually refresh filters if needed.
+
+                    // Update button states
+                    UpdatePackageButtonBar();
+                    UpdateDependenciesButtonBar();
 
                 }, System.Windows.Threading.DispatcherPriority.Normal);
-                
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    _suppressSelectionEvents = true;
-                    RestoreDataGridSelections(selectedNames);
-                }, System.Windows.Threading.DispatcherPriority.Background);
-                
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    _suppressSelectionEvents = false;
-                }, System.Windows.Threading.DispatcherPriority.Background);
             }
             catch (Exception ex)
             {
@@ -1695,7 +1672,8 @@ namespace VPM
 
         /// <summary>
         /// Sync package display with current filters - remove non-matching, add newly matching
-        /// This is called after status changes to keep the display in sync with active filters
+        /// This is called after filter changes to keep the display in sync with active filters.
+        /// NOTE: Not called during load/unload operations to preserve selection.
         /// </summary>
         private void SyncPackageDisplayWithFilters()
         {

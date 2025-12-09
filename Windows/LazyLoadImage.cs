@@ -283,25 +283,34 @@ namespace VPM.Windows
             this.Cursor = System.Windows.Input.Cursors.Arrow;
         }
         
+        private Size _lastClipSize;
+        
         protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
         {
             base.OnRenderSizeChanged(sizeInfo);
+            UpdateClipGeometry(sizeInfo.NewSize);
+        }
+        
+        private void UpdateClipGeometry(Size size)
+        {
+            // Skip if size hasn't changed (avoid redundant clip updates)
+            if (size == _lastClipSize || size.Width <= 0 || size.Height <= 0)
+                return;
+            _lastClipSize = size;
             
-            // Apply clipping geometry based on CornerRadius
-            if (sizeInfo.NewSize.Width > 0 && sizeInfo.NewSize.Height > 0)
-            {
-                var cornerRadius = this.CornerRadius;
-                var radiusX = cornerRadius.TopLeft;
-                var radiusY = cornerRadius.TopLeft;
-                
-                var clipGeometry = new RectangleGeometry(
-                    new Rect(0, 0, sizeInfo.NewSize.Width, sizeInfo.NewSize.Height),
-                    radiusX,
-                    radiusY
-                );
-                
-                this.Clip = clipGeometry;
-            }
+            var cornerRadius = this.CornerRadius;
+            double radius = Math.Max(
+                Math.Max(cornerRadius.TopLeft, cornerRadius.TopRight),
+                Math.Max(cornerRadius.BottomLeft, cornerRadius.BottomRight)
+            );
+            
+            var clipGeometry = new RectangleGeometry(
+                new Rect(0, 0, size.Width, size.Height),
+                radius,
+                radius
+            );
+            clipGeometry.Freeze();
+            this.Clip = clipGeometry;
         }
         
         protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)

@@ -150,6 +150,11 @@ namespace VPM.Services
                     {
                         foreach (var file in Directory.EnumerateFiles(folder, "*.var", SearchOption.AllDirectories))
                         {
+                            // Skip temp files created during optimization
+                            var filename = Path.GetFileName(file);
+                            if (filename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            
                             currentFiles.Add(file);
                         }
                     }
@@ -246,6 +251,11 @@ namespace VPM.Services
         {
             if (!e.FullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
                 return;
+            
+            // Skip temp files created during optimization
+            var filename = Path.GetFileName(e.FullPath);
+            if (filename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
+                return;
 
             _pendingChanges.Enqueue(new FileChangeEvent
             {
@@ -260,6 +270,11 @@ namespace VPM.Services
         private void OnFileDeleted(object sender, FileSystemEventArgs e)
         {
             if (!e.FullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                return;
+            
+            // Skip temp files created during optimization
+            var filename = Path.GetFileName(e.FullPath);
+            if (filename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
                 return;
 
             _pendingChanges.Enqueue(new FileChangeEvent
@@ -276,6 +291,11 @@ namespace VPM.Services
         {
             if (!e.FullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
                 return;
+            
+            // Skip temp files created during optimization
+            var filename = Path.GetFileName(e.FullPath);
+            if (filename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
+                return;
 
             _pendingChanges.Enqueue(new FileChangeEvent
             {
@@ -290,7 +310,12 @@ namespace VPM.Services
         private void OnFileRenamed(object sender, RenamedEventArgs e)
         {
             // Treat rename as delete old + create new
-            if (e.OldFullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+            // Skip temp files created during optimization
+            var oldFilename = Path.GetFileName(e.OldFullPath);
+            var newFilename = Path.GetFileName(e.FullPath);
+            
+            if (e.OldFullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase) &&
+                !oldFilename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
             {
                 _pendingChanges.Enqueue(new FileChangeEvent
                 {
@@ -300,7 +325,8 @@ namespace VPM.Services
                 });
             }
 
-            if (e.FullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+            if (e.FullPath.EndsWith(".var", StringComparison.OrdinalIgnoreCase) &&
+                !newFilename.StartsWith("~temp_", StringComparison.OrdinalIgnoreCase))
             {
                 _pendingChanges.Enqueue(new FileChangeEvent
                 {

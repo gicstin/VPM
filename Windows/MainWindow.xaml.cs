@@ -40,6 +40,9 @@ namespace VPM
                 _sceneSelectionDebouncer?.Dispose();
                 _presetSelectionDebouncer?.Dispose();
                 _packageSelectionDebouncer?.Dispose();
+                
+                // Cleanup Hub Overview resources
+                CleanupHubOverview();
             }
         #region Fields and Properties
         
@@ -283,6 +286,9 @@ namespace VPM
                 
                 // Image scroll viewer events
                 ImagesListView.PreviewMouseWheel += ImagesListView_PreviewMouseWheel;
+                
+                // NOTE: ImageAreaTabControl.SelectionChanged is registered in XAML, not here
+                // to avoid duplicate event firing
                 
                 // Event handlers setup completed
             }
