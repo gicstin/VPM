@@ -310,6 +310,13 @@ namespace VPM.Models
         }
         public string FileSizeFormatted => FormatHelper.FormatFileSize(FileSize);
         public string DateFormatted => ModifiedDate?.ToString("MMM dd, yyyy") ?? "Unknown";
+        
+        /// <summary>
+        /// Pre-computed metadata line to reduce visual tree complexity in DataGrid
+        /// Combines Deps, Dependents, Size, and Date into a single string
+        /// </summary>
+        public string MetadataLine => $"Deps: {DependencyCount}  •  Dependents: {DependentsCount}  •  Size: {FileSizeFormatted}  •  Date: {DateFormatted}";
+        
         public string VersionStatus => IsLatestVersion ? "" : "Outdated";
         
         public System.Windows.Media.Color VersionStatusColor => IsLatestVersion ? 

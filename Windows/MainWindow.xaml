@@ -2500,67 +2500,11 @@
                                                             Text="{Binding DisplayName}"
                                                             TextTrimming="CharacterEllipsis" />
                                                     </DockPanel>
-                                                    <StackPanel Orientation="Horizontal">
-
-                                                        <!--  Damaged Package indicator  -->
-                                                        <TextBlock
-                                                            Margin="0,0,2,0"
-                                                            FontSize="12"
-                                                            Foreground="#F44336"
-                                                            Text="{Binding DamageIndicator}"
-                                                            ToolTip="{Binding DamageTooltip}">
-                                                            <TextBlock.Style>
-                                                                <Style TargetType="TextBlock">
-                                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                                    <Style.Triggers>
-                                                                        <DataTrigger Binding="{Binding IsDamaged}" Value="True">
-                                                                            <Setter Property="Visibility" Value="Visible" />
-                                                                        </DataTrigger>
-                                                                    </Style.Triggers>
-                                                                </Style>
-                                                            </TextBlock.Style>
-                                                        </TextBlock>
-
-                                                        <TextBlock
-                                                            FontSize="13"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="Deps: " />
-                                                        <TextBlock
-                                                            FontSize="13"
-                                                            FontWeight="Bold"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="{Binding DependencyCount}" />
-                                                        <TextBlock
-                                                            Margin="10,0,0,0"
-                                                            FontSize="13"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="•  Dependents: " />
-                                                        <TextBlock
-                                                            FontSize="13"
-                                                            FontWeight="Bold"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="{Binding DependentsCount}" />
-                                                        <TextBlock
-                                                            Margin="10,0,0,0"
-                                                            FontSize="13"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="•  Size: " />
-                                                        <TextBlock
-                                                            FontSize="13"
-                                                            FontWeight="Bold"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="{Binding FileSizeFormatted}" />
-                                                        <TextBlock
-                                                            Margin="10,0,0,0"
-                                                            FontSize="13"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="•  Date: " />
-                                                        <TextBlock
-                                                            FontSize="13"
-                                                            FontWeight="Bold"
-                                                            Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                                            Text="{Binding DateFormatted}" />
-                                                    </StackPanel>
+                                                    <!--  OPTIMIZED: Single TextBlock with pre-computed MetadataLine instead of 8 separate TextBlocks  -->
+                                                    <TextBlock
+                                                        FontSize="13"
+                                                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                        Text="{Binding MetadataLine}" />
                                                     <TextBlock
                                                         Margin="0,4,0,0"
                                                         FontSize="13"

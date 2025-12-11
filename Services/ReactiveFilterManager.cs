@@ -74,10 +74,14 @@ namespace VPM.Services
                 _countsNeedUpdate = false;
                 return;
             }
-                
+            
+            // MEMORY FIX: Create snapshot ONCE before the loop instead of per-package
+            // This prevents creating 10+ new HashSets for every single package
+            var filterSnapshot = _filterManager.GetSnapshot();
+            
             foreach (var kvp in _allPackages)
             {
-                if (_filterManager.MatchesFilters(kvp.Value))
+                if (_filterManager.MatchesFilters(kvp.Value, filterSnapshot, kvp.Key))
                 {
                     _filteredPackages.Add(kvp.Key, kvp.Value);
                 }

@@ -71,16 +71,20 @@ namespace VPM.Services
         
         /// <summary>
         /// Demotes strong reference to weak reference to allow GC collection.
+        /// Returns the size of data that was demoted (for memory tracking).
         /// </summary>
-        public void DemoteToWeakReference()
+        public long DemoteToWeakReference()
         {
             lock (_dataLock)
             {
                 if (_data != null)
                 {
+                    var size = _data.Length;
                     _weakData = new WeakReference<byte[]>(_data);
                     _data = null;
+                    return size;
                 }
+                return 0;
             }
         }
         
@@ -127,9 +131,9 @@ namespace VPM.Services
         private readonly ReaderWriterLockSlim _accessLock = new();
         private bool _disposed;
         
-        // Memory management
+        // Memory management - drastically reduced to test memory leak
         private long _totalCachedBytes;
-        private const long MaxCachedBytesPerArchive = 50 * 1024 * 1024; // 50MB per archive
+        private const long MaxCachedBytesPerArchive = 5 * 1024 * 1024; // 5MB per archive (reduced from 50MB)
         
         public VirtualArchive(string filePath)
         {
@@ -334,11 +338,17 @@ namespace VPM.Services
                         entryStream.CopyTo(memoryStream);
                         var data = memoryStream.ToArray();
                         
-                        // Cache the data with memory management
-                        // Small entries (< 1MB) use strong references
-                        // Large entries use weak references to allow GC collection
+                        // MEMORY FIX: Check size BEFORE incrementing counter
+                        // Only count strong references toward the limit
                         bool demoteToWeak = data.Length > 1024 * 1024 || 
-                                           Interlocked.Add(ref _totalCachedBytes, data.Length) > MaxCachedBytesPerArchive;
+                                           Interlocked.Read(ref _totalCachedBytes) + data.Length > MaxCachedBytesPerArchive;
+                        
+                        // Only increment counter for strong references (weak refs don't count toward limit)
+                        if (!demoteToWeak)
+                        {
+                            Interlocked.Add(ref _totalCachedBytes, data.Length);
+                        }
+                        
                         entry.SetData(data, demoteToWeak);
                         
                         LastAccessed = DateTime.UtcNow;
@@ -471,9 +481,17 @@ namespace VPM.Services
                                 entryStream.CopyTo(memoryStream);
                                 var data = memoryStream.ToArray();
                                 
-                                // Cache with smart memory management
+                                // MEMORY FIX: Check size BEFORE incrementing counter
+                                // Only count strong references toward the limit
                                 bool demoteToWeak = data.Length > 1024 * 1024 || 
-                                                   Interlocked.Add(ref _totalCachedBytes, data.Length) > MaxCachedBytesPerArchive;
+                                                   Interlocked.Read(ref _totalCachedBytes) + data.Length > MaxCachedBytesPerArchive;
+                                
+                                // Only increment counter for strong references
+                                if (!demoteToWeak)
+                                {
+                                    Interlocked.Add(ref _totalCachedBytes, data.Length);
+                                }
+                                
                                 entry.SetData(data, demoteToWeak);
                                 
                                 results[archiveEntry.Key] = data;
@@ -532,15 +550,22 @@ namespace VPM.Services
         
         /// <summary>
         /// Demotes all strong references to weak references.
+        /// Updates _totalCachedBytes to reflect released memory.
         /// </summary>
         public void DemoteAllToWeakReferences()
         {
             _accessLock.EnterWriteLock();
             try
             {
+                long totalDemoted = 0;
                 foreach (var entry in _entries.Values)
                 {
-                    entry.DemoteToWeakReference();
+                    totalDemoted += entry.DemoteToWeakReference();
+                }
+                // MEMORY FIX: Decrement the cached bytes counter when demoting to weak references
+                if (totalDemoted > 0)
+                {
+                    Interlocked.Add(ref _totalCachedBytes, -totalDemoted);
                 }
             }
             finally
@@ -582,11 +607,9 @@ namespace VPM.Services
         private readonly long _maxTotalCacheBytes;
         private bool _disposed;
         
-        // MEMORY FIX: Limit number of cached archives to prevent memory bloat
-        // Each VirtualArchive with ~50 entries uses ~10KB of overhead (entry objects + strings)
-        // With 20,000 packages averaging 50 entries each = 1M entries = ~150MB overhead
-        // Limiting to 500 archives keeps overhead under ~5MB
-        private const int MaxCachedArchives = 500;
+        // MEMORY FIX: Drastically limit number of cached archives to prevent memory bloat
+        // Testing with very low limit to identify memory leak source
+        private const int MaxCachedArchives = 50;
         
         // Statistics
         private long _cacheHits;
@@ -597,7 +620,7 @@ namespace VPM.Services
         private int _consecutiveCleanupFailures = 0;
         private const int MaxConsecutiveCleanupFailures = 5;
         
-        public VirtualArchiveCache(long maxTotalCacheBytes = 500 * 1024 * 1024) // 500MB default
+        public VirtualArchiveCache(long maxTotalCacheBytes = 50 * 1024 * 1024) // 50MB default (reduced from 500MB)
         {
             _maxTotalCacheBytes = maxTotalCacheBytes;
             

@@ -74,9 +74,10 @@ namespace VPM
             }
         }
         
-        // Package metadata cache for performance
+        // Package metadata cache for performance - limited size to prevent memory leak
         private readonly Dictionary<string, VarMetadata> _packageMetadataCache = new Dictionary<string, VarMetadata>();
         private readonly object _metadataCacheLock = new object();
+        private const int MAX_METADATA_CACHE_SIZE = 500; // Limit cache to prevent unbounded growth
 
         /// <summary>
         /// Gets cached package metadata or performs lookup and caches result
@@ -89,6 +90,12 @@ namespace VPM
                 if (_packageMetadataCache.TryGetValue(packageName, out var cachedMetadata))
                 {
                     return cachedMetadata;
+                }
+                
+                // MEMORY FIX: Clear cache if it grows too large
+                if (_packageMetadataCache.Count >= MAX_METADATA_CACHE_SIZE)
+                {
+                    _packageMetadataCache.Clear();
                 }
 
                 VarMetadata packageMetadata = null;
@@ -740,6 +747,9 @@ namespace VPM
                     return;
                 }
 
+                // MEMORY FIX: Clear ImageListViewService cache to prevent memory leak
+                _imageListViewService.ClearCache();
+                
                 PreviewImages.Clear();
                 _allPreviewImages.Clear();
                 _selectedContentTypes.Clear();
@@ -756,9 +766,6 @@ namespace VPM
                 
                 // Clear the virtualized manager if it exists
                 _virtualizedImageGridManager?.Clear();
-                
-                // Clear service cache and selection for fresh display
-                _imageListViewService.ClearSelection();
                 
                 // Clear statistics display
                 UpdateImageStatisticsDisplay();

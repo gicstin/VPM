@@ -20,7 +20,7 @@ namespace VPM.Services
         private static readonly Lazy<LockFreeArchiveReader> _instance = new(() => new LockFreeArchiveReader());
         public static LockFreeArchiveReader Instance => _instance.Value;
         
-        public LockFreeArchiveReader(long maxCacheBytes = 500 * 1024 * 1024)
+        public LockFreeArchiveReader(long maxCacheBytes = 50 * 1024 * 1024) // Reduced from 500MB to 50MB
         {
             _cache = new VirtualArchiveCache(maxCacheBytes);
         }

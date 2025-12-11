@@ -1689,12 +1689,15 @@ namespace VPM
             var packagesToRemove = new List<PackageItem>();
             var packagesToAdd = new List<PackageItem>();
             
+            // MEMORY FIX: Create filter snapshot ONCE before loops
+            var filterSnapshot = _filterManager.GetSnapshot();
+            
             // Check displayed packages - remove those that no longer match
             foreach (var package in Packages)
             {
                 if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata))
                 {
-                    if (!_filterManager.MatchesFilters(metadata))
+                    if (!_filterManager.MatchesFilters(metadata, filterSnapshot, package.MetadataKey))
                     {
                         packagesToRemove.Add(package);
                     }
@@ -1712,7 +1715,7 @@ namespace VPM
                     continue;
                     
                 // Add if it matches filters
-                if (_filterManager.MatchesFilters(metadata))
+                if (_filterManager.MatchesFilters(metadata, filterSnapshot, metadataKey))
                 {
                     string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
                         ? metadataKey 

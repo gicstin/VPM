@@ -835,6 +835,7 @@ namespace VPM.Services
                     _currentImageCacheSize = 0;
                     var now = DateTime.Now;
                     var expiredCount = 0;
+                    var skippedDueToSizeLimit = 0;
                     
                     for (int i = 0; i < imageCount; i++)
                     {
@@ -853,6 +854,16 @@ namespace VPM.Services
                                     expiredCount++;
                                     continue;
                                 }
+                            }
+                            
+                            // CRITICAL FIX: Enforce MAX_IMAGE_CACHE_SIZE during load
+                            // This prevents loading GBs of cached images into memory
+                            if (_currentImageCacheSize + dataLength > MAX_IMAGE_CACHE_SIZE)
+                            {
+                                // Skip remaining images - we've hit the memory limit
+                                reader.ReadBytes(dataLength);
+                                skippedDueToSizeLimit++;
+                                continue;
                             }
                             
                             var imageData = reader.ReadBytes(dataLength);

@@ -10,6 +10,13 @@ namespace VPM
 {
     public partial class App : Application
     {
+        // Startup timing instrumentation
+        public static readonly Stopwatch StartupTimer = Stopwatch.StartNew();
+        
+        public static void LogStartupTiming(string step)
+        {
+            Debug.WriteLine($"[STARTUP] {StartupTimer.ElapsedMilliseconds,5}ms - {step}");
+        }
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);

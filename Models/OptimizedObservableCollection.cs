@@ -64,9 +64,21 @@ namespace VPM.Models
         }
 
         /// <summary>
-        /// Replaces all items efficiently with a single notification
-        /// CRITICAL FIX for .NET 10: Avoid massive memory allocations during view refresh
-        /// by clearing and rebuilding the collection without triggering view sorting
+        /// Replaces all items efficiently with a single notification.
+        /// 
+        /// ⚠️ MEMORY WARNING: This method creates a COPY of the input collection.
+        /// For filtering operations, use CollectionView.Filter instead - it's O(1) memory
+        /// vs O(n) memory for ReplaceAll.
+        /// 
+        /// ONLY use ReplaceAll for:
+        /// - Initial data load
+        /// - Complete data refresh (e.g., folder change)
+        /// - When the underlying data source has actually changed
+        /// 
+        /// DO NOT use ReplaceAll for:
+        /// - Filtering operations (use CollectionView.Filter)
+        /// - Sorting operations (use CollectionView.SortDescriptions)
+        /// - Search operations (use CollectionView.Filter)
         /// </summary>
         public void ReplaceAll(IEnumerable<T> items)
         {
@@ -78,6 +90,12 @@ namespace VPM.Models
                 Clear();
                 return;
             }
+            
+            // GUARD: Log warning if called frequently (potential memory leak pattern)
+            #if DEBUG
+            System.Diagnostics.Debug.WriteLine($"[OptimizedObservableCollection] ReplaceAll called with {itemsList.Count} items. " +
+                "If this is for filtering, consider using CollectionView.Filter instead.");
+            #endif
 
             _suppressNotification = true;
             try

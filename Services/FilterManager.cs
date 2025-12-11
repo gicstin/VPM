@@ -565,10 +565,9 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            // The packages dictionary is not modified during iteration
+            foreach (var package in packages.Values)
             {
                 if (package.Categories != null)
                 {
@@ -646,10 +645,8 @@ namespace VPM.Services
                 ["Unoptimized"] = 0
             };
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 if (package.IsOptimized)
                     counts["Optimized"]++;
@@ -668,10 +665,8 @@ namespace VPM.Services
                 ["Old"] = 0
             };
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 if (package.IsOldVersion)
                     counts["Old"]++;
@@ -693,10 +688,8 @@ namespace VPM.Services
                 ["No Dependencies"] = 0
             };
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 if (package.DependentsCount == 0)
                     counts["No Dependents"]++;
@@ -711,10 +704,8 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 var license = string.IsNullOrEmpty(package.LicenseType) ? "Unknown" : package.LicenseType;
                 // Use TryGetValue for single lookup instead of ContainsKey + indexer (3x faster)
@@ -759,10 +750,8 @@ namespace VPM.Services
                 ["Large"] = 0
             };
 
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 double fileSizeMB = package.FileSize / (1024.0 * 1024.0);
 
@@ -786,10 +775,8 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 string subfolder = ExtractSubfolderFromMetadata(package);
                 
@@ -1080,10 +1067,8 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 if (package.ClothingTags == null || package.ClothingTags.Count == 0)
                     continue;
@@ -1111,10 +1096,8 @@ namespace VPM.Services
         {
             var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
-            foreach (var package in packageValues)
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
+            foreach (var package in packages.Values)
             {
                 if (package.HairTags == null || package.HairTags.Count == 0)
                     continue;
@@ -1139,11 +1122,9 @@ namespace VPM.Services
         /// </summary>
         public int GetPackagesWithClothingTagsCount(Dictionary<string, VarMetadata> packages)
         {
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
             int count = 0;
-            foreach (var package in packageValues)
+            foreach (var package in packages.Values)
             {
                 if (package.ClothingTags != null && package.ClothingTags.Count > 0)
                     count++;
@@ -1156,11 +1137,9 @@ namespace VPM.Services
         /// </summary>
         public int GetPackagesWithHairTagsCount(Dictionary<string, VarMetadata> packages)
         {
-            // Create snapshot to avoid "Collection was modified" exception
-            var packageValues = packages.Values.ToList();
-            
+            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
             int count = 0;
-            foreach (var package in packageValues)
+            foreach (var package in packages.Values)
             {
                 if (package.HairTags != null && package.HairTags.Count > 0)
                     count++;

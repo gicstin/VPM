@@ -168,14 +168,11 @@ namespace VPM
                     UpdateCheckUpdatesButton();
                 });
                 
-                    var sourceInfo = _updateChecker.IsUsingLocalLinks ? " (from links.txt)" : " (from Hub)";
+                    // Only show status if updates found - otherwise keep "Ready" status
                     if (_updateCount > 0)
                     {
+                        var sourceInfo = _updateChecker.IsUsingLocalLinks ? " (from links.txt)" : " (from Hub)";
                         SetStatus($"Found {_updateCount} package update(s) available{sourceInfo}");
-                    }
-                    else
-                    {
-                        SetStatus($"All packages are up to date{sourceInfo}");
                     }
                 }
                 finally

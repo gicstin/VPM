@@ -2132,6 +2132,10 @@ namespace VPM.Services
             // This contains all individual files from expanded directories
             metadata.AllFiles = contentCounts.expandedList;
             
+            // MEMORY FIX: Clear ContentList after processing - AllFiles now has the data
+            // This prevents storing duplicate file lists (saves gigabytes of memory)
+            metadata.ContentList.Clear();
+            metadata.ContentList = null;
             
             // Fallback category detection from filename if no categories found
             if (metadata.Categories.Count == 0)

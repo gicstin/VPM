@@ -241,7 +241,6 @@ namespace VPM
 
             // Initialize selection debouncers for scene and preset modes
             InitializeSelectionDebouncers();
-
         }
         
         #endregion
