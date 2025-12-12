@@ -3468,47 +3468,24 @@ namespace VPM
 
         #endregion
 
-        #region Filter Splitter Event Handlers
+        #region Filter Resize Thumb Event Handlers
 
-        private void FilterSplitter_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+        private void FilterResizeThumb_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
         {
-            if (sender is GridSplitter splitter && splitter.Tag is string filterType)
+            if (sender is System.Windows.Controls.Primitives.Thumb thumb && thumb.Tag is string filterType)
             {
                 try
                 {
-                    // Update the height dynamically as the splitter is being dragged
-                    ListBox targetList = null;
-                    StackPanel targetSection = null;
-                    
-                    switch (filterType)
-                    {
-                        case "DateFilter":
-                            targetList = DateFilterList;
-                            targetSection = DateFilterList?.Parent as StackPanel;
-                            break;
-                        case "StatusFilter":
-                            targetList = StatusFilterList;
-                            targetSection = StatusFilterList?.Parent as StackPanel;
-                            break;
-                        case "ContentTypesFilter":
-                            targetList = ContentTypesList;
-                            targetSection = ContentTypesList?.Parent as StackPanel;
-                            break;
-                        case "CreatorsFilter":
-                            targetList = CreatorsList;
-                            targetSection = CreatorsList?.Parent as StackPanel;
-                            break;
-                        case "LicenseTypeFilter":
-                            targetList = LicenseTypeList;
-                            targetSection = LicenseTypeList?.Parent as StackPanel;
-                            break;
-                    }
+                    // Update the height dynamically as the thumb is being dragged
+                    ListBox targetList = GetFilterListBox(filterType);
                     
                     if (targetList != null)
                     {
                         double newHeight = targetList.ActualHeight + e.VerticalChange;
-                        // Clamp to min/max values
-                        newHeight = Math.Max(50, Math.Min(500, newHeight));
+                        // Clamp to min height only, allow very large max height (effectively unlimited)
+                        double minHeight = targetList.MinHeight > 0 ? targetList.MinHeight : 50;
+                        double maxHeight = 5000; // Very large maximum height (effectively unlimited for practical use)
+                        newHeight = Math.Max(minHeight, Math.Min(maxHeight, newHeight));
                         targetList.Height = newHeight;
                     }
                 }
@@ -3519,9 +3496,9 @@ namespace VPM
             }
         }
 
-        private void FilterSplitter_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        private void FilterResizeThumb_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
         {
-            if (sender is GridSplitter splitter && splitter.Tag is string filterType)
+            if (sender is System.Windows.Controls.Primitives.Thumb thumb && thumb.Tag is string filterType)
             {
                 try
                 {
@@ -3544,6 +3521,10 @@ namespace VPM
                             if (CreatorsList != null)
                                 _settingsManager.Settings.CreatorsFilterHeight = CreatorsList.ActualHeight;
                             break;
+                        case "SubfoldersFilter":
+                            if (SubfoldersFilterList != null)
+                                _settingsManager.Settings.SubfoldersFilterHeight = SubfoldersFilterList.ActualHeight;
+                            break;
                         case "LicenseTypeFilter":
                             if (LicenseTypeList != null)
                                 _settingsManager.Settings.LicenseTypeFilterHeight = LicenseTypeList.ActualHeight;
@@ -3563,6 +3544,22 @@ namespace VPM
                     // Ignore errors saving filter heights
                 }
             }
+        }
+
+        private ListBox GetFilterListBox(string filterType)
+        {
+            return filterType switch
+            {
+                "DateFilter" => DateFilterList,
+                "StatusFilter" => StatusFilterList,
+                "ContentTypesFilter" => ContentTypesList,
+                "CreatorsFilter" => CreatorsList,
+                "SubfoldersFilter" => SubfoldersFilterList,
+                "LicenseTypeFilter" => LicenseTypeList,
+                "FileSizeFilter" => FileSizeFilterList,
+                "DamagedFilter" => DamagedFilterList,
+                _ => null
+            };
         }
 
         private void ToggleFilterVisibility_Click(object sender, RoutedEventArgs e)

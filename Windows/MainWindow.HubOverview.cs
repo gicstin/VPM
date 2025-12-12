@@ -76,10 +76,6 @@ namespace VPM
         
         private void HubOverviewWebView_NavigationStarting(object sender, CoreWebView2NavigationStartingEventArgs e)
         {
-            // Don't show loading overlay when we're intentionally clearing
-            if (_isClearing)
-                return;
-                
             HubOverviewLoadingOverlay.Visibility = Visibility.Visible;
             HubOverviewErrorPanel.Visibility = Visibility.Collapsed;
         }
@@ -88,14 +84,15 @@ namespace VPM
         {
             Debug.WriteLine($"[HubOverview] NavigationCompleted: IsSuccess={e.IsSuccess}, IsClearing={_isClearing}");
             
+            // Always hide loading overlay
+            HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
+            
             // Ignore navigation events when we're intentionally clearing the WebView
             if (_isClearing)
             {
                 _isClearing = false;
                 return;
             }
-            
-            HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
             
             if (!e.IsSuccess)
             {
@@ -578,8 +575,10 @@ namespace VPM
             {
                 if (_hubOverviewWebViewInitialized && HubOverviewWebView?.CoreWebView2 != null)
                 {
-                    _isClearing = true; // Mark that we're intentionally clearing
-                    HubOverviewWebView.CoreWebView2.NavigateToString("<html><body style='background-color:#1E1E1E;'></body></html>");
+                    // Mark that we're clearing so we can ignore the navigation completion event
+                    _isClearing = true;
+                    // Use a data URL instead of NavigateToString to avoid connection issues
+                    HubOverviewWebView.CoreWebView2.Navigate("data:text/html,<html><body style='background-color:#1E1E1E;'></body></html>");
                 }
             }
             catch (Exception)

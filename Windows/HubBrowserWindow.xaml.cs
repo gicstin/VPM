@@ -353,6 +353,7 @@ namespace VPM.Windows
         private void ShowWebViewError(string message)
         {
             WebViewErrorText.Text = message;
+            WebViewLoadingOverlay.Visibility = Visibility.Collapsed;
             WebViewErrorPanel.Visibility = Visibility.Visible;
         }
         

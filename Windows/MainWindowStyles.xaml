@@ -693,4 +693,46 @@
         <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" />
     </Style>
 
+    <!--  Filter Resize Thumb Style  -->
+    <Style x:Key="FilterResizeThumbStyle" TargetType="Thumb">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Cursor" Value="SizeNS" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid Background="Transparent">
+                        <Border
+                            Height="3"
+                            Margin="20,0"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Center"
+                            Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                            CornerRadius="1.5"
+                            Opacity="0.5" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Background="Transparent">
+                                <Border
+                                    Height="3"
+                                    Margin="20,0"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Center"
+                                    Background="{StaticResource AccentBrush}"
+                                    CornerRadius="1.5"
+                                    Opacity="0.8" />
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
 </ResourceDictionary>

@@ -569,12 +569,9 @@ namespace VPM.Services
             
             var metadata = new VarMetadata
             {
-                Filename = filename,
-                FilePath = varPath,
-                Dependencies = new List<string>(),
-                ContentList = new List<string>(),
-                Categories = new HashSet<string>(),
-                UserTags = new List<string>()
+                Filename = StringPool.Intern(filename),
+                FilePath = StringPool.InternPath(varPath)
+                // Collections are now lazy-initialized in VarMetadata
             };
 
             try
@@ -636,7 +633,8 @@ namespace VPM.Services
                     // Skip directories and irrelevant files for performance
                     if (!entry.Key.EndsWith("/") && IsRelevantContent(entry.Key))
                     {
-                        contentList.Add(entry.Key);
+                        // Intern paths to reduce duplicate string memory
+                        contentList.Add(StringPool.InternPath(entry.Key));
                     }
                 }
                 
@@ -684,9 +682,9 @@ namespace VPM.Services
                 var (creator, pkgName, version) = ParseFilename(filename);
                 
                 if (string.IsNullOrEmpty(metadata.CreatorName))
-                    metadata.CreatorName = creator ?? "Unknown";
+                    metadata.CreatorName = StringPool.Intern(creator ?? "Unknown");
                 if (string.IsNullOrEmpty(metadata.PackageName))
-                    metadata.PackageName = pkgName ?? filename;
+                    metadata.PackageName = StringPool.Intern(pkgName ?? filename);
                 
                 // Always use filename version as it's the VAM standard (overrides meta.json packageVersion)
                 if (!string.IsNullOrEmpty(version) && int.TryParse(version, out var versionInt))
@@ -739,6 +737,9 @@ namespace VPM.Services
                     // Don't fail the whole parse if integrity check fails
                 }
                 
+                // Trim excess capacity from collections to reduce sparse array waste
+                metadata.TrimExcess();
+                
                 // Add to binary cache for faster future loads
                 // Use full filename as cache key to handle multiple versions of the same package
                 _binaryCache.AddOrUpdate(filename, metadata, fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks);
@@ -753,8 +754,8 @@ namespace VPM.Services
                 
                 // Try to extract basic info from filename even if corrupted
                 var (creator, pkgName, version) = ParseFilename(filename);
-                metadata.CreatorName = creator ?? "Unknown";
-                metadata.PackageName = pkgName ?? filename;
+                metadata.CreatorName = StringPool.Intern(creator ?? "Unknown");
+                metadata.PackageName = StringPool.Intern(pkgName ?? filename);
                 if (int.TryParse(version, out var versionInt))
                     metadata.Version = versionInt;
                 metadata.Categories.Add("Unknown");
@@ -1152,6 +1153,10 @@ namespace VPM.Services
             return (installed, available);
         }
 
+        /// <summary>
+        /// Creates a clone of VarMetadata. Optimized to avoid allocating empty collections
+        /// since VarMetadata now uses lazy initialization.
+        /// </summary>
         private static VarMetadata CloneMetadata(VarMetadata source)
         {
             if (source == null)
@@ -1159,7 +1164,7 @@ namespace VPM.Services
                 return null;
             }
 
-            return new VarMetadata
+            var clone = new VarMetadata
             {
                 Filename = source.Filename,
                 PackageName = source.PackageName,
@@ -1167,14 +1172,9 @@ namespace VPM.Services
                 Description = source.Description,
                 Version = source.Version,
                 LicenseType = source.LicenseType,
-                Dependencies = source.Dependencies != null ? new List<string>(source.Dependencies) : new List<string>(),
-                ContentList = source.ContentList != null ? new List<string>(source.ContentList) : new List<string>(),
-                ContentTypes = source.ContentTypes != null ? new HashSet<string>(source.ContentTypes) : new HashSet<string>(),
-                Categories = source.Categories != null ? new HashSet<string>(source.Categories) : new HashSet<string>(),
                 FileCount = source.FileCount,
                 CreatedDate = source.CreatedDate,
                 ModifiedDate = source.ModifiedDate,
-                UserTags = source.UserTags != null ? new List<string>(source.UserTags) : new List<string>(),
                 IsCorrupted = source.IsCorrupted,
                 PreloadMorphs = source.PreloadMorphs,
                 Status = source.Status,
@@ -1200,9 +1200,31 @@ namespace VPM.Services
                 PluginsCount = source.PluginsCount,
                 SubScenesCount = source.SubScenesCount,
                 SkinsCount = source.SkinsCount,
-                IsMorphAsset = source.IsMorphAsset,
-                AllFiles = source.AllFiles != null ? new List<string>(source.AllFiles) : new List<string>()
+                IsMorphAsset = source.IsMorphAsset
             };
+            
+            // Only clone non-empty collections to avoid unnecessary allocations
+            // VarMetadata uses lazy initialization, so null is fine for empty collections
+            if (source.Dependencies?.Count > 0)
+                clone.Dependencies = new List<string>(source.Dependencies);
+            if (source.ContentList?.Count > 0)
+                clone.ContentList = new List<string>(source.ContentList);
+            if (source.ContentTypes?.Count > 0)
+                clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
+            if (source.Categories?.Count > 0)
+                clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
+            if (source.UserTags?.Count > 0)
+                clone.UserTags = new List<string>(source.UserTags);
+            if (source.AllFiles?.Count > 0)
+                clone.AllFiles = new List<string>(source.AllFiles);
+            if (source.MissingDependencies?.Count > 0)
+                clone.MissingDependencies = new List<string>(source.MissingDependencies);
+            if (source.ClothingTags?.Count > 0)
+                clone.ClothingTags = new HashSet<string>(source.ClothingTags, StringComparer.OrdinalIgnoreCase);
+            if (source.HairTags?.Count > 0)
+                clone.HairTags = new HashSet<string>(source.HairTags, StringComparer.OrdinalIgnoreCase);
+            
+            return clone;
         }
 
         /// <summary>
@@ -1333,7 +1355,14 @@ namespace VPM.Services
                 _previewImageIndex.TryRemove(packageBase, out _);
             }
             
-            // .NET 10 GC handles cleanup automatically
+            // Trim excess capacity from all metadata collections to reduce sparse array waste
+            foreach (var metadata in PackageMetadata.Values)
+            {
+                metadata.TrimExcess();
+            }
+            
+            // Trim the StringPool to release any unused interned strings
+            StringPool.TrimExcess();
 
             int optimizedCount = PackageMetadata.Values.Count(m => m.IsOptimized);
             
@@ -2010,19 +2039,19 @@ namespace VPM.Services
             {
                 var metaData = JsonSerializer.Deserialize<JsonElement>(metaJsonContent);
                 
-                // Extract metadata from meta.json
+                // Extract metadata from meta.json - intern strings to reduce duplicates
                 if (metaData.TryGetProperty("packageName", out var pName))
-                    metadata.PackageName = pName.GetString() ?? "";
+                    metadata.PackageName = StringPool.Intern(pName.GetString() ?? "");
                 if (metaData.TryGetProperty("creatorName", out var cName))
-                    metadata.CreatorName = cName.GetString() ?? "";
+                    metadata.CreatorName = StringPool.Intern(cName.GetString() ?? "");
                 if (metaData.TryGetProperty("description", out var desc))
-                    metadata.Description = desc.GetString() ?? "";
+                    metadata.Description = desc.GetString() ?? ""; // Don't intern descriptions - they're unique
                 if (metaData.TryGetProperty("packageVersion", out var ver))
                     metadata.Version = ver.GetInt32();
                 if (metaData.TryGetProperty("licenseType", out var license))
                 {
                     var licenseValue = license.GetString() ?? "";
-                    metadata.LicenseType = licenseValue;
+                    metadata.LicenseType = StringPool.InternIgnoreCase(licenseValue);
                 }
                 // Try to get preloadMorphs from root level or customOptions
                 if (metaData.TryGetProperty("preloadMorphs", out var preload))
@@ -2164,7 +2193,8 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Recursively parses dependencies at all nesting levels
+        /// Recursively parses dependencies at all nesting levels.
+        /// Interns dependency strings to reduce memory from duplicates.
         /// </summary>
         private void ParseDependenciesRecursive(JsonElement deps, HashSet<string> dependenciesSet)
         {
@@ -2177,12 +2207,11 @@ namespace VPM.Services
                         {
                             var depStr = dep.GetString();
                             if (!string.IsNullOrEmpty(depStr))
-                                dependenciesSet.Add(depStr); // HashSet automatically handles duplicates
+                                dependenciesSet.Add(StringPool.Intern(depStr));
                         }
                         else if (dep.ValueKind == JsonValueKind.Object)
                         {
                             // Extract from object properties with early exit optimization
-                            string foundDependency = null;
                             foreach (var prop in dep.EnumerateObject())
                             {
                                 // Check for known property names that contain dependency info
@@ -2190,10 +2219,10 @@ namespace VPM.Services
                                     prop.Name.Equals("packageName", StringComparison.OrdinalIgnoreCase) ||
                                     prop.Name.Equals("package", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    foundDependency = prop.Value.GetString();
+                                    var foundDependency = prop.Value.GetString();
                                     if (!string.IsNullOrEmpty(foundDependency))
                                     {
-                                        dependenciesSet.Add(foundDependency);
+                                        dependenciesSet.Add(StringPool.Intern(foundDependency));
                                         break; // Early exit - no need to check remaining properties
                                     }
                                 }
@@ -2205,7 +2234,7 @@ namespace VPM.Services
                 case JsonValueKind.String:
                     var singleDep = deps.GetString();
                     if (!string.IsNullOrEmpty(singleDep))
-                        dependenciesSet.Add(singleDep);
+                        dependenciesSet.Add(StringPool.Intern(singleDep));
                     break;
 
                 case JsonValueKind.Object:
@@ -2214,7 +2243,7 @@ namespace VPM.Services
                     {
                         if (!string.IsNullOrEmpty(prop.Name))
                         {
-                            dependenciesSet.Add(prop.Name);
+                            dependenciesSet.Add(StringPool.Intern(prop.Name));
                             
                             // Recursively parse subdependencies
                             if (prop.Value.ValueKind == JsonValueKind.Object &&

@@ -2450,12 +2450,26 @@ namespace VPM.Services
     }
 
     /// <summary>
-    /// Represents the location of an image within a VAR archive
+    /// Represents the location of an image within a VAR archive.
+    /// Uses string interning for paths to reduce memory usage from duplicate strings.
     /// </summary>
     public class ImageLocation
     {
-        public string VarFilePath { get; set; }
-        public string InternalPath { get; set; }
+        private string _varFilePath;
+        private string _internalPath;
+        
+        public string VarFilePath 
+        { 
+            get => _varFilePath;
+            set => _varFilePath = StringPool.InternPath(value);
+        }
+        
+        public string InternalPath 
+        { 
+            get => _internalPath;
+            set => _internalPath = StringPool.InternPath(value);
+        }
+        
         public long FileSize { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }

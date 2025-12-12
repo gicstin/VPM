@@ -647,10 +647,14 @@
                                         x:Name="DateFilterList"
                                         Height="{Binding DateFilterHeight, Mode=TwoWay}"
                                         MinHeight="60"
-                                        MaxHeight="200"
                                         SelectionChanged="DateFilterList_SelectionChanged"
                                         SelectionMode="Single"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="DateFilter" />
 
                                     <!--  Custom Date Range Panel (Initially Hidden)  -->
                                     <StackPanel
@@ -746,11 +750,15 @@
                                         x:Name="StatusFilterList"
                                         Height="{Binding StatusFilterHeight, Mode=TwoWay}"
                                         MinHeight="80"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="StatusFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="StatusFilter" />
                                 </StackPanel>
 
                                 <!--  Content Types Filter Section  -->
@@ -830,11 +838,15 @@
                                         x:Name="ContentTypesList"
                                         Height="{Binding ContentTypesFilterHeight, Mode=TwoWay}"
                                         MinHeight="120"
-                                        MaxHeight="250"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="ContentTypesList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="ContentTypesFilter" />
                                 </StackPanel>
 
                                 <!--  Creators Filter Section  -->
@@ -914,12 +926,16 @@
                                         x:Name="CreatorsList"
                                         Height="{Binding CreatorsFilterHeight, Mode=TwoWay}"
                                         MinHeight="120"
-                                        MaxHeight="250"
                                         ItemContainerStyle="{StaticResource CreatorsListBoxItemStyle}"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="CreatorsList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="CreatorsFilter" />
                                 </StackPanel>
 
                                 <!--  Subfolders Filter Section  -->
@@ -999,11 +1015,15 @@
                                         x:Name="SubfoldersFilterList"
                                         Height="{Binding SubfoldersFilterHeight, Mode=TwoWay}"
                                         MinHeight="100"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="SubfoldersFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="SubfoldersFilter" />
                                 </StackPanel>
 
                                 <!--  License Type Filter Section  -->
@@ -1083,11 +1103,15 @@
                                         x:Name="LicenseTypeList"
                                         Height="{Binding LicenseTypeFilterHeight, Mode=TwoWay}"
                                         MinHeight="100"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="LicenseTypeList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="LicenseTypeFilter" />
                                 </StackPanel>
 
                                 <!--  File Size Filter Section  -->
@@ -1145,11 +1169,15 @@
                                         x:Name="FileSizeFilterList"
                                         Height="{Binding FileSizeFilterHeight, Mode=TwoWay}"
                                         MinHeight="100"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="FileSizeFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="FileSizeFilter" />
                                 </StackPanel>
 
                                 <!--  Damaged Packages Filter Section  -->
@@ -1205,11 +1233,15 @@
                                         x:Name="DamagedFilterList"
                                         Height="{Binding DamagedFilterHeight, Mode=TwoWay}"
                                         MinHeight="60"
-                                        MaxHeight="120"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="DamagedFilterList_SelectionChanged"
                                         SelectionMode="Single"
                                         Style="{StaticResource FilterListBoxStyle}" />
+                                    <Thumb
+                                        DragCompleted="FilterResizeThumb_DragCompleted"
+                                        DragDelta="FilterResizeThumb_DragDelta"
+                                        Style="{StaticResource FilterResizeThumbStyle}"
+                                        Tag="DamagedFilter" />
                                 </StackPanel>
 
                             </StackPanel>
@@ -1297,7 +1329,6 @@
                                         x:Name="SceneTypeFilterList"
                                         Height="120"
                                         MinHeight="80"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="SceneTypeFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
@@ -1384,7 +1415,6 @@
                                         x:Name="SceneCreatorFilterList"
                                         Height="120"
                                         MinHeight="80"
-                                        MaxHeight="200"
                                         MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
                                         SelectionChanged="SceneCreatorFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
@@ -1447,7 +1477,6 @@
                                         x:Name="SceneStatusFilterList"
                                         Height="120"
                                         MinHeight="60"
-                                        MaxHeight="200"
                                         SelectionChanged="SceneStatusFilterList_SelectionChanged"
                                         SelectionMode="Multiple"
                                         Style="{StaticResource FilterListBoxStyle}" />

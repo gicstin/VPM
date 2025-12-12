@@ -407,25 +407,27 @@ namespace VPM.Services
 
         private VarMetadata ReadVarMetadata(BinaryReader reader)
         {
+            // Use StringPool.Intern for frequently duplicated strings to reduce memory
+            // Memory profiler showed 219MB wasted on duplicate strings
             var metadata = new VarMetadata
             {
-                Filename = reader.ReadString(),
-                PackageName = reader.ReadString(),
-                CreatorName = reader.ReadString(),
-                Description = reader.ReadString(),
+                Filename = StringPool.Intern(reader.ReadString()),
+                PackageName = StringPool.Intern(reader.ReadString()),
+                CreatorName = StringPool.Intern(reader.ReadString()),
+                Description = reader.ReadString(), // Descriptions are unique, don't intern
                 Version = reader.ReadInt32(),
-                LicenseType = reader.ReadString(),
+                LicenseType = StringPool.InternIgnoreCase(reader.ReadString()),
                 FileCount = reader.ReadInt32(),
                 IsCorrupted = reader.ReadBoolean(),
                 PreloadMorphs = reader.ReadBoolean(),
-                Status = reader.ReadString(),
-                FilePath = reader.ReadString(),
+                Status = StringPool.InternIgnoreCase(reader.ReadString()),
+                FilePath = StringPool.InternPath(reader.ReadString()),
                 FileSize = reader.ReadInt64(),
                 IsOptimized = reader.ReadBoolean(),
                 HasTextureOptimization = reader.ReadBoolean(),
                 HasHairOptimization = reader.ReadBoolean(),
                 HasMirrorOptimization = reader.ReadBoolean(),
-                VariantRole = reader.ReadString(),
+                VariantRole = StringPool.InternIgnoreCase(reader.ReadString()),
                 IsDuplicate = reader.ReadBoolean(),
                 DuplicateLocationCount = reader.ReadInt32(),
                 MorphCount = reader.ReadInt32(),
@@ -445,106 +447,135 @@ namespace VPM.Services
             metadata.CreatedDate = reader.ReadBoolean() ? new DateTime(reader.ReadInt64()) : null;
             metadata.ModifiedDate = reader.ReadBoolean() ? new DateTime(reader.ReadInt64()) : null;
 
-            // Read Dependencies list
+            // Read Dependencies list - intern package names (highly duplicated)
             var depCount = reader.ReadInt32();
-            metadata.Dependencies = new List<string>(depCount);
-            for (int i = 0; i < depCount; i++)
+            if (depCount > 0)
             {
-                metadata.Dependencies.Add(reader.ReadString());
+                metadata.Dependencies = new List<string>(depCount);
+                for (int i = 0; i < depCount; i++)
+                {
+                    metadata.Dependencies.Add(StringPool.Intern(reader.ReadString()));
+                }
             }
 
-            // Read ContentList
+            // Read ContentList - intern paths (major source of duplicate strings)
             var contentCount = reader.ReadInt32();
-            metadata.ContentList = new List<string>(contentCount);
-            for (int i = 0; i < contentCount; i++)
+            if (contentCount > 0)
             {
-                metadata.ContentList.Add(reader.ReadString());
+                metadata.ContentList = new List<string>(contentCount);
+                for (int i = 0; i < contentCount; i++)
+                {
+                    metadata.ContentList.Add(StringPool.InternPath(reader.ReadString()));
+                }
             }
 
-            // Read ContentTypes HashSet
+            // Read ContentTypes HashSet - intern (small set of known values)
             var contentTypesCount = reader.ReadInt32();
-            metadata.ContentTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < contentTypesCount; i++)
+            if (contentTypesCount > 0)
             {
-                metadata.ContentTypes.Add(reader.ReadString());
+                metadata.ContentTypes = new HashSet<string>(contentTypesCount, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < contentTypesCount; i++)
+                {
+                    metadata.ContentTypes.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                }
             }
 
-            // Read Categories HashSet
+            // Read Categories HashSet - intern (small set of known values)
             var categoriesCount = reader.ReadInt32();
-            metadata.Categories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < categoriesCount; i++)
+            if (categoriesCount > 0)
             {
-                metadata.Categories.Add(reader.ReadString());
+                metadata.Categories = new HashSet<string>(categoriesCount, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < categoriesCount; i++)
+                {
+                    metadata.Categories.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                }
             }
 
-            // Read UserTags list
+            // Read UserTags list - intern (tags are often repeated)
             var userTagsCount = reader.ReadInt32();
-            metadata.UserTags = new List<string>(userTagsCount);
-            for (int i = 0; i < userTagsCount; i++)
+            if (userTagsCount > 0)
             {
-                metadata.UserTags.Add(reader.ReadString());
+                metadata.UserTags = new List<string>(userTagsCount);
+                for (int i = 0; i < userTagsCount; i++)
+                {
+                    metadata.UserTags.Add(StringPool.Intern(reader.ReadString()));
+                }
             }
 
-            // Read AllFiles list (complete file index from archive)
+            // Read AllFiles list - intern paths (MAJOR source of duplicate strings - 219MB wasted)
             try
             {
                 var allFilesCount = reader.ReadInt32();
-                metadata.AllFiles = new List<string>(allFilesCount);
-                for (int i = 0; i < allFilesCount; i++)
+                if (allFilesCount > 0)
                 {
-                    metadata.AllFiles.Add(reader.ReadString());
+                    metadata.AllFiles = new List<string>(allFilesCount);
+                    for (int i = 0; i < allFilesCount; i++)
+                    {
+                        metadata.AllFiles.Add(StringPool.InternPath(reader.ReadString()));
+                    }
                 }
             }
             catch
             {
-                // If AllFiles can't be read (old cache format), initialize empty list
-                metadata.AllFiles = new List<string>();
+                // If AllFiles can't be read (old cache format), leave as null (lazy init)
             }
 
-            // Read MissingDependencies list
+            // Read MissingDependencies list - intern package names
             try
             {
                 var missingDepsCount = reader.ReadInt32();
-                metadata.MissingDependencies = new List<string>(missingDepsCount);
-                for (int i = 0; i < missingDepsCount; i++)
+                if (missingDepsCount > 0)
                 {
-                    metadata.MissingDependencies.Add(reader.ReadString());
+                    metadata.MissingDependencies = new List<string>(missingDepsCount);
+                    for (int i = 0; i < missingDepsCount; i++)
+                    {
+                        metadata.MissingDependencies.Add(StringPool.Intern(reader.ReadString()));
+                    }
                 }
             }
             catch
             {
-                metadata.MissingDependencies = new List<string>();
+                // Leave as null (lazy init)
             }
 
-            // Read ClothingTags HashSet
+            // Read ClothingTags HashSet - intern tags
             try
             {
                 var clothingTagsCount = reader.ReadInt32();
-                metadata.ClothingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                for (int i = 0; i < clothingTagsCount; i++)
+                if (clothingTagsCount > 0)
                 {
-                    metadata.ClothingTags.Add(reader.ReadString());
+                    metadata.ClothingTags = new HashSet<string>(clothingTagsCount, StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < clothingTagsCount; i++)
+                    {
+                        metadata.ClothingTags.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                    }
                 }
             }
             catch
             {
-                metadata.ClothingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // Leave as null (lazy init)
             }
 
-            // Read HairTags HashSet
+            // Read HairTags HashSet - intern tags
             try
             {
                 var hairTagsCount = reader.ReadInt32();
-                metadata.HairTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                for (int i = 0; i < hairTagsCount; i++)
+                if (hairTagsCount > 0)
                 {
-                    metadata.HairTags.Add(reader.ReadString());
+                    metadata.HairTags = new HashSet<string>(hairTagsCount, StringComparer.OrdinalIgnoreCase);
+                    for (int i = 0; i < hairTagsCount; i++)
+                    {
+                        metadata.HairTags.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                    }
                 }
             }
             catch
             {
-                metadata.HairTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // Leave as null (lazy init)
             }
+            
+            // Trim excess capacity to reduce sparse array waste
+            metadata.TrimExcess();
 
             return metadata;
         }
@@ -673,13 +704,14 @@ namespace VPM.Services
         #region Helper Methods
 
         /// <summary>
-        /// Creates a deep clone of VarMetadata to prevent reference sharing
+        /// Creates a deep clone of VarMetadata to prevent reference sharing.
+        /// Optimized to avoid allocating empty collections (lazy init handles that).
         /// </summary>
         private VarMetadata CloneMetadata(VarMetadata source)
         {
             if (source == null) return null;
 
-            return new VarMetadata
+            var clone = new VarMetadata
             {
                 Filename = source.Filename,
                 PackageName = source.PackageName,
@@ -687,14 +719,9 @@ namespace VPM.Services
                 Description = source.Description,
                 Version = source.Version,
                 LicenseType = source.LicenseType,
-                Dependencies = new List<string>(source.Dependencies ?? new List<string>()),
-                ContentList = new List<string>(source.ContentList ?? new List<string>()),
-                ContentTypes = new HashSet<string>(source.ContentTypes ?? new HashSet<string>(), StringComparer.OrdinalIgnoreCase),
-                Categories = new HashSet<string>(source.Categories ?? new HashSet<string>(), StringComparer.OrdinalIgnoreCase),
                 FileCount = source.FileCount,
                 CreatedDate = source.CreatedDate,
                 ModifiedDate = source.ModifiedDate,
-                UserTags = new List<string>(source.UserTags ?? new List<string>()),
                 IsCorrupted = source.IsCorrupted,
                 PreloadMorphs = source.PreloadMorphs,
                 Status = source.Status,
@@ -717,12 +744,31 @@ namespace VPM.Services
                 ScriptsCount = source.ScriptsCount,
                 PluginsCount = source.PluginsCount,
                 SubScenesCount = source.SubScenesCount,
-                SkinsCount = source.SkinsCount,
-                AllFiles = new List<string>(source.AllFiles ?? new List<string>()),
-                MissingDependencies = new List<string>(source.MissingDependencies ?? new List<string>()),
-                ClothingTags = new HashSet<string>(source.ClothingTags ?? new HashSet<string>(), StringComparer.OrdinalIgnoreCase),
-                HairTags = new HashSet<string>(source.HairTags ?? new HashSet<string>(), StringComparer.OrdinalIgnoreCase)
+                SkinsCount = source.SkinsCount
             };
+            
+            // Only clone non-empty collections to avoid unnecessary allocations
+            // VarMetadata uses lazy initialization, so null is fine for empty collections
+            if (source.Dependencies?.Count > 0)
+                clone.Dependencies = new List<string>(source.Dependencies);
+            if (source.ContentList?.Count > 0)
+                clone.ContentList = new List<string>(source.ContentList);
+            if (source.ContentTypes?.Count > 0)
+                clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
+            if (source.Categories?.Count > 0)
+                clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
+            if (source.UserTags?.Count > 0)
+                clone.UserTags = new List<string>(source.UserTags);
+            if (source.AllFiles?.Count > 0)
+                clone.AllFiles = new List<string>(source.AllFiles);
+            if (source.MissingDependencies?.Count > 0)
+                clone.MissingDependencies = new List<string>(source.MissingDependencies);
+            if (source.ClothingTags?.Count > 0)
+                clone.ClothingTags = new HashSet<string>(source.ClothingTags, StringComparer.OrdinalIgnoreCase);
+            if (source.HairTags?.Count > 0)
+                clone.HairTags = new HashSet<string>(source.HairTags, StringComparer.OrdinalIgnoreCase);
+            
+            return clone;
         }
 
         #endregion
