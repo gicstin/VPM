@@ -19,6 +19,9 @@ namespace VPM
     {
         private List<CustomAtomItem> _originalCustomAtomItems = new List<CustomAtomItem>();
         
+        // Search text for custom atom filtering (used by CollectionView.Filter)
+        private string _customAtomSearchText = "";
+        
         // In-memory cache for custom item thumbnails to avoid re-reading files and prevent file locking
         // Key: ThumbnailPath, Value: (BitmapImage, LastWriteTime) - LastWriteTime used for cache invalidation
         private readonly Dictionary<string, (BitmapImage Image, long LastWriteTicks)> _customThumbnailCache = new();
@@ -144,23 +147,12 @@ namespace VPM
         }
 
         /// <summary>
-        /// Filters custom atom items by search text
+        /// Filters custom atom items by search text using CollectionView.Filter
         /// </summary>
         private void FilterCustomAtomItems(string searchText)
         {
-            if (string.IsNullOrWhiteSpace(searchText))
-            {
-                CustomAtomItems.ReplaceAll(_originalCustomAtomItems);
-            }
-            else
-            {
-                var filtered = _originalCustomAtomItems
-                    .Where(item => item.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                                   item.Category.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                                   item.Subfolder.Contains(searchText, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                CustomAtomItems.ReplaceAll(filtered);
-            }
+            _customAtomSearchText = searchText ?? "";
+            ApplyPresetFilters();
         }
 
         /// <summary>

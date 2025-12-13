@@ -1236,46 +1236,11 @@ namespace VPM
         /// </summary>
         private void PresetCategoryFilterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (PresetCategoryFilterList == null || CustomAtomItems == null)
+            if (PresetCategoryFilterList == null || CustomAtomItemsView == null)
                 return;
 
-            try
-            {
-                // Use HashSet for O(1) lookups instead of O(n) List.Contains()
-                var selectedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var item in PresetCategoryFilterList.SelectedItems)
-                {
-                    if (item is string categoryItem)
-                    {
-                        // Extract category name from "Category (count)" format
-                        var parts = categoryItem.LastIndexOf('(');
-                        if (parts > 0)
-                        {
-                            var categoryName = categoryItem.Substring(0, parts).Trim();
-                            selectedCategories.Add(categoryName);
-                        }
-                    }
-                }
-
-                // Filter custom atom items based on selected categories
-                if (selectedCategories.Count == 0)
-                {
-                    // Show all items if no categories selected
-                    CustomAtomItems.ReplaceAll(_originalCustomAtomItems);
-                }
-                else
-                {
-                    // Filter to only show items with selected categories - O(1) HashSet lookup
-                    var filtered = _originalCustomAtomItems
-                        .Where(item => selectedCategories.Contains(item.Category))
-                        .ToList();
-                    CustomAtomItems.ReplaceAll(filtered);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in preset category filter selection: {ex.Message}");
-            }
+            // Use CollectionView.Filter instead of ReplaceAll for O(1) memory
+            ApplyPresetFilters();
         }
 
         /// <summary>
@@ -1492,7 +1457,8 @@ namespace VPM
         }
 
         /// <summary>
-        /// Applies all active preset filters to the presets collection
+        /// Applies all active preset filters to the presets collection using CollectionView.Filter
+        /// This is O(1) memory vs O(n) memory for ReplaceAll - filters hide items without copying
         /// </summary>
         private void ApplyPresetFilters()
         {
@@ -1500,9 +1466,48 @@ namespace VPM
 
             try
             {
+                // Pre-compute selected categories for O(1) lookup (avoid repeated enumeration)
+                HashSet<string> selectedCategories = null;
+                if (PresetCategoryFilterList?.SelectedItems.Count > 0)
+                {
+                    selectedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var item in PresetCategoryFilterList.SelectedItems)
+                    {
+                        if (item is string categoryItem)
+                        {
+                            var parts = categoryItem.LastIndexOf('(');
+                            if (parts > 0)
+                            {
+                                var categoryName = categoryItem.Substring(0, parts).Trim();
+                                selectedCategories.Add(categoryName);
+                            }
+                        }
+                    }
+                }
+                
+                // Capture search text for closure
+                var searchText = _customAtomSearchText;
+                var hasSearchText = !string.IsNullOrWhiteSpace(searchText);
+
                 CustomAtomItemsView.Filter = (item) =>
                 {
                     if (item is not CustomAtomItem preset) return false;
+
+                    // Apply search text filter
+                    if (hasSearchText)
+                    {
+                        if (!VPM.Services.SearchHelper.ContainsSearch(preset.DisplayName, searchText) &&
+                            !VPM.Services.SearchHelper.ContainsSearch(preset.Category, searchText) &&
+                            !VPM.Services.SearchHelper.ContainsSearch(preset.Subfolder, searchText))
+                            return false;
+                    }
+
+                    // Apply category filter
+                    if (selectedCategories != null && selectedCategories.Count > 0)
+                    {
+                        if (!selectedCategories.Contains(preset.Category))
+                            return false;
+                    }
 
                     // Apply subfolder filter
                     if (PresetSubfolderFilterList?.SelectedItems.Count > 0)

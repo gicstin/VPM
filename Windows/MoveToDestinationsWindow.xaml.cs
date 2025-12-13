@@ -73,6 +73,121 @@ namespace VPM.Windows
             StatusText.Text = $"{_destinations.Count} destination(s) configured, {enabledCount} enabled";
         }
 
+        private MessageBoxResult ShowDarkThemedDialog(string message, string title, MessageBoxButton buttons, MessageBoxImage icon)
+        {
+            var dialog = new Window
+            {
+                Title = title,
+                Width = 450,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Owner = this,
+                Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 45, 45)),
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(224, 224, 224)),
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false
+            };
+
+            dialog.Loaded += (s, e) =>
+            {
+                try
+                {
+                    var hwnd = new WindowInteropHelper(dialog).Handle;
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+                        int darkMode = 1;
+                        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+                    }
+                }
+                catch { }
+            };
+
+            var grid = new Grid { Margin = new Thickness(20) };
+            grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var messageBlock = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(224, 224, 224))
+            };
+            Grid.SetRow(messageBlock, 0);
+            grid.Children.Add(messageBlock);
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 20, 0, 0)
+            };
+
+            Action<Button> styleButton = (btn) =>
+            {
+                btn.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(51, 51, 51));
+                btn.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(224, 224, 224));
+                btn.BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 100, 100));
+                btn.BorderThickness = new Thickness(1);
+                btn.Padding = new Thickness(12, 6, 12, 6);
+                btn.Cursor = System.Windows.Input.Cursors.Hand;
+
+                btn.MouseEnter += (s, e) =>
+                {
+                    btn.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 70, 70));
+                };
+                btn.MouseLeave += (s, e) =>
+                {
+                    btn.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(51, 51, 51));
+                };
+            };
+
+            if (buttons == MessageBoxButton.YesNo)
+            {
+                var yesButton = new Button
+                {
+                    Content = "Yes",
+                    Width = 80,
+                    Height = 32,
+                    Margin = new Thickness(0, 0, 10, 0)
+                };
+                styleButton(yesButton);
+                yesButton.Click += (s, e) => { dialog.DialogResult = true; dialog.Close(); };
+
+                var noButton = new Button
+                {
+                    Content = "No",
+                    Width = 80,
+                    Height = 32
+                };
+                styleButton(noButton);
+                noButton.Click += (s, e) => { dialog.DialogResult = false; dialog.Close(); };
+
+                buttonPanel.Children.Add(yesButton);
+                buttonPanel.Children.Add(noButton);
+            }
+            else
+            {
+                var okButton = new Button
+                {
+                    Content = "OK",
+                    Width = 80,
+                    Height = 32
+                };
+                styleButton(okButton);
+                okButton.Click += (s, e) => { dialog.DialogResult = true; dialog.Close(); };
+                buttonPanel.Children.Add(okButton);
+            }
+
+            Grid.SetRow(buttonPanel, 1);
+            grid.Children.Add(buttonPanel);
+
+            dialog.Content = grid;
+            var result = dialog.ShowDialog();
+            return result == true ? (buttons == MessageBoxButton.YesNo ? MessageBoxResult.Yes : MessageBoxResult.OK) : MessageBoxResult.No;
+        }
+
         private void DestinationsDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             bool hasSelection = DestinationsDataGrid.SelectedItem != null;
@@ -126,7 +241,7 @@ namespace VPM.Windows
         {
             if (DestinationsDataGrid.SelectedItem is MoveToDestinationViewModel selected)
             {
-                var result = MessageBox.Show(
+                var result = ShowDarkThemedDialog(
                     $"Are you sure you want to remove the destination '{selected.Name}'?",
                     "Confirm Removal",
                     MessageBoxButton.YesNo,
@@ -181,7 +296,7 @@ namespace VPM.Windows
             var invalidDests = _destinations.Where(d => !d.IsValid()).ToList();
             if (invalidDests.Any())
             {
-                MessageBox.Show(
+                ShowDarkThemedDialog(
                     "Some destinations have invalid names or paths. Please fix them before saving.",
                     "Validation Error",
                     MessageBoxButton.OK,
@@ -198,7 +313,7 @@ namespace VPM.Windows
 
             if (duplicateNames.Any())
             {
-                MessageBox.Show(
+                ShowDarkThemedDialog(
                     $"Duplicate destination names found: {string.Join(", ", duplicateNames)}. Please use unique names.",
                     "Validation Error",
                     MessageBoxButton.OK,
@@ -216,7 +331,7 @@ namespace VPM.Windows
             }
             else
             {
-                MessageBox.Show("Error: Settings manager is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                ShowDarkThemedDialog("Error: Settings manager is not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
             
