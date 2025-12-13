@@ -857,6 +857,10 @@ namespace VPM
                     _autoInstallManager.ReloadAutoInstall();
                 }
 
+                // Sync filter manager with current UI selections before updating package list
+                // This ensures filters are preserved after hub download or other refresh operations
+                UpdateFilterManagerFromUI();
+                
                 // Update UI with real package data
                 await UpdatePackageListAsync();
                 
@@ -1122,6 +1126,10 @@ namespace VPM
                         _reactiveFilterManager.Initialize(_packageManager.PackageMetadata);
                     }
                     
+                    // Sync filter manager with current UI selections before refreshing filter lists
+                    // This ensures filter counts are calculated correctly based on active filters
+                    UpdateFilterManagerFromUI();
+                    
                     // Refresh filter lists in background to update counts
                     _ = Task.Run(() => RefreshFilterLists());
                 }
@@ -1195,6 +1203,10 @@ namespace VPM
                     scrollOffset = scrollViewer.VerticalOffset;
                 }
             }
+            
+            // Capture current sort descriptions before refresh (handles both SortingManager and DataGrid column header sorting)
+            var savedSortDescriptions = PackagesView?.SortDescriptions?.ToList() 
+                ?? new List<System.ComponentModel.SortDescription>();
 
             // ⚠️ MEMORY GUARD: Detect filter-only operations and use view filtering
             // This prevents the 500MB+ memory leak that occurred when ReplaceAll was used for filtering.
@@ -1399,10 +1411,27 @@ namespace VPM
                             _suppressSelectionEvents = true;
                             try
                             {
-                                // Reapply sorting - this internally refreshes the view
-                                // OPTIMIZATION: Removed redundant PackagesView.Refresh() call
-                                // ReapplySorting() already triggers the necessary refresh via SortDescriptions
-                                ReapplySorting();
+                                // Reapply sorting - first try SortingManager, then fall back to saved sort descriptions
+                                // This handles both button-based sorting and DataGrid column header sorting
+                                var packageState = _sortingManager?.GetSortingState("Packages");
+                                if (packageState?.CurrentSortOption is PackageSortOption)
+                                {
+                                    // SortingManager has a stored state - use it
+                                    ReapplySorting();
+                                }
+                                else if (savedSortDescriptions.Count > 0 && PackagesView != null)
+                                {
+                                    // No SortingManager state - restore the captured sort descriptions
+                                    // This preserves DataGrid column header sorting
+                                    using (PackagesView.DeferRefresh())
+                                    {
+                                        PackagesView.SortDescriptions.Clear();
+                                        foreach (var sortDesc in savedSortDescriptions)
+                                        {
+                                            PackagesView.SortDescriptions.Add(sortDesc);
+                                        }
+                                    }
+                                }
 
                                 // Restore selection after sorting is applied
                                 if (selectedPackageNames.Count > 0 && PackageDataGrid != null)

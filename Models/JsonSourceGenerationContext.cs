@@ -23,6 +23,8 @@ namespace VPM.Models
     [JsonSerializable(typeof(ShadowFavoritesData))]
     [JsonSerializable(typeof(List<PackageDownloadInfo>))]
     [JsonSerializable(typeof(PackageDownloadInfo))]
+    [JsonSerializable(typeof(MoveToDestination))]
+    [JsonSerializable(typeof(List<MoveToDestination>))]
     public partial class JsonSourceGenerationContext : JsonSerializerContext
     {
     }

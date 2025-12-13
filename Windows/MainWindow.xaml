@@ -2446,8 +2446,14 @@
                                     <MenuItem Click="OpenInExplorer_Click" Header="📁 Open in Explorer" />
                                     <MenuItem Click="CopyPackageName_Click" Header="📋 Copy Package Name" />
                                     <Separator />
+                                    <MenuItem x:Name="MoveToMenuItem" Header="📦 Move To">
+                                        <MenuItem Click="ConfigureMoveToDestinations_Click" Header="⚙️ Configure Destinations..." />
+                                    </MenuItem>
+                                    <Separator />
                                     <MenuItem Click="DiscardSelected_Click" Header="🗑️ Discard Selected" />
                                     <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                                    <Separator />
+                                    <MenuItem x:Name="RestoreOriginalMenuItem" Click="RestoreOriginal_Click" Header="🔄 Restore Original" />
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
 
@@ -2586,7 +2592,6 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Click="DiscardSelectedScenes_Click" Header="🗑️ Discard Selected" />
-                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Resources>
@@ -2870,7 +2875,6 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Click="DiscardSelectedCustomAtoms_Click" Header="🗑️ Discard Selected" />
-                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Resources>
@@ -3861,9 +3865,6 @@
                                         <MenuItem Click="ShowDependencyGraphDeps_Click" Header="📊 Show Dependency Graph" />
                                         <MenuItem Click="OpenInExplorerDeps_Click" Header="📁 Open in Explorer" />
                                         <MenuItem Click="CopyPackageNameDeps_Click" Header="📋 Copy Package Name" />
-                                        <Separator />
-                                        <MenuItem Click="DiscardSelectedDependencies_Click" Header="🗑️ Discard Selected" />
-                                        <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
                                     </ContextMenu>
                                 </DataGrid.ContextMenu>
                                 <DataGrid.Resources>

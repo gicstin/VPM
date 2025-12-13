@@ -1600,6 +1600,10 @@ namespace VPM
 
                 await Dispatcher.InvokeAsync(() =>
                 {
+                    // SELECTION PRESERVATION: Save selections before any updates
+                    var savedPackageSelections = PreserveDataGridSelections();
+                    var savedDependencySelections = PreserveDependenciesDataGridSelections();
+                    
                     // Update packages in main grid - just update the Status property
                     // PackageItem.Status setter triggers PropertyChanged which updates StatusColor binding
                     foreach (var package in Packages)
@@ -1657,6 +1661,10 @@ namespace VPM
                     // NOTE: Do NOT call SyncPackageDisplayWithFilters() here!
                     // This would remove packages that no longer match filters, causing selection loss.
                     // Users should see the status change result - they can manually refresh filters if needed.
+
+                    // SELECTION PRESERVATION: Restore selections after all updates
+                    RestoreDataGridSelections(savedPackageSelections);
+                    RestoreDependenciesDataGridSelections(savedDependencySelections);
 
                     // Update button states
                     UpdatePackageButtonBar();

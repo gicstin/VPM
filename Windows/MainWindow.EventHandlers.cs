@@ -5085,105 +5085,6 @@ namespace VPM
             }
         }
         
-        private void OpenDiscardLocation_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
-                if (string.IsNullOrEmpty(gameRoot))
-                {
-                    DarkMessageBox.Show("No game folder selected.", "Error",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-                
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                
-                // Create folder if it doesn't exist
-                if (!Directory.Exists(discardedFolder))
-                {
-                    Directory.CreateDirectory(discardedFolder);
-                }
-                
-                // Open the folder in explorer
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "explorer.exe",
-                    Arguments = $"\"{discardedFolder}\"",
-                    UseShellExecute = true
-                };
-                System.Diagnostics.Process.Start(psi);
-            }
-            catch (Exception ex)
-            {
-                DarkMessageBox.Show($"Error opening discard location: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                System.Diagnostics.Debug.WriteLine($"Error opening discard location: {ex}");
-            }
-        }
-        
-        private void PackageContextMenu_Opened(object sender, RoutedEventArgs e)
-        {
-            // Hide dependency graph and open in explorer when more than 1 package is selected
-            // Keep discard location visible for all selections
-            var selectedCount = PackageDataGrid?.SelectedItems?.Count ?? 0;
-            
-            if (sender is ContextMenu contextMenu)
-            {
-                // Get menu items from the context menu's items collection
-                MenuItem showDependencyItem = null;
-                MenuItem openInExplorerItem = null;
-                
-                foreach (var item in contextMenu.Items)
-                {
-                    if (item is MenuItem menuItem)
-                    {
-                        if (menuItem.Header?.ToString() == "📊 Show Dependency Graph")
-                            showDependencyItem = menuItem;
-                        else if (menuItem.Header?.ToString() == "📁 Open in Explorer")
-                            openInExplorerItem = menuItem;
-                    }
-                }
-                
-                if (showDependencyItem != null)
-                    showDependencyItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                
-                if (openInExplorerItem != null)
-                    openInExplorerItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-            }
-        }
-        
-        private void DependenciesContextMenu_Opened(object sender, RoutedEventArgs e)
-        {
-            // Hide dependency graph and open in explorer when more than 1 dependency is selected
-            // Keep discard location visible for all selections
-            var selectedCount = DependenciesDataGrid?.SelectedItems?.Count ?? 0;
-            
-            if (sender is ContextMenu contextMenu)
-            {
-                // Get menu items from the context menu's items collection
-                MenuItem showDependencyItem = null;
-                MenuItem openInExplorerItem = null;
-                
-                foreach (var item in contextMenu.Items)
-                {
-                    if (item is MenuItem menuItem)
-                    {
-                        if (menuItem.Header?.ToString() == "📊 Show Dependency Graph")
-                            showDependencyItem = menuItem;
-                        else if (menuItem.Header?.ToString() == "📁 Open in Explorer")
-                            openInExplorerItem = menuItem;
-                    }
-                }
-                
-                if (showDependencyItem != null)
-                    showDependencyItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                
-                if (openInExplorerItem != null)
-                    openInExplorerItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-            }
-        }
-        
         private void ShowDependencyGraphDeps_Click(object sender, RoutedEventArgs e)
         {
             var selectedDeps = DependenciesDataGrid?.SelectedItems?.Cast<DependencyItem>().ToList();
@@ -5597,183 +5498,6 @@ namespace VPM
             }
         }
         
-        private async void DiscardSelectedDependencies_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedDependencies = DependenciesDataGrid?.SelectedItems?.Cast<DependencyItem>().ToList();
-            if (selectedDependencies == null || selectedDependencies.Count == 0)
-            {
-                DarkMessageBox.Show("No dependencies selected.", "No Selection",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-            
-            try
-            {
-                // Create DiscardedPackages folder in game root
-                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
-                if (string.IsNullOrEmpty(gameRoot))
-                {
-                    DarkMessageBox.Show("No game folder selected.", "Error",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-                
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                Directory.CreateDirectory(discardedFolder);
-                
-                int successCount = 0;
-                int failureCount = 0;
-                var failedDependencies = new List<string>();
-                var processedDependencies = new HashSet<DependencyItem>();
-                
-                foreach (var depItem in selectedDependencies)
-                {
-                    try
-                    {
-                        // Strip .latest if present
-                        string depName = depItem.Name;
-                        if (depName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                        {
-                            depName = depName.Substring(0, depName.Length - 7);
-                        }
-                        
-                        // Find the package metadata by searching for matching base name with version
-                        // Keys are in format: "creator.package.version" or "creator.package.version#available" or "creator.package.version#archived"
-                        VarMetadata metadata = null;
-                        
-                        // Search for keys that start with depName followed by a dot (for version)
-                        var matchingKeys = _packageManager?.PackageMetadata?.Keys
-                            .Where(k => k.StartsWith(depName + ".", StringComparison.OrdinalIgnoreCase))
-                            .ToList() ?? new List<string>();
-                        
-                        if (matchingKeys.Count > 0)
-                        {
-                            // Get the first matching key (they should all be the same package, just different versions/variants)
-                            var key = matchingKeys.FirstOrDefault();
-                            if (key != null && _packageManager.PackageMetadata.TryGetValue(key, out metadata))
-                            {
-                                // Found it
-                            }
-                        }
-                        
-                        System.Diagnostics.Debug.WriteLine($"Discard dependency: depName={depName}, found metadata={metadata != null}, filePath={metadata?.FilePath}, exists={metadata != null && File.Exists(metadata.FilePath)}");
-                        
-                        if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
-                        {
-                            string fileName = Path.GetFileName(metadata.FilePath);
-                            string destinationPath = Path.Combine(discardedFolder, fileName);
-                            
-                            // Handle file name conflicts by appending a number
-                            int counter = 1;
-                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                            string extension = Path.GetExtension(fileName);
-                            while (File.Exists(destinationPath))
-                            {
-                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                counter++;
-                            }
-                            
-                            // Release file handles and cancel preview loading before moving
-                            try
-                            {
-                                if (_imageManager != null)
-                                {
-                                    // Cancel all pending preview operations and release file locks for this file
-                                    await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
-                                    await Task.Delay(100); // Brief delay to ensure handles are fully released
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Error releasing file locks: {ex.Message}");
-                                // Continue even if handle release fails
-                            }
-                            
-                            // Move the file with retry logic for file lock issues
-                            int moveRetries = 3;
-                            bool fileMoved = false;
-                            while (moveRetries > 0 && !fileMoved)
-                            {
-                                try
-                                {
-                                    File.Move(metadata.FilePath, destinationPath, overwrite: false);
-                                    fileMoved = true;
-                                    System.Diagnostics.Debug.WriteLine($"Successfully discarded: {depItem.Name}");
-                                    successCount++;
-                                    processedDependencies.Add(depItem);
-                                }
-                                catch (IOException) when (moveRetries > 1)
-                                {
-                                    moveRetries--;
-                                    System.Diagnostics.Debug.WriteLine($"File lock still active for {depItem.Name}, retrying... ({moveRetries} retries left)");
-                                    await Task.Delay(300); // Wait longer before retry
-                                }
-                            }
-                            
-                            if (!fileMoved)
-                            {
-                                failureCount++;
-                                failedDependencies.Add(depItem.Name);
-                            }
-                        }
-                        else if (metadata == null)
-                        {
-                            // Ignore missing dependencies - they're not installed
-                            System.Diagnostics.Debug.WriteLine($"Dependency not found (missing), will be removed from UI: {depItem.Name}");
-                            processedDependencies.Add(depItem);
-                        }
-                        else if (string.IsNullOrEmpty(metadata.FilePath))
-                        {
-                            // Metadata exists but no file path
-                            System.Diagnostics.Debug.WriteLine($"Metadata found but no file path: {depItem.Name}");
-                            processedDependencies.Add(depItem);
-                        }
-                        else
-                        {
-                            // File doesn't exist or metadata is invalid
-                            System.Diagnostics.Debug.WriteLine($"File not found on disk: {depItem.Name}, path={metadata.FilePath}");
-                            failureCount++;
-                            failedDependencies.Add(depItem.Name);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Error discarding dependency {depItem.Name}: {ex.Message}");
-                        failureCount++;
-                        failedDependencies.Add(depItem.Name);
-                    }
-                }
-                
-                // Remove processed dependencies from the UI (both successfully discarded and missing ones)
-                if (processedDependencies.Count > 0)
-                {
-                    foreach (var dep in processedDependencies)
-                    {
-                        Dependencies.Remove(dep);
-                    }
-                }
-                
-                // Show feedback based on results
-                if (successCount == 0 && failureCount == 0)
-                {
-                    // All selected dependencies were missing (not installed)
-                    DarkMessageBox.Show("All selected dependencies are missing (not installed). Nothing to discard.",
-                        "No Packages Found", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else if (failureCount > 0)
-                {
-                    DarkMessageBox.Show($"Failed to discard {failureCount} package(s):\n\n{string.Join("\n", failedDependencies)}",
-                        "Discard Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-            catch (Exception ex)
-            {
-                DarkMessageBox.Show($"Error during discard operation: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
-            }
-        }
-        
         private async void DiscardSelected_Click(object sender, RoutedEventArgs e)
         {
             var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
@@ -5909,7 +5633,778 @@ namespace VPM
                 System.Diagnostics.Debug.WriteLine($"Discard operation error: {ex}");
             }
         }
+
+        private void OpenDiscardLocation_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+                if (string.IsNullOrEmpty(gameRoot))
+                {
+                    DarkMessageBox.Show("No game folder selected.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                
+                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
+                
+                // Create folder if it doesn't exist
+                if (!Directory.Exists(discardedFolder))
+                {
+                    Directory.CreateDirectory(discardedFolder);
+                }
+                
+                // Open the folder in explorer
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{discardedFolder}\"",
+                    UseShellExecute = true
+                };
+                System.Diagnostics.Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error opening discard location: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Error opening discard location: {ex}");
+            }
+        }
         
+        #endregion
+
+        #region Restore Original Operations
+        
+        /// <summary>
+        /// Updates the Restore Original menu item header and visibility based on selected packages.
+        /// Shows count of optimized packages that have backups available in ArchivedPackages.
+        /// </summary>
+        private void UpdateRestoreOriginalMenuItem(MenuItem restoreOriginalItem)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+            {
+                restoreOriginalItem.Header = "🔄 Restore Original";
+                restoreOriginalItem.Visibility = System.Windows.Visibility.Collapsed;
+                return;
+            }
+            
+            // Count packages that are optimized AND have a backup in ArchivedPackages
+            int restorableCount = 0;
+            string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+            
+            if (!string.IsNullOrEmpty(gameRoot))
+            {
+                string archivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+                
+                foreach (var packageItem in selectedPackages)
+                {
+                    if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
+                    {
+                        if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            // Check if backup exists in ArchivedPackages
+                            string fileName = Path.GetFileName(metadata.FilePath);
+                            string backupPath = Path.Combine(archivedFolder, fileName);
+                            
+                            if (File.Exists(backupPath))
+                            {
+                                restorableCount++;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (restorableCount > 0)
+            {
+                restoreOriginalItem.Header = $"🔄 Restore Original ({restorableCount})";
+                restoreOriginalItem.Visibility = System.Windows.Visibility.Visible;
+                restoreOriginalItem.IsEnabled = true;
+            }
+            else
+            {
+                restoreOriginalItem.Header = "🔄 Restore Original";
+                restoreOriginalItem.Visibility = System.Windows.Visibility.Collapsed;
+            }
+        }
+        
+        /// <summary>
+        /// Restores original packages from ArchivedPackages backup location.
+        /// Deletes the optimized version and moves the original back to its active location.
+        /// </summary>
+        private async void RestoreOriginal_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+                return;
+            
+            string gameRoot = _settingsManager?.Settings?.SelectedFolder;
+            if (string.IsNullOrEmpty(gameRoot))
+            {
+                DarkMessageBox.Show("No game folder selected.", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+            
+            string archivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+            
+            // Build list of restorable packages
+            var restorablePackages = new List<(PackageItem Package, VarMetadata Metadata, string BackupPath)>();
+            
+            foreach (var packageItem in selectedPackages)
+            {
+                if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
+                {
+                    if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
+                    {
+                        string fileName = Path.GetFileName(metadata.FilePath);
+                        string backupPath = Path.Combine(archivedFolder, fileName);
+                        
+                        if (File.Exists(backupPath))
+                        {
+                            restorablePackages.Add((packageItem, metadata, backupPath));
+                        }
+                    }
+                }
+            }
+            
+            if (restorablePackages.Count == 0)
+            {
+                DarkMessageBox.Show("No restorable packages found. Packages must be optimized and have a backup in ArchivedPackages.", 
+                    "No Backups Found", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            
+            // Build list of package names for display
+            var packageNames = restorablePackages.Select(p => p.Package.DisplayName).ToList();
+            string packageListDisplay;
+            if (packageNames.Count <= 10)
+            {
+                packageListDisplay = string.Join("\n", packageNames.Select(n => $"  • {n}"));
+            }
+            else
+            {
+                packageListDisplay = string.Join("\n", packageNames.Take(10).Select(n => $"  • {n}")) + 
+                    $"\n  ... and {packageNames.Count - 10} more";
+            }
+            
+            // Confirm with user
+            var confirmResult = DarkMessageBox.Show(
+                $"This will restore {restorablePackages.Count} package(s) to their original state:\n\n" +
+                $"{packageListDisplay}\n\n" +
+                "The optimized version will be deleted and the original will be moved from ArchivedPackages.\n\n" +
+                "Do you want to continue?",
+                "Confirm Restore",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+            
+            // Clear preview images before file operations (same pattern as other file operations)
+            PreviewImages.Clear();
+            
+            // Release file locks for all packages being restored
+            var packagesToRelease = restorablePackages.Select(p => p.Package.Name).ToList();
+            await _imageManager.ReleasePackagesAsync(packagesToRelease);
+            
+            // Small delay to ensure handles are released
+            await Task.Delay(200);
+            
+            int successCount = 0;
+            int failureCount = 0;
+            var failedPackages = new List<string>();
+            var errors = new List<string>();
+            
+            foreach (var (packageItem, metadata, backupPath) in restorablePackages)
+            {
+                try
+                {
+                    string optimizedPath = metadata.FilePath;
+                    string targetPath = optimizedPath; // Restore to same location as optimized version
+                    
+                    // Delete the optimized version with retry logic
+                    int deleteRetries = 3;
+                    bool fileDeleted = false;
+                    while (deleteRetries > 0 && !fileDeleted)
+                    {
+                        try
+                        {
+                            if (File.Exists(optimizedPath))
+                            {
+                                File.Delete(optimizedPath);
+                            }
+                            fileDeleted = true;
+                        }
+                        catch (IOException) when (deleteRetries > 1)
+                        {
+                            deleteRetries--;
+                            System.Diagnostics.Debug.WriteLine($"File lock still active for {packageItem.DisplayName}, retrying delete... ({deleteRetries} retries left)");
+                            await Task.Delay(300);
+                        }
+                    }
+                    
+                    if (!fileDeleted)
+                    {
+                        failureCount++;
+                        failedPackages.Add(packageItem.DisplayName);
+                        errors.Add($"{packageItem.DisplayName}: Could not delete optimized file (file in use)");
+                        continue;
+                    }
+                    
+                    // Move the backup to the target location with retry logic
+                    int moveRetries = 3;
+                    bool fileMoved = false;
+                    while (moveRetries > 0 && !fileMoved)
+                    {
+                        try
+                        {
+                            File.Move(backupPath, targetPath, overwrite: false);
+                            fileMoved = true;
+                        }
+                        catch (IOException) when (moveRetries > 1)
+                        {
+                            moveRetries--;
+                            System.Diagnostics.Debug.WriteLine($"File lock still active for backup {packageItem.DisplayName}, retrying move... ({moveRetries} retries left)");
+                            await Task.Delay(300);
+                        }
+                    }
+                    
+                    if (!fileMoved)
+                    {
+                        failureCount++;
+                        failedPackages.Add(packageItem.DisplayName);
+                        errors.Add($"{packageItem.DisplayName}: Could not move backup file");
+                        continue;
+                    }
+                    
+                    // Update metadata to reflect restored state
+                    metadata.IsOptimized = false;
+                    metadata.HasTextureOptimization = false;
+                    metadata.HasHairOptimization = false;
+                    metadata.HasMirrorOptimization = false;
+                    metadata.HasJsonMinification = false;
+                    
+                    // Update the UI item
+                    packageItem.IsOptimized = false;
+                    
+                    // Update file size from restored file
+                    try
+                    {
+                        var fileInfo = new FileInfo(targetPath);
+                        metadata.FileSize = fileInfo.Length;
+                        packageItem.FileSize = fileInfo.Length;
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore file size update errors
+                    }
+                    
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error restoring package {packageItem.DisplayName}: {ex.Message}");
+                    failureCount++;
+                    failedPackages.Add(packageItem.DisplayName);
+                    errors.Add($"{packageItem.DisplayName}: {ex.Message}");
+                }
+            }
+            
+            // Refresh package status index and UI to update file sizes and details
+            // Force refresh package status index to reflect file system changes
+            _packageFileManager?.RefreshPackageStatusIndex(force: true);
+            
+            // Refresh the data grid view to immediately show updated file sizes
+            if (PackagesView != null)
+            {
+                PackagesView.Refresh();
+            }
+            
+            // Refresh the details panel for currently selected packages to show updated file size
+            await RefreshCurrentlyDisplayedImagesAsync();
+            
+            // Only show error message if there were failures
+            if (failureCount > 0)
+            {
+                DarkMessageBox.Show($"Failed to restore {failureCount} package(s):\n\n{string.Join("\n", errors.Take(5))}" +
+                    (errors.Count > 5 ? $"\n... and {errors.Count - 5} more" : ""),
+                    "Restore Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        
+        #endregion
+
+        #region Move To Operations
+
+        private void ConfigureMoveToDestinations_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var window = new Windows.MoveToDestinationsWindow(_settingsManager)
+                {
+                    Owner = this
+                };
+                window.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Error opening destinations configuration: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"ConfigureMoveToDestinations error: {ex}");
+            }
+        }
+
+        private void PackageContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            // Hide dependency graph and open in explorer when more than 1 package is selected
+            // Keep discard location visible for all selections
+            var selectedCount = PackageDataGrid?.SelectedItems?.Count ?? 0;
+            
+            if (sender is ContextMenu contextMenu)
+            {
+                // Get menu items from the context menu's items collection
+                MenuItem showDependencyItem = null;
+                MenuItem openInExplorerItem = null;
+                MenuItem moveToMenuItem = null;
+                MenuItem restoreOriginalItem = null;
+                
+                foreach (var item in contextMenu.Items)
+                {
+                    if (item is MenuItem menuItem)
+                    {
+                        var header = menuItem.Header?.ToString() ?? "";
+                        if (header == "📊 Show Dependency Graph")
+                            showDependencyItem = menuItem;
+                        else if (header == "📁 Open in Explorer")
+                            openInExplorerItem = menuItem;
+                        else if (header == "📦 Move To")
+                            moveToMenuItem = menuItem;
+                        else if (header.StartsWith("🔄 Restore Original"))
+                            restoreOriginalItem = menuItem;
+                    }
+                }
+                
+                if (showDependencyItem != null)
+                    showDependencyItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                
+                if (openInExplorerItem != null)
+                    openInExplorerItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+                // Populate Move To submenu with configured destinations
+                if (moveToMenuItem != null)
+                {
+                    PopulateMoveToMenu(moveToMenuItem, isPackageMenu: true);
+                }
+                
+                // Update Restore Original menu item based on selected packages
+                if (restoreOriginalItem != null)
+                {
+                    UpdateRestoreOriginalMenuItem(restoreOriginalItem);
+                }
+            }
+        }
+
+        private void DependenciesContextMenu_Opened(object sender, RoutedEventArgs e)
+        {
+            // Hide dependency graph and open in explorer when more than 1 dependency is selected
+            var selectedCount = DependenciesDataGrid?.SelectedItems?.Count ?? 0;
+            
+            if (sender is ContextMenu contextMenu)
+            {
+                // Get menu items from the context menu's items collection
+                MenuItem showDependencyItem = null;
+                MenuItem openInExplorerItem = null;
+                
+                foreach (var item in contextMenu.Items)
+                {
+                    if (item is MenuItem menuItem)
+                    {
+                        if (menuItem.Header?.ToString() == "📊 Show Dependency Graph")
+                            showDependencyItem = menuItem;
+                        else if (menuItem.Header?.ToString() == "📁 Open in Explorer")
+                            openInExplorerItem = menuItem;
+                    }
+                }
+                
+                if (showDependencyItem != null)
+                    showDependencyItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                
+                if (openInExplorerItem != null)
+                    openInExplorerItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+            }
+        }
+
+        private void PopulateMoveToMenu(MenuItem moveToMenuItem, bool isPackageMenu)
+        {
+            // Unsubscribe from old destination menu items to prevent memory leaks
+            // but preserve the Configure item
+            var configureItem = moveToMenuItem.Items.Cast<object>()
+                .OfType<MenuItem>()
+                .FirstOrDefault(m => m.Header?.ToString()?.Contains("Configure") == true);
+
+            foreach (var item in moveToMenuItem.Items.Cast<object>().OfType<MenuItem>().ToList())
+            {
+                if (item != configureItem)
+                {
+                    item.Click -= MoveToDestination_Click;
+                }
+            }
+
+            // Clear existing items except the Configure option
+            moveToMenuItem.Items.Clear();
+
+            // Get enabled destinations from settings
+            var destinations = _settingsManager?.Settings?.MoveToDestinations?
+                .Where(d => d.IsEnabled && d.IsValid())
+                .OrderBy(d => d.SortOrder)
+                .ToList() ?? new List<Models.MoveToDestination>();
+
+            // Add destination menu items
+            foreach (var dest in destinations)
+            {
+                var menuItem = new MenuItem
+                {
+                    Header = dest.Name,
+                    ToolTip = dest.Path,
+                    Tag = new MoveToMenuItemTag { Destination = dest, IsPackageMenu = isPackageMenu }
+                };
+                menuItem.Click += MoveToDestination_Click;
+                moveToMenuItem.Items.Add(menuItem);
+            }
+
+            // Add separator if there are destinations
+            if (destinations.Count > 0)
+            {
+                moveToMenuItem.Items.Add(new Separator());
+            }
+
+            // Re-add the configure option
+            if (configureItem != null)
+            {
+                moveToMenuItem.Items.Add(configureItem);
+            }
+            else
+            {
+                var newConfigItem = new MenuItem { Header = "⚙️ Configure Destinations..." };
+                newConfigItem.Click += ConfigureMoveToDestinations_Click;
+                moveToMenuItem.Items.Add(newConfigItem);
+            }
+        }
+
+        private class MoveToMenuItemTag
+        {
+            public Models.MoveToDestination Destination { get; set; }
+            public bool IsPackageMenu { get; set; }
+        }
+
+        private async void MoveToDestination_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem || menuItem.Tag is not MoveToMenuItemTag tag)
+                return;
+
+            var destination = tag.Destination;
+            if (destination == null || string.IsNullOrEmpty(destination.Path))
+            {
+                DarkMessageBox.Show("Invalid destination configuration.", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            // Validate destination path exists or can be created
+            try
+            {
+                if (!Directory.Exists(destination.Path))
+                {
+                    var result = DarkMessageBox.Show(
+                        $"The destination folder does not exist:\n{destination.Path}\n\nWould you like to create it?",
+                        "Create Folder?",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result != MessageBoxResult.Yes)
+                        return;
+
+                    Directory.CreateDirectory(destination.Path);
+                }
+
+                // Verify write permissions
+                var testFile = Path.Combine(destination.Path, ".vpm_write_test");
+                try
+                {
+                    File.WriteAllText(testFile, "test");
+                    File.Delete(testFile);
+                }
+                catch (Exception ex)
+                {
+                    DarkMessageBox.Show($"Destination folder is not writable: {ex.Message}", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                DarkMessageBox.Show($"Cannot access destination folder: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            await MoveSelectedPackagesToDestinationAsync(destination);
+        }
+
+        private async Task MoveSelectedPackagesToDestinationAsync(Models.MoveToDestination destination)
+        {
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count == 0)
+            {
+                DarkMessageBox.Show("No packages selected.", "Move To",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Build summary of packages to move
+            var packageSummary = string.Join("\n", selectedPackages.Take(10).Select(p => $"  • {p.DisplayName}"));
+            if (selectedPackages.Count > 10)
+                packageSummary += $"\n  ... and {selectedPackages.Count - 10} more";
+
+            // Confirm the operation
+            var confirmResult = DarkMessageBox.Show(
+                $"Move to: {destination.Name}\n{destination.Path}\n\n{packageSummary}",
+                "Confirm Move",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+
+            await MovePackagesAsync(selectedPackages, destination.Path);
+        }
+
+
+        private async Task MovePackagesAsync(List<PackageItem> packages, string destinationPath)
+        {
+            int successCount = 0;
+            int failureCount = 0;
+            var failedPackages = new List<string>();
+            var movedPackages = new List<PackageItem>();
+
+            SetStatus($"Moving {packages.Count} package(s) to {destinationPath}...");
+
+            try
+            {
+                // Cancel any pending image loading operations to free up file handles
+                _imageLoadingCts?.Cancel();
+                _imageLoadingCts = new System.Threading.CancellationTokenSource();
+
+                // Clear image preview grid before processing
+                PreviewImages.Clear();
+
+                // Get package names/paths to release
+                var packagesToRelease = packages
+                    .Select(p => Path.GetFileNameWithoutExtension(
+                        _packageManager?.PackageMetadata?.TryGetValue(p.MetadataKey, out var m) == true ? m?.FilePath : p.Name))
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList();
+
+                // Release file locks before operation
+                await _imageManager.ReleasePackagesAsync(packagesToRelease);
+
+                foreach (var packageItem in packages)
+                {
+                    try
+                    {
+                        if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) != true ||
+                            metadata == null || string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            failureCount++;
+                            failedPackages.Add($"{packageItem.DisplayName}: Package metadata not found");
+                            continue;
+                        }
+
+                        if (!File.Exists(metadata.FilePath))
+                        {
+                            failureCount++;
+                            failedPackages.Add($"{packageItem.DisplayName}: Source file not found");
+                            continue;
+                        }
+
+                        string fileName = Path.GetFileName(metadata.FilePath);
+                        string destFilePath = Path.Combine(destinationPath, fileName);
+
+                        // Handle file name conflicts
+                        if (File.Exists(destFilePath))
+                        {
+                            int counter = 1;
+                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            while (File.Exists(destFilePath))
+                            {
+                                destFilePath = Path.Combine(destinationPath, $"{baseFileName}_{counter}{extension}");
+                                counter++;
+                            }
+                        }
+
+                        // Release file handles before moving
+                        try
+                        {
+                            if (_imageManager != null)
+                                await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
+                            await Task.Delay(50);
+                        }
+                        catch { }
+
+                        // Perform non-blocking copy then delete
+                        bool copySucceeded = false;
+                        await Task.Run(async () =>
+                        {
+                            // Copy file to destination
+                            using (var sourceStream = new FileStream(metadata.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                            using (var destStream = new FileStream(destFilePath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.SequentialScan))
+                            {
+                                await sourceStream.CopyToAsync(destStream);
+                            }
+
+                            // Verify copy succeeded
+                            var sourceInfo = new FileInfo(metadata.FilePath);
+                            var destInfo = new FileInfo(destFilePath);
+                            
+                            if (destInfo.Length != sourceInfo.Length)
+                            {
+                                throw new IOException("File copy verification failed - size mismatch");
+                            }
+
+                            copySucceeded = true;
+
+                            // Delete source file with retry logic
+                            int deleteRetries = 3;
+                            bool deleteSucceeded = false;
+                            while (deleteRetries > 0)
+                            {
+                                try
+                                {
+                                    File.Delete(metadata.FilePath);
+                                    deleteSucceeded = true;
+                                    break;
+                                }
+                                catch (IOException) when (deleteRetries > 1)
+                                {
+                                    deleteRetries--;
+                                    await Task.Delay(200);
+                                }
+                            }
+
+                            if (!deleteSucceeded)
+                            {
+                                throw new IOException("Failed to delete source file after 3 retries");
+                            }
+                        });
+
+                        if (copySucceeded)
+                        {
+                            successCount++;
+                            movedPackages.Add(packageItem);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failureCount++;
+                        failedPackages.Add($"{packageItem.DisplayName}: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine($"Error moving package {packageItem.DisplayName}: {ex}");
+                    }
+                }
+
+                // Mark moved packages as missing and remove from UI
+                foreach (var package in movedPackages)
+                {
+                    // Mark as missing since package is no longer in game folders
+                    package.Status = "Missing";
+                    
+                    Packages.Remove(package);
+                    
+                    // Also remove from package metadata
+                    if (_packageManager?.PackageMetadata != null && _packageManager.PackageMetadata.ContainsKey(package.MetadataKey))
+                    {
+                        _packageManager.PackageMetadata.Remove(package.MetadataKey);
+                    }
+                }
+
+                // Remove moved packages from dependency/dependent tables without full refresh
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        // Get all tabs to find and selectively remove items from dependency/dependent tables
+                        var tabControl = this.FindName("TabControl") as TabControl;
+                        if (tabControl != null)
+                        {
+                            foreach (TabItem tab in tabControl.Items)
+                            {
+                                if (tab.Content is Grid tabGrid)
+                                {
+                                    // Look for DataGrids in the tab
+                                    foreach (var dataGrid in tabGrid.Children.OfType<DataGrid>())
+                                    {
+                                        // Get the ItemsSource and remove moved packages
+                                        if (dataGrid.ItemsSource is System.Collections.ObjectModel.ObservableCollection<DependencyItemModel> depCollection)
+                                        {
+                                            // Remove dependencies that belong to moved packages
+                                            var itemsToRemove = depCollection
+                                                .Where(d => movedPackages.Any(p => 
+                                                    d.PackageName?.Equals(p.DisplayName, StringComparison.OrdinalIgnoreCase) == true))
+                                                .ToList();
+                                            
+                                            foreach (var item in itemsToRemove)
+                                            {
+                                                depCollection.Remove(item);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Remove from dependencies grid if visible
+                        if (DependenciesDataGrid?.ItemsSource is System.Collections.ObjectModel.ObservableCollection<DependencyItemModel> depsCollection)
+                        {
+                            var depsToRemove = depsCollection
+                                .Where(d => movedPackages.Any(p => 
+                                    d.PackageName?.Equals(p.DisplayName, StringComparison.OrdinalIgnoreCase) == true))
+                                .ToList();
+                            
+                            foreach (var item in depsToRemove)
+                            {
+                                depsCollection.Remove(item);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error removing moved packages from tables: {ex}");
+                    }
+                });
+
+                // Only show message if there are errors
+                if (failureCount > 0)
+                {
+                    var errorMessage = $"Failed to move {failureCount} package(s):\n" +
+                        string.Join("\n", failedPackages.Take(10));
+                    if (failedPackages.Count > 10)
+                    {
+                        errorMessage += $"\n... and {failedPackages.Count - 10} more";
+                    }
+                    DarkMessageBox.Show(errorMessage, "Move Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"Error during move operation: {ex.Message}");
+                DarkMessageBox.Show($"Error during move operation: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Diagnostics.Debug.WriteLine($"Move operation error: {ex}");
+            }
+        }
+
         #endregion
     }
 }

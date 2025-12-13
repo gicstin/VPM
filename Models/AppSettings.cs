@@ -122,6 +122,9 @@ namespace VPM.Models
         // Sorting Settings
         private Dictionary<string, SerializableSortingState> _sortingStates = new Dictionary<string, SerializableSortingState>();
 
+        // Move To Destination Paths - list of named paths for quick package moving
+        private List<MoveToDestination> _moveToDestinations = new List<MoveToDestination>();
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         // First Launch Settings Properties
@@ -627,6 +630,13 @@ namespace VPM.Models
         {
             get => _sortingStates;
             set => SetProperty(ref _sortingStates, value ?? new Dictionary<string, SerializableSortingState>());
+        }
+
+        // Move To Destination Paths Properties
+        public List<MoveToDestination> MoveToDestinations
+        {
+            get => _moveToDestinations;
+            set => SetProperty(ref _moveToDestinations, value ?? new List<MoveToDestination>());
         }
 
         /// <summary>
