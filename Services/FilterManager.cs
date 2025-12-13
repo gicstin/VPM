@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using VPM.Models;
@@ -261,11 +262,19 @@ namespace VPM.Services
             }
 
             // 3. Status filter (HashSet lookup O(1))
-            if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
-                return false;
+            // IMPORTANT: External packages have Status set to their destination name (e.g., "Backup"),
+            // not standard statuses like "Loaded"/"Available". Skip status filtering for external packages
+            // unless a destination filter is explicitly selected.
+            bool isExternalPackage = metadata.IsExternal && !string.IsNullOrEmpty(metadata.ExternalDestinationName);
             
-            if (state.SelectedStatuses.Count > 0 && !state.SelectedStatuses.Contains(metadata.Status))
-                return false;
+            if (!isExternalPackage)
+            {
+                if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
+                    return false;
+                
+                if (state.SelectedStatuses.Count > 0 && !state.SelectedStatuses.Contains(metadata.Status))
+                    return false;
+            }
 
             // 4. Optimization status filter
             if (state.SelectedOptimizationStatuses.Count > 0)
@@ -429,7 +438,16 @@ namespace VPM.Services
             {
                 if (!metadata.IsExternal || string.IsNullOrEmpty(metadata.ExternalDestinationName))
                     return false;
-                if (!state.SelectedDestinations.Contains(metadata.ExternalDestinationName))
+                
+                // Build the full destination key including subfolder if present
+                string packageDestKey = metadata.ExternalDestinationName;
+                if (!string.IsNullOrEmpty(metadata.ExternalDestinationSubfolder))
+                {
+                    packageDestKey = $"{metadata.ExternalDestinationName}/{metadata.ExternalDestinationSubfolder}";
+                }
+                
+                // Check if this package's destination matches any selected destination
+                if (!state.SelectedDestinations.Contains(packageDestKey))
                     return false;
             }
 
@@ -1173,7 +1191,9 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Get external destination counts from packages
+        /// Get external destination counts from packages.
+        /// If a package has a subfolder, it's counted under "DestinationName/Subfolder".
+        /// If a package is in the root of the destination, it's counted under "DestinationName".
         /// </summary>
         public Dictionary<string, int> GetDestinationCounts(Dictionary<string, VarMetadata> packages)
         {
@@ -1184,10 +1204,17 @@ namespace VPM.Services
                 if (!package.IsExternal || string.IsNullOrEmpty(package.ExternalDestinationName))
                     continue;
                 
-                if (counts.TryGetValue(package.ExternalDestinationName, out var count))
-                    counts[package.ExternalDestinationName] = count + 1;
+                // Create a key that includes the subfolder if present
+                string key = package.ExternalDestinationName;
+                if (!string.IsNullOrEmpty(package.ExternalDestinationSubfolder))
+                {
+                    key = $"{package.ExternalDestinationName}/{package.ExternalDestinationSubfolder}";
+                }
+                
+                if (counts.TryGetValue(key, out var count))
+                    counts[key] = count + 1;
                 else
-                    counts[package.ExternalDestinationName] = 1;
+                    counts[key] = 1;
             }
             
             return counts;

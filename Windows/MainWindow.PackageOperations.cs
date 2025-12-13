@@ -70,7 +70,10 @@ namespace VPM
 
                 try
                 {
-                    // Use enhanced batch operation with progress reporting
+                    // Separate external packages from regular available packages
+                    var externalPackages = selectedPackages.Where(p => p.IsExternal).ToList();
+                    var regularPackages = selectedPackages.Where(p => !p.IsExternal && p.Status == "Available").ToList();
+                    
                     var packageNames = selectedPackages.Select(p => p.Name).ToList();
                     
                     // Cancel any pending image loading operations to free up file handles
@@ -83,15 +86,45 @@ namespace VPM
                     // Release file locks before operation to prevent conflicts with image grid
                     await _imageManager.ReleasePackagesAsync(packageNames);
 
-                    var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
-                    {
-                        // Update status with progress
-                        SetStatus(p.total > 1
-                            ? $"Loading packages... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
-                            : $"Loading {p.currentPackage}...");
-                    });
+                    var results = new List<(string packageName, bool success, string error)>();
+                    var totalCount = externalPackages.Count + regularPackages.Count;
+                    var completed = 0;
 
-                    var results = await _packageFileManager.LoadPackagesAsync(packageNames, progress);
+                    // Load external packages first using their file paths from metadata
+                    foreach (var package in externalPackages)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading packages... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {package.Name}...");
+
+                        // Get the file path from metadata
+                        if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) && 
+                            !string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(package.Name, metadata.FilePath);
+                            results.Add((package.Name, success, error));
+                        }
+                        else
+                        {
+                            results.Add((package.Name, false, "External package file path not found in metadata"));
+                        }
+                    }
+
+                    // Load regular available packages
+                    if (regularPackages.Count > 0)
+                    {
+                        var regularNames = regularPackages.Select(p => p.Name).ToList();
+                        var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
+                        {
+                            SetStatus(totalCount > 1
+                                ? $"Loading packages... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
+                                : $"Loading {p.currentPackage}...");
+                        });
+
+                        var regularResults = await _packageFileManager.LoadPackagesAsync(regularNames, progress);
+                        results.AddRange(regularResults);
+                    }
 
                     // Clear metadata cache to ensure new paths are picked up
                     ClearPackageMetadataCache();
@@ -109,6 +142,9 @@ namespace VPM
                     {
                         if (packageLookup.TryGetValue(packageName, out var package) && success)
                         {
+                            // Clear external destination properties so status color reflects "Loaded"
+                            package.ExternalDestinationName = "";
+                            package.ExternalDestinationColorHex = "";
                             package.Status = "Loaded";
                             statusUpdates.Add((packageName, "Loaded", package.StatusColor));
                         }
@@ -202,12 +238,12 @@ namespace VPM
                 if (!EnsureVamFolderSelected()) return;
 
                 var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>()
-                    .Where(p => p.Status == "Available")
+                    .Where(p => p.Status == "Available" || p.IsExternal)
                     .ToList();
 
                 if (selectedPackages.Count == 0)
                 {
-                    MessageBox.Show("No available packages selected.", "No Packages",
+                    MessageBox.Show("No available or external packages selected.", "No Packages",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -246,11 +282,29 @@ namespace VPM
                     }
                 }
 
+                // Find available dependencies (local)
                 var availableDependencies = allDependencies
+                    .Where(d => !packagesToLoad.Contains(d))
                     .Where(d => _packageFileManager?.GetPackageStatus(d) == "Available")
                     .ToList();
 
-                var totalToLoad = packagesToLoad.Count + availableDependencies.Count;
+                // Find external dependencies (in external destinations)
+                var externalDependencies = new List<(string name, VarMetadata metadata)>();
+                foreach (var depName in allDependencies.Where(d => !packagesToLoad.Contains(d) && !availableDependencies.Contains(d)))
+                {
+                    // Find metadata for this dependency - get highest version if multiple exist
+                    var depMetadata = _packageManager?.PackageMetadata?.Values
+                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
+                        .OrderByDescending(p => p.Version)
+                        .FirstOrDefault();
+                    
+                    if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
+                    {
+                        externalDependencies.Add((depName, depMetadata));
+                    }
+                }
+
+                var totalToLoad = packagesToLoad.Count + availableDependencies.Count + externalDependencies.Count;
 
                 if (totalToLoad == 0)
                 {
@@ -262,20 +316,21 @@ namespace VPM
                 if (totalToLoad >= 50)
                 {
                     var displayPackages = packagesToLoad.Take(3).ToList();
-                    var displayDeps = availableDependencies.Take(3).ToList();
+                    var allDeps = availableDependencies.Concat(externalDependencies.Select(e => e.name)).ToList();
+                    var displayDeps = allDeps.Take(3).ToList();
                     var displayText = "Packages:\n" + string.Join("\n", displayPackages);
                     if (packagesToLoad.Count > 3)
                         displayText += $"\n... and {packagesToLoad.Count - 3} more";
                     
-                    if (availableDependencies.Count > 0)
+                    if (allDeps.Count > 0)
                     {
                         displayText += "\n\nDependencies:\n" + string.Join("\n", displayDeps);
-                        if (availableDependencies.Count > 3)
-                            displayText += $"\n... and {availableDependencies.Count - 3} more";
+                        if (allDeps.Count > 3)
+                            displayText += $"\n... and {allDeps.Count - 3} more";
                     }
 
                     var result = CustomMessageBox.Show(
-                        $"Load {packagesToLoad.Count} packages + {availableDependencies.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
+                        $"Load {packagesToLoad.Count} packages + {allDeps.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
                         "Confirm Load Operation",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question);
@@ -289,8 +344,13 @@ namespace VPM
 
                 try
                 {
+                    // Separate external packages from regular available packages
+                    var externalPackages = selectedPackages.Where(p => p.IsExternal).ToList();
+                    var regularPackages = selectedPackages.Where(p => !p.IsExternal && p.Status == "Available").ToList();
+                    
                     var allPackagesToLoad = new List<string>(packagesToLoad);
                     allPackagesToLoad.AddRange(availableDependencies);
+                    allPackagesToLoad.AddRange(externalDependencies.Select(e => e.name));
                     
                     // Cancel any pending image loading operations to free up file handles
                     _imageLoadingCts?.Cancel();
@@ -302,14 +362,56 @@ namespace VPM
                     // Release file locks before operation to prevent conflicts with image grid
                     await _imageManager.ReleasePackagesAsync(allPackagesToLoad);
 
-                    var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
-                    {
-                        SetStatus(p.total > 1
-                            ? $"Loading packages and dependencies... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
-                            : $"Loading {p.currentPackage}...");
-                    });
+                    var results = new List<(string packageName, bool success, string error)>();
+                    var totalCount = externalPackages.Count + regularPackages.Count + availableDependencies.Count + externalDependencies.Count;
+                    var completed = 0;
 
-                    var results = await _packageFileManager.LoadPackagesAsync(allPackagesToLoad, progress);
+                    // Load external packages first using their file paths from metadata
+                    foreach (var package in externalPackages)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {package.Name}...");
+
+                        if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) && 
+                            !string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(package.Name, metadata.FilePath);
+                            results.Add((package.Name, success, error));
+                        }
+                        else
+                        {
+                            results.Add((package.Name, false, "External package file path not found in metadata"));
+                        }
+                    }
+
+                    // Load external dependencies using their file paths from metadata
+                    foreach (var (depName, depMetadata) in externalDependencies)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {depName}...");
+
+                        var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(depName, depMetadata.FilePath);
+                        results.Add((depName, success, error));
+                    }
+
+                    // Load regular available packages and dependencies
+                    var regularAndDeps = regularPackages.Select(p => p.Name).Concat(availableDependencies).ToList();
+                    if (regularAndDeps.Count > 0)
+                    {
+                        var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
+                        {
+                            SetStatus(totalCount > 1
+                                ? $"Loading packages and dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
+                                : $"Loading {p.currentPackage}...");
+                        });
+
+                        var regularResults = await _packageFileManager.LoadPackagesAsync(regularAndDeps, progress);
+                        results.AddRange(regularResults);
+                    }
 
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
@@ -323,6 +425,9 @@ namespace VPM
                     {
                         if (packageLookup.TryGetValue(packageName, out var package) && success)
                         {
+                            // Clear external destination properties so status color reflects "Loaded"
+                            package.ExternalDestinationName = "";
+                            package.ExternalDestinationColorHex = "";
                             package.Status = "Loaded";
                             statusUpdates.Add((packageName, "Loaded", package.StatusColor));
                         }
@@ -570,13 +675,14 @@ namespace VPM
             {
                 if (!EnsureVamFolderSelected()) return;
 
+                // Include both Available and external dependencies (hex color status indicates external)
                 var selectedDependencies = DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
-                    .Where(d => d.Status == "Available")
+                    .Where(d => d.Status == "Available" || (d.Status?.StartsWith("#") == true))
                     .ToList();
 
                 if (selectedDependencies.Count == 0)
                 {
-                    MessageBox.Show("No available dependencies selected.", "No Dependencies",
+                    MessageBox.Show("No available or external dependencies selected.", "No Dependencies",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -606,7 +712,10 @@ namespace VPM
 
                 try
                 {
-                    // Use enhanced batch operation with progress reporting
+                    // Separate external dependencies (hex color status) from regular available dependencies
+                    var externalDeps = selectedDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
+                    var regularDeps = selectedDependencies.Where(d => d.Status == "Available").ToList();
+                    
                     var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
                     
                     // Cancel any pending image loading operations to free up file handles
@@ -618,16 +727,51 @@ namespace VPM
                     
                     // Release file locks before operation to prevent conflicts with image grid
                     await _imageManager.ReleasePackagesAsync(dependencyNames);
-                    
-                    var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
-                    {
-                        // Update status with progress
-                        SetStatus(p.total > 1
-                            ? $"Loading dependencies... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
-                            : $"Loading {p.currentPackage}...");
-                    });
 
-                    var results = await _packageFileManager.LoadPackagesAsync(dependencyNames, progress);
+                    var results = new List<(string packageName, bool success, string error)>();
+                    var totalCount = externalDeps.Count + regularDeps.Count;
+                    var completed = 0;
+
+                    // Load external dependencies first using their file paths from metadata
+                    foreach (var dep in externalDeps)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {dep.Name}...");
+
+                        // Find metadata for this dependency by matching Creator.PackageName
+                        // Get the highest version if multiple versions exist
+                        var depMetadata = _packageManager?.PackageMetadata?.Values
+                            .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(dep.Name, StringComparison.OrdinalIgnoreCase))
+                            .OrderByDescending(p => p.Version)
+                            .FirstOrDefault();
+
+                        if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
+                        {
+                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(dep.Name, depMetadata.FilePath);
+                            results.Add((dep.Name, success, error));
+                        }
+                        else
+                        {
+                            results.Add((dep.Name, false, "External dependency file path not found in metadata"));
+                        }
+                    }
+
+                    // Load regular available dependencies
+                    if (regularDeps.Count > 0)
+                    {
+                        var regularNames = regularDeps.Select(d => d.Name).ToList();
+                        var progress = new Progress<(int completed, int total, string currentPackage)>(p =>
+                        {
+                            SetStatus(totalCount > 1
+                                ? $"Loading dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
+                                : $"Loading {p.currentPackage}...");
+                        });
+
+                        var regularResults = await _packageFileManager.LoadPackagesAsync(regularNames, progress);
+                        results.AddRange(regularResults);
+                    }
 
                     // Update dependency statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
@@ -1228,9 +1372,10 @@ namespace VPM
                 // Analyze selected package statuses
                 var hasLoaded = selectedPackages.Any(p => p.Status == "Loaded");
                 var hasAvailable = selectedPackages.Any(p => p.Status == "Available");
+                var hasExternal = selectedPackages.Any(p => p.IsExternal);
 
                 // If no actionable packages (e.g., all Archive status), hide Load/Unload but keep Archive button visible
-                if (!hasLoaded && !hasAvailable)
+                if (!hasLoaded && !hasAvailable && !hasExternal)
                 {
                     PackageButtonGrid.Visibility = Visibility.Collapsed;
                     LoadAllDependenciesButton.Visibility = Visibility.Collapsed;
@@ -1240,14 +1385,14 @@ namespace VPM
                 // Show button grid
                 PackageButtonGrid.Visibility = Visibility.Visible;
 
-                // Show Load button if any packages are Available
-                LoadPackagesButton.Visibility = hasAvailable ? Visibility.Visible : Visibility.Collapsed;
+                // Show Load button if any packages are Available or External
+                LoadPackagesButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Show Unload button if any packages are Loaded
                 UnloadPackagesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
 
-                // Show Load +Deps button if any packages are Available
-                LoadPackagesWithDepsButton.Visibility = hasAvailable ? Visibility.Visible : Visibility.Collapsed;
+                // Show Load +Deps button if any packages are Available or External
+                LoadPackagesWithDepsButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Check if all selected packages have the same status (for keyboard shortcut hint)
                 var allStatuses = selectedPackages.Select(p => p.Status).Distinct().ToList();
@@ -1255,25 +1400,26 @@ namespace VPM
 
                 // Update button text and tooltip to reflect count
                 // Show keyboard shortcut hint consistently when all items have same status
-                if (hasAvailable)
+                if (hasAvailable || hasExternal)
                 {
-                    var availableCount = selectedPackages.Count(p => p.Status == "Available");
+                    // Count both available and external packages for load operations
+                    var loadableCount = selectedPackages.Count(p => p.Status == "Available" || p.IsExternal);
 
                     // Show keyboard shortcut if all selected items have same status
                     if (allSameStatus && allStatuses[0] == "Available")
                     {
-                        LoadPackagesButton.Content = availableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({availableCount}) (Ctrl+Space)";
-                        LoadPackagesButton.ToolTip = availableCount == 1 ? "Load selected package" : $"Load {availableCount} selected packages";
-                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📥 Load +Deps (Shift+Space)" : $"📥 Load +Deps ({availableCount}) (Shift+Space)";
-                        LoadPackagesWithDepsButton.ToolTip = availableCount == 1 ? "Load selected package and dependencies" : $"Load {availableCount} selected packages and their dependencies";
+                        LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
+                        LoadPackagesButton.ToolTip = loadableCount == 1 ? "Load selected package" : $"Load {loadableCount} selected packages";
+                        LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps (Shift+Space)" : $"📥 Load +Deps ({loadableCount}) (Shift+Space)";
+                        LoadPackagesWithDepsButton.ToolTip = loadableCount == 1 ? "Load selected package and dependencies" : $"Load {loadableCount} selected packages and their dependencies";
                     }
                     else
                     {
-                        // Mixed statuses - no keyboard shortcut
-                        LoadPackagesButton.Content = availableCount == 1 ? "📥 Load" : $"📥 Load ({availableCount})";
-                        LoadPackagesButton.ToolTip = $"Load {availableCount} available packages";
-                        LoadPackagesWithDepsButton.Content = availableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({availableCount})";
-                        LoadPackagesWithDepsButton.ToolTip = $"Load {availableCount} available packages and their dependencies";
+                        // Mixed statuses or external packages - no keyboard shortcut
+                        LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load" : $"📥 Load ({loadableCount})";
+                        LoadPackagesButton.ToolTip = $"Load {loadableCount} available/external packages";
+                        LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({loadableCount})";
+                        LoadPackagesWithDepsButton.ToolTip = $"Load {loadableCount} available/external packages and their dependencies";
                     }
                 }
 
@@ -1383,6 +1529,7 @@ namespace VPM
                 // Analyze selected dependency statuses
                 var hasLoaded = selectedDependencies.Any(d => d.Status == "Loaded");
                 var hasAvailable = selectedDependencies.Any(d => d.Status == "Available");
+                var hasExternal = selectedDependencies.Any(d => d.Status?.StartsWith("#") == true); // Hex color = external
                 var hasMissing = selectedDependencies.Any(d => d.Status == "Missing");
                 var hasUnknown = selectedDependencies.Any(d => d.Status == "Unknown");
                 var hasOptimizable = selectedDependencies.Any(d => d.Status != "Missing" && d.Status != "Unknown");
@@ -1391,8 +1538,8 @@ namespace VPM
                 var allStatuses = selectedDependencies.Select(d => d.Status).Distinct().ToList();
                 bool allSameStatus = allStatuses.Count == 1;
 
-                // Show Load button if any dependencies are Available
-                LoadDependenciesButton.Visibility = hasAvailable ? Visibility.Visible : Visibility.Collapsed;
+                // Show Load button if any dependencies are Available or External
+                LoadDependenciesButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Show Unload button if any dependencies are Loaded
                 UnloadDependenciesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
@@ -1401,18 +1548,19 @@ namespace VPM
                 OptimizeDependenciesButton.Visibility = hasOptimizable ? Visibility.Visible : Visibility.Collapsed;
 
                 // Update button text to reflect count and keyboard shortcuts
-                if (hasAvailable)
+                if (hasAvailable || hasExternal)
                 {
-                    var availableCount = selectedDependencies.Count(d => d.Status == "Available");
+                    // Count both available and external dependencies for load operations
+                    var loadableCount = selectedDependencies.Count(d => d.Status == "Available" || (d.Status?.StartsWith("#") == true));
 
                     // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
                     if (allSameStatus && allStatuses[0] == "Available" && _dependenciesDataGridHasFocus)
                     {
-                        LoadDependenciesButton.Content = availableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({availableCount}) (Ctrl+Space)";
+                        LoadDependenciesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
                     }
                     else
                     {
-                        LoadDependenciesButton.Content = availableCount == 1 ? "📥 Load" : $"📥 Load ({availableCount})";
+                        LoadDependenciesButton.Content = loadableCount == 1 ? "📥 Load" : $"📥 Load ({loadableCount})";
                     }
                 }
 

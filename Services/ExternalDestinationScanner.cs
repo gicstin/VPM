@@ -58,6 +58,34 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Checks if a destination path is nested inside another configured destination.
+        /// Returns true if this destination is a subdirectory of another configured destination.
+        /// </summary>
+        public bool IsNestedInConfiguredPath(MoveToDestination destination, List<MoveToDestination> allDestinations)
+        {
+            if (destination == null || !destination.IsValid())
+                return false;
+
+            var destPath = Path.GetFullPath(destination.Path).TrimEnd(Path.DirectorySeparatorChar);
+
+            foreach (var other in allDestinations)
+            {
+                if (other == null || !other.IsValid() || other.Name.Equals(destination.Name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var otherPath = Path.GetFullPath(other.Path).TrimEnd(Path.DirectorySeparatorChar);
+                
+                // Check if destPath is inside otherPath
+                if (destPath.StartsWith(otherPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Scans all configured external destinations for VAR files
         /// </summary>
         /// <returns>Dictionary mapping destination name to list of VAR file paths</returns>

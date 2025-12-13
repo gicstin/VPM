@@ -158,7 +158,8 @@ namespace VPM.Services
             _varScanner = new OptimizedVarScanner();
             _previewImageIndex = previewImageIndex;
 
-            _varPattern = new Regex(@"^([^.]+)\.(.+?)\.(\d+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            // Match any filename ending in .var - we'll parse the content more flexibly
+            _varPattern = new Regex(@"^(.+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
             
             // Don't load binary cache here - it will be loaded asynchronously
             // to avoid blocking the UI thread during startup
@@ -604,6 +605,7 @@ namespace VPM.Services
 
                 // Will try to get actual creation date from preview images inside the .var
                 DateTime? previewImageDate = null;
+                DateTime? latestArchiveFileDate = null;
 
             // Use SharpCompress for reliable reading
             using var archive = SharpCompressHelper.OpenForRead(varPath);
@@ -627,6 +629,17 @@ namespace VPM.Services
                     {
                         metaEntry = entry;
                         // Don't break - we need to scan all entries
+                    }
+                    
+                    // Track latest file date in archive (for non-optimized packages)
+                    // Skip directories and meta.json itself
+                    if (!entry.Key.EndsWith("/") && !entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var entryDate = entry.LastModifiedTime ?? DateTime.Now;
+                        if (!latestArchiveFileDate.HasValue || entryDate > latestArchiveFileDate.Value)
+                        {
+                            latestArchiveFileDate = entryDate;
+                        }
                     }
                     
                     // Build comprehensive content list from ALL relevant files
@@ -714,15 +727,25 @@ namespace VPM.Services
                 
                 // Date priority:
                 // 1. vpmOriginalDate (if package was optimized) - already set in ParseMetaJsonContent
-                // 2. meta.json LastWriteTime (if meta.json exists)
-                // 3. File system modified date (fallback)
+                // 2. Latest file date inside archive (if package is NOT optimized) - use most recent file in archive
+                // 3. meta.json LastWriteTime (if meta.json exists and package is optimized)
+                // 4. File system modified date (fallback)
                 
-                // Only override if we have meta.json date AND no vpmOriginalDate was set
-                if (previewImageDate.HasValue && metadata.ModifiedDate == fileInfo.LastWriteTime)
+                // Only override if we have no vpmOriginalDate was set (package not optimized)
+                if (metadata.ModifiedDate == fileInfo.LastWriteTime)
                 {
-                    // vpmOriginalDate wasn't set, so use meta.json date
-                    metadata.ModifiedDate = previewImageDate.Value;
-                    metadata.CreatedDate = previewImageDate.Value;
+                    // Package is not optimized (no vpmOriginalDate), use latest file date from archive
+                    if (latestArchiveFileDate.HasValue)
+                    {
+                        metadata.ModifiedDate = latestArchiveFileDate.Value;
+                        metadata.CreatedDate = latestArchiveFileDate.Value;
+                    }
+                    else if (previewImageDate.HasValue)
+                    {
+                        // Fallback to meta.json date if no other files in archive
+                        metadata.ModifiedDate = previewImageDate.Value;
+                        metadata.CreatedDate = previewImageDate.Value;
+                    }
                 }
                 
                 // Validate metadata for integrity issues (lightweight check using already-parsed data)
@@ -1184,7 +1207,6 @@ namespace VPM.Services
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Error scanning external destination {dest.Name}: {ex.Message}");
                         lock (external)
                         {
                             external[dest.Name] = new List<string>();
@@ -1430,6 +1452,8 @@ namespace VPM.Services
         /// <summary>
         /// Updates package mapping including external destination packages.
         /// External packages are marked with their destination name and color.
+        /// Smart detection: if a destination path is nested inside another configured destination,
+        /// it's excluded from being indexed as a separate destination.
         /// </summary>
         public void UpdatePackageMappingFast(
             List<string> installedFiles, 
@@ -1450,6 +1474,32 @@ namespace VPM.Services
                 d => d.Name, 
                 d => d, 
                 StringComparer.OrdinalIgnoreCase);
+            
+            // Identify nested destinations to exclude from separate indexing
+            var nestedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var dest in externalDestinations)
+            {
+                if (dest == null || !dest.IsValid())
+                    continue;
+                
+                var destPath = Path.GetFullPath(dest.Path).TrimEnd(Path.DirectorySeparatorChar);
+                
+                // Check if this destination is nested inside another configured destination
+                foreach (var other in externalDestinations)
+                {
+                    if (other == null || !other.IsValid() || other.Name.Equals(dest.Name, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    
+                    var otherPath = Path.GetFullPath(other.Path).TrimEnd(Path.DirectorySeparatorChar);
+                    
+                    // If destPath is inside otherPath, mark it as nested
+                    if (destPath.StartsWith(otherPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    {
+                        nestedDestinations.Add(dest.Name);
+                        break;
+                    }
+                }
+            }
 
             foreach (var kvp in externalFiles)
             {
@@ -1458,6 +1508,7 @@ namespace VPM.Services
 
                 if (!destLookup.TryGetValue(destName, out var destination))
                     continue;
+                
 
                 foreach (var filePath in files)
                 {
@@ -1470,30 +1521,163 @@ namespace VPM.Services
                         var fileName = Path.GetFileNameWithoutExtension(filePath);
                         var match = _varPattern.Match(Path.GetFileName(filePath));
                         if (!match.Success)
+                        {
                             continue;
+                        }
 
-                        var creator = match.Groups[1].Value;
-                        var packageName = match.Groups[2].Value;
-                        var version = int.TryParse(match.Groups[3].Value, out var v) ? v : 0;
+                        // Parse flexible filename format: creator.packagename.version[.anything]
+                        // Examples: 0perfectlookalike.AmandS1_0c.1_1, 0perfectlookalike.AbellD1_1b.1
+                        var fileNameWithoutExt = match.Groups[1].Value;
+                        var parts = fileNameWithoutExt.Split('.');
+                        
+                        if (parts.Length < 3)
+                        {
+                            continue;
+                        }
+                        
+                        var creator = parts[0];
+                        var version = 0;
+                        string packageName = "";
+                        
+                        // Last part should be version (or version with suffix like "1_1")
+                        var lastPart = parts[parts.Length - 1];
+                        if (int.TryParse(lastPart.Split('_')[0], out var v))
+                        {
+                            version = v;
+                            // Everything between creator and version is packageName
+                            packageName = string.Join(".", parts.Skip(1).Take(parts.Length - 2));
+                        }
+                        else
+                        {
+                            // Fallback: assume last part is packageName, second-to-last is version
+                            if (int.TryParse(parts[parts.Length - 2].Split('_')[0], out v))
+                            {
+                                version = v;
+                                packageName = string.Join(".", parts.Skip(1).Take(parts.Length - 2));
+                            }
+                            else
+                            {
+                                continue;
+                            }
+                        }
+                        
                         var packageKey = $"{creator}.{packageName}.{version}";
+
+                        // Calculate subfolder path within the destination
+                        var destPath = Path.GetFullPath(destination.Path).TrimEnd(Path.DirectorySeparatorChar);
+                        var fullFilePath = Path.GetFullPath(filePath);
+                        string subfolder = "";
+                        
+                        if (fullFilePath.StartsWith(destPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                        {
+                            var relativePath = fullFilePath.Substring(destPath.Length + 1);
+                            var fileDir = Path.GetDirectoryName(relativePath);
+                            subfolder = string.IsNullOrEmpty(fileDir) ? "" : fileDir.Replace(Path.DirectorySeparatorChar, '/');
+                        }
+                        
+                        // SMART DETECTION: If this destination is nested inside another configured destination,
+                        // store it under the parent destination with the subfolder path
+                        string finalDestName = destName;
+                        string finalSubfolder = subfolder;
+                        string originalDestName = "";
+                        string originalDestColor = "";
+                        
+                        if (nestedDestinations.Contains(destName))
+                        {
+                            // Preserve the original nested destination's name and color
+                            originalDestName = destName;
+                            originalDestColor = destination.StatusColor ?? "#808080";
+                            
+                            // Find the parent destination
+                            foreach (var other in externalDestinations)
+                            {
+                                if (other == null || !other.IsValid() || other.Name.Equals(destName, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+                                
+                                var otherPath = Path.GetFullPath(other.Path).TrimEnd(Path.DirectorySeparatorChar);
+                                
+                                // If destPath is inside otherPath, this is the parent
+                                if (destPath.StartsWith(otherPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Store under parent destination with full subfolder path
+                                    finalDestName = other.Name;
+                                    
+                                    // Calculate subfolder relative to parent
+                                    var relativeToParent = destPath.Substring(otherPath.Length + 1);
+                                    if (!string.IsNullOrEmpty(subfolder))
+                                    {
+                                        finalSubfolder = $"{relativeToParent}/{subfolder}";
+                                    }
+                                    else
+                                    {
+                                        finalSubfolder = relativeToParent;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
 
                         // Check if this package already exists (e.g., in AddonPackages or AllPackages)
                         if (PackageMetadata.ContainsKey(packageKey))
                         {
-                            // Package exists elsewhere - mark as duplicate location
                             var existingMeta = PackageMetadata[packageKey];
-                            existingMeta.DuplicateLocationCount++;
-                            continue;
+                            
+                            // Skip if it's an archived package - archived packages are backups and should not affect external packages
+                            if (string.Equals(existingMeta.VariantRole, "Archived", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Don't skip - continue to add as new external package below
+                            }
+                            else
+                            {
+                                // Package exists in active location (AddonPackages, AllPackages, etc.)
+                                // Check if the existing package is in a standard VAM folder or external location
+                                var existingPath = existingMeta.FilePath ?? "";
+                                var existingPathNormalized = Path.GetFullPath(existingPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
+                                
+                                // Check if it's in any of the configured external destinations
+                                bool isInExternalDest = false;
+                                foreach (var otherDest in externalDestinations)
+                                {
+                                    if (otherDest == null || !otherDest.IsValid())
+                                        continue;
+                                    var otherDestPath = Path.GetFullPath(otherDest.Path).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
+                                    if (existingPathNormalized.StartsWith(otherDestPath + Path.DirectorySeparatorChar))
+                                    {
+                                        isInExternalDest = true;
+                                        break;
+                                    }
+                                }
+                                
+                                // Only mark as external if it's NOT in any standard VAM folder and IS in an external destination
+                                if (isInExternalDest && !existingMeta.IsExternal)
+                                {
+                                    // Package exists in an external location, update it
+                                    existingMeta.DuplicateLocationCount++;
+                                    
+                                    // Mark this existing package as external
+                                    existingMeta.ExternalDestinationName = finalDestName;
+                                    existingMeta.ExternalDestinationColorHex = destination.StatusColor ?? "#808080";
+                                    existingMeta.ExternalDestinationSubfolder = finalSubfolder;
+                                    existingMeta.OriginalExternalDestinationName = originalDestName;
+                                    existingMeta.OriginalExternalDestinationColorHex = originalDestColor;
+                                }
+                                continue;
+                            }
                         }
 
                         // Parse or get from cache
                         var (metadata, metaHash) = ParseVarMetadata(filePath);
-                        metadata.Status = destName; // Status is the destination name
                         metadata.VariantRole = "External";
                         metadata.FilePath = filePath;
                         metadata.FileSize = fileInfo.Length;
-                        metadata.ExternalDestinationName = destName;
                         metadata.ExternalDestinationColorHex = destination.StatusColor ?? "#808080";
+                        
+                        metadata.Status = finalDestName; // Status is the destination name
+                        metadata.ExternalDestinationName = finalDestName;
+                        metadata.ExternalDestinationSubfolder = finalSubfolder;
+                        metadata.OriginalExternalDestinationName = originalDestName;
+                        metadata.OriginalExternalDestinationColorHex = originalDestColor;
+                        
                         
                         if (!metadata.IsOptimized)
                         {
@@ -1504,7 +1688,6 @@ namespace VPM.Services
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Error processing external package {filePath}: {ex.Message}");
                     }
                 }
             }
@@ -1573,6 +1756,7 @@ namespace VPM.Services
         /// Detects missing dependencies for all packages.
         /// A dependency is considered missing if no package with that name (or any version for .latest/.min) exists.
         /// Handles .latest, .min[NUMBER], and exact version references.
+        /// Includes external packages in the dependency resolution.
         /// </summary>
         public void DetectMissingDependencies()
         {

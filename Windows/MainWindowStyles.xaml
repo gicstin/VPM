@@ -262,7 +262,6 @@
                         <TextBlock
                             Margin="6,0,0,0"
                             Text="{Binding}"
-                            TextTrimming="CharacterEllipsis"
                             TextWrapping="Wrap" />
                     </Border>
                 </ControlTemplate>

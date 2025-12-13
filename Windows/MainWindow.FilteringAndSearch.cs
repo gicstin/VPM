@@ -34,6 +34,13 @@ namespace VPM
                     return;
                 }
 
+                // CRITICAL FIX: Skip ApplyFilters if we just completed a full refresh
+                // This prevents view-based filtering from removing external packages that were just loaded
+                if (_isLoadingPackages)
+                {
+                    return;
+                }
+
                 // Update FilterManager properties with current UI selections
                 UpdateFilterManagerFromUI();
                 
@@ -51,7 +58,7 @@ namespace VPM
 
                     // Update filter manager again after cascade filtering has restored selections
                     // This ensures the restored selections are properly captured
-                    UpdateFilterManagerFromUI();
+                    UpdateFilterManagerFromUI(applyFilters: false);
                 }
                 else
                 {
@@ -141,7 +148,7 @@ namespace VPM
             }
         }
 
-        private void UpdateFilterManagerFromUI()
+        private void UpdateFilterManagerFromUI(bool applyFilters = true)
         {
             try
             {
@@ -158,6 +165,7 @@ namespace VPM
                 _filterManager.SelectedSubfolders.Clear();
                 _filterManager.SelectedDamagedFilter = null;
                 
+                
                 // Update status filters (includes regular status, optimization status, version status, and favorites)
                 _filterManager.FilterDuplicates = false;
                 _filterManager.FilterNoDependents = false;
@@ -167,9 +175,13 @@ namespace VPM
                     var seenStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var item in StatusFilterList.SelectedItems)
                     {
-                        var status = ExtractFilterValue(GetListBoxItemText(item));
+                        var itemText = GetListBoxItemText(item);
+                        var status = ExtractFilterValue(itemText);
+                        
                         if (string.IsNullOrEmpty(status) || seenStatuses.Contains(status))
+                        {
                             continue;
+                        }
 
                         // Route status to appropriate collection based on type
                         if (status.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) || 
@@ -207,6 +219,9 @@ namespace VPM
                             seenStatuses.Add(status);
                         }
                     }
+                }
+                else
+                {
                 }
 
                 // Update simple filter collections using helper
@@ -969,6 +984,21 @@ namespace VPM
                         StatusFilterList.SelectedItems.Add(autoInstallText);
                     }
                 }
+                
+                // Add external destination counts
+                var destCounts = _filterManager.GetDestinationCounts(_packageManager.PackageMetadata);
+                
+                foreach (var dest in destCounts.OrderBy(s => s.Key))
+                {
+                    var displayText = $"{dest.Key} ({dest.Value:N0})";
+                    StatusFilterList.Items.Add(displayText);
+                    
+                    // Restore selection if this destination was previously selected
+                    if (selectedStatuses.Contains(dest.Key))
+                    {
+                        StatusFilterList.SelectedItems.Add(displayText);
+                    }
+                }
             }
             finally
             {
@@ -1273,9 +1303,7 @@ namespace VPM
                 PopulateFileSizeFilterList();
                 
                 // Populate subfolders filter list
-                System.Diagnostics.Debug.WriteLine("[REFRESH_FILTERS] About to call PopulateSubfoldersFilterList");
                 PopulateSubfoldersFilterList();
-                System.Diagnostics.Debug.WriteLine("[REFRESH_FILTERS] PopulateSubfoldersFilterList completed");
                 
                 // Populate destinations filter list
                 PopulateDestinationsFilterList();
@@ -1288,7 +1316,6 @@ namespace VPM
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ERROR] Exception in RefreshFilterLists: {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -1298,38 +1325,113 @@ namespace VPM
 
             try
             {
-                StatusFilterList.Items.Clear();
+                // Store selected status names before clearing
+                var selectedStatuses = new List<string>();
                 
-                // Add regular status counts
-                var statusCounts = _filterManager.GetStatusCounts(_packageManager.PackageMetadata);
-                
-                foreach (var status in statusCounts.OrderBy(s => s.Key))
+                foreach (var item in StatusFilterList.SelectedItems)
                 {
-                    StatusFilterList.Items.Add($"{status.Key} ({status.Value})");
+                    string itemText = item?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(itemText))
+                    {
+                        // Extract status name without count and normalize
+                        var statusName = itemText.Split('(')[0].Trim();
+                        if (statusName.Equals("Duplicates", StringComparison.OrdinalIgnoreCase))
+                        {
+                            statusName = "Duplicate";
+                        }
+                        selectedStatuses.Add(statusName);
+                    }
                 }
                 
-                // Add optimization status counts
-                var optCounts = _filterManager.GetOptimizationStatusCounts(_packageManager.PackageMetadata);
                 
-                foreach (var opt in optCounts.OrderBy(s => s.Key))
+                _suppressSelectionEvents = true;
+                try
                 {
-                    StatusFilterList.Items.Add($"{opt.Key} ({opt.Value:N0})");
+                    StatusFilterList.Items.Clear();
+                    
+                    // Add regular status counts
+                    var statusCounts = _filterManager.GetStatusCounts(_packageManager.PackageMetadata);
+                    
+                    foreach (var status in statusCounts.OrderBy(s => s.Key))
+                    {
+                        var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ? "Duplicates" : status.Key;
+                        var displayText = $"{displayName} ({status.Value})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        // Restore selection if this status was previously selected
+                        if (selectedStatuses.Contains(status.Key))
+                        {
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
+                    // Add optimization status counts
+                    var optCounts = _filterManager.GetOptimizationStatusCounts(_packageManager.PackageMetadata);
+                    
+                    foreach (var opt in optCounts.OrderBy(s => s.Key))
+                    {
+                        var displayText = $"{opt.Key} ({opt.Value:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        // Restore selection if this optimization status was previously selected
+                        if (selectedStatuses.Contains(opt.Key))
+                        {
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
+                    // Add version status counts
+                    var versionCounts = _filterManager.GetVersionStatusCounts(_packageManager.PackageMetadata);
+                    
+                    foreach (var ver in versionCounts.OrderBy(s => s.Key))
+                    {
+                        var displayText = $"{ver.Key} ({ver.Value:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        // Restore selection if this version status was previously selected
+                        if (selectedStatuses.Contains(ver.Key))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring version selection: '{displayText}'");
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
+                    // Add dependency status counts (No Dependents / No Dependencies)
+                    var depCounts = _filterManager.GetDependencyStatusCounts(_packageManager.PackageMetadata);
+                    
+                    foreach (var dep in depCounts.OrderBy(s => s.Key))
+                    {
+                        var displayText = $"{dep.Key} ({dep.Value:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        // Restore selection if this dependency status was previously selected
+                        if (selectedStatuses.Contains(dep.Key))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring dependency selection: '{displayText}'");
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
+                    // Add external destination counts
+                    var destCounts = _filterManager.GetDestinationCounts(_packageManager.PackageMetadata);
+                    
+                    foreach (var dest in destCounts.OrderBy(s => s.Key))
+                    {
+                        var displayText = $"{dest.Key} ({dest.Value:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        // Restore selection if this destination was previously selected
+                        if (selectedStatuses.Contains(dest.Key))
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring destination selection: '{displayText}'");
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
                 }
-                
-                // Add version status counts
-                var versionCounts = _filterManager.GetVersionStatusCounts(_packageManager.PackageMetadata);
-                
-                foreach (var ver in versionCounts.OrderBy(s => s.Key))
+                finally
                 {
-                    StatusFilterList.Items.Add($"{ver.Key} ({ver.Value:N0})");
-                }
-                
-                // Add dependency status counts (No Dependents / No Dependencies)
-                var depCounts = _filterManager.GetDependencyStatusCounts(_packageManager.PackageMetadata);
-                
-                foreach (var dep in depCounts.OrderBy(s => s.Key))
-                {
-                    StatusFilterList.Items.Add($"{dep.Key} ({dep.Value:N0})");
+                    _suppressSelectionEvents = false;
+                    System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Completed - Final selected items count: {StatusFilterList.SelectedItems.Count}");
                 }
             }
             catch (Exception)

@@ -354,6 +354,11 @@ namespace VPM.Services
                     
                     archivedPath = archiveFilePath;
                     
+                    // Capture original file dates before copying
+                    var sourceFileInfo = new FileInfo(sourceVarPath);
+                    var originalCreationTime = sourceFileInfo.CreationTime;
+                    var originalLastWriteTime = sourceFileInfo.LastWriteTime;
+                    
                     // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
                     // File.Move can fail even with write lock if any stale handle exists
                     for (int moveAttempt = 1; moveAttempt <= 10; moveAttempt++)
@@ -361,6 +366,18 @@ namespace VPM.Services
                         try
                         {
                             File.Copy(sourceVarPath, archivedPath, overwrite: true);
+                            
+                            // Restore original file dates on the archived copy
+                            try
+                            {
+                                File.SetCreationTime(archivedPath, originalCreationTime);
+                                File.SetLastWriteTime(archivedPath, originalLastWriteTime);
+                            }
+                            catch
+                            {
+                                // If we can't set dates, continue anyway - the copy succeeded
+                            }
+                            
                             File.Delete(sourceVarPath);
                             break;
                         }

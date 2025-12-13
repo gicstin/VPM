@@ -128,6 +128,9 @@ namespace VPM.Models
         // External destination tracking
         public string ExternalDestinationName { get; set; } = "";  // Name of the external destination (e.g., "Backup")
         public string ExternalDestinationColorHex { get; set; } = "";  // Color hex for the external destination
+        public string ExternalDestinationSubfolder { get; set; } = "";  // Subfolder within destination (e.g., "Backup/Archive")
+        public string OriginalExternalDestinationName { get; set; } = "";  // Original destination name if remapped (for nested destinations)
+        public string OriginalExternalDestinationColorHex { get; set; } = "";  // Original destination color if remapped (for nested destinations)
         public bool IsExternal => !string.IsNullOrEmpty(ExternalDestinationName);
 
         // Content tags extracted from .vam files (clothing and hair)

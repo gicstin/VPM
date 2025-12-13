@@ -42,6 +42,7 @@ namespace VPM.Models
         private int _missingDependencyCount = 0;
         private string _externalDestinationName = "";
         private string _externalDestinationColorHex = "";
+        private string _originalExternalDestinationColorHex = "";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -323,6 +324,18 @@ namespace VPM.Models
             }
         }
 
+        public string OriginalExternalDestinationColorHex
+        {
+            get => _originalExternalDestinationColorHex ?? "";
+            set
+            {
+                if (SetProperty(ref _originalExternalDestinationColorHex, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(StatusColor));
+                }
+            }
+        }
+
         public bool IsExternal => !string.IsNullOrEmpty(_externalDestinationName);
 
         // Display properties for the modern UI
@@ -410,16 +423,24 @@ namespace VPM.Models
                 }
 
                 // Use external destination color if this is an external package
-                if (IsExternal && !string.IsNullOrEmpty(_externalDestinationColorHex))
+                if (IsExternal)
                 {
-                    try
+                    // Prefer original destination color if available (for nested destinations)
+                    string colorToUse = !string.IsNullOrEmpty(_originalExternalDestinationColorHex) 
+                        ? _originalExternalDestinationColorHex 
+                        : _externalDestinationColorHex;
+                    
+                    if (!string.IsNullOrEmpty(colorToUse))
                     {
-                        var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(_externalDestinationColorHex);
-                        return color;
-                    }
-                    catch
-                    {
-                        return System.Windows.Media.Color.FromRgb(128, 128, 128); // Gray fallback
+                        try
+                        {
+                            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(colorToUse);
+                            return color;
+                        }
+                        catch
+                        {
+                            return System.Windows.Media.Color.FromRgb(128, 128, 128); // Gray fallback
+                        }
                     }
                 }
                 
@@ -599,6 +620,21 @@ namespace VPM.Models
         {
             get
             {
+                // Check if Status is a hex color string (starts with #)
+                if (!string.IsNullOrEmpty(Status) && Status.StartsWith("#"))
+                {
+                    try
+                    {
+                        // Parse hex color string to Color
+                        return (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(Status);
+                    }
+                    catch
+                    {
+                        // Fallback to gray if hex parsing fails
+                        return System.Windows.Media.Color.FromRgb(158, 158, 158);
+                    }
+                }
+                
                 var color = Status switch
                 {
                     "Loaded" => System.Windows.Media.Color.FromRgb(76, 175, 80),     // Green

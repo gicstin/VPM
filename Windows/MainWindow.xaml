@@ -3918,6 +3918,7 @@
                                 GridLinesVisibility="Horizontal"
                                 HeadersVisibility="None"
                                 IsReadOnly="True"
+                                MouseDoubleClick="DependenciesDataGrid_MouseDoubleClick"
                                 RowHeaderWidth="0"
                                 RowHeight="24"
                                 RowStyle="{StaticResource DependencyDataGridRowStyle}"

@@ -647,6 +647,11 @@ namespace VPM.Services
             if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourcePath);
             FileAccessController.Instance.InvalidateFile(sourcePath);
             
+            // Capture original file dates before copying
+            var sourceFileInfo = new FileInfo(sourcePath);
+            var originalCreationTime = sourceFileInfo.CreationTime;
+            var originalLastWriteTime = sourceFileInfo.LastWriteTime;
+            
             // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
             // Step 1: Copy the file with retries
             for (int copyAttempt = 1; copyAttempt <= maxRetries; copyAttempt++)
@@ -669,6 +674,17 @@ namespace VPM.Services
                 {
                     return (false, $"Failed to copy file after {maxRetries} attempts: {ex.Message}");
                 }
+            }
+            
+            // Restore original file dates on the destination
+            try
+            {
+                File.SetCreationTime(destinationPath, originalCreationTime);
+                File.SetLastWriteTime(destinationPath, originalLastWriteTime);
+            }
+            catch
+            {
+                // If we can't set dates, continue anyway - the copy succeeded
             }
             
             // Step 2: Delete the source file with retries
@@ -858,6 +874,108 @@ namespace VPM.Services
 
                     return (false, errorMsg);
                 }
+            finally
+            {
+                _fileLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Loads a package from an external path by copying it to AddonPackages.
+        /// Used for external destination packages that need to be moved to the game folder.
+        /// </summary>
+        public async Task<(bool success, string error)> LoadPackageFromExternalPathAsync(string packageName, string externalFilePath)
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(PackageFileManager));
+
+            if (string.IsNullOrEmpty(externalFilePath) || !File.Exists(externalFilePath))
+            {
+                return (false, $"External file not found: {externalFilePath}");
+            }
+
+            var operationKey = $"load_external_{packageName}";
+
+            // Check for recent duplicate operations
+            if (WasRecentlyPerformed(operationKey, TimeSpan.FromSeconds(1)))
+            {
+                return (false, "Operation was recently performed, please wait before retrying");
+            }
+
+            // Fire operation started event
+            OperationStarted?.Invoke(this, new PackageOperationEventArgs
+            {
+                PackageName = packageName,
+                Operation = "Load"
+            });
+
+            await _fileLock.WaitAsync();
+            try
+            {
+                RecordOperation(operationKey);
+
+                // Destination is directly in AddonPackages
+                var fileName = Path.GetFileName(externalFilePath);
+                var destinationFile = Path.Combine(_addonPackagesFolder, fileName);
+
+                // Check if already loaded
+                if (File.Exists(destinationFile))
+                {
+                    OperationCompleted?.Invoke(this, new PackageOperationEventArgs
+                    {
+                        PackageName = packageName,
+                        Operation = "Load",
+                        Success = true,
+                        ErrorMessage = ""
+                    });
+                    return (true, "");
+                }
+
+                // First ensure any open file handles are closed
+                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(externalFilePath);
+
+                // Move the file from external location to AddonPackages
+                var (success, error) = await SafeMoveFileAsync(externalFilePath, destinationFile, 5, true);
+
+                if (success)
+                {
+                    _successfulOperations++;
+
+                    // Update status index - package is now loaded
+                    lock (_statusIndexLock)
+                    {
+                        UpdatePackageStatusInIndex(packageName, "Loaded");
+                    }
+
+                    // Rebuild image index for this package to show previews
+                    await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
+
+                    InvalidatePackageIndex();
+                }
+
+                OperationCompleted?.Invoke(this, new PackageOperationEventArgs
+                {
+                    PackageName = packageName,
+                    Operation = "Load",
+                    Success = success,
+                    ErrorMessage = error
+                });
+
+                return (success, error);
+            }
+            catch (Exception ex)
+            {
+                var errorMsg = $"Unexpected error loading external package: {ex.Message}";
+                OperationCompleted?.Invoke(this, new PackageOperationEventArgs
+                {
+                    PackageName = packageName,
+                    Operation = "Load",
+                    Success = false,
+                    ErrorMessage = errorMsg
+                });
+
+                return (false, errorMsg);
+            }
             finally
             {
                 _fileLock.Release();

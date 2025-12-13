@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -34,6 +35,7 @@ namespace VPM
         // Using ConcurrentDictionary for thread-safe parallel access
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, PackageItem> _packageItemCache = new(StringComparer.OrdinalIgnoreCase);
         private int _packageItemCacheVersion = -1;
+        private string _cachedDestinationNamesHash = "";  // Hash of destination names to detect renames
         
         // MEMORY FIX: Cancellation token for filter operations to prevent accumulating tasks
         private System.Threading.CancellationTokenSource _filterCts;
@@ -432,14 +434,14 @@ namespace VPM
                 if (DateFilterList != null && DateFilterToggleButton != null)
                 {
                     DateFilterList.Visibility = settings.DateFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                    DateFilterToggleButton.Content = "👁";
+                    DateFilterToggleButton.Content = "➖";
                 }
                 
                 // Status Filter
                 if (StatusFilterList != null && StatusFilterToggleButton != null)
                 {
                     StatusFilterList.Visibility = settings.StatusFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
-                    StatusFilterToggleButton.Content = "👁";
+                    StatusFilterToggleButton.Content = "➕";
                 }
                 
                 // Content Types Filter
@@ -730,8 +732,7 @@ namespace VPM
                             // Look for the toggle button specifically (contains eye emoji or is a toggle button)
                             string buttonContent = button.Content?.ToString() ?? "";
                             // Check for eye emoji in various forms, or check if it's a toggle button by looking at the button name
-                            if (buttonContent.Contains("👁") || 
-                                buttonContent.Contains("👁️") || 
+                            if (buttonContent.Contains("➖") || 
                                 button.Name?.Contains("Toggle") == true)
                             {
                                 return tag;
@@ -915,7 +916,7 @@ namespace VPM
             finally
             {
                 // Re-enable Hub buttons after loading completes
-                _isLoadingPackages = false;
+                // NOTE: _isLoadingPackages is now set to false in UpdatePackageListAsync after packages are loaded
                 EnableHubButtons();
                 
                 // Start monitoring for incremental changes after initial load
@@ -928,6 +929,11 @@ namespace VPM
 
         /// <summary>
         /// Performs an incremental refresh - only updates changed packages instead of full rescan
+        /// 
+        /// IMPORTANT: When making changes to package filtering or removal logic, also check
+        /// IncrementalPackageRefresh.RefreshIncrementallyAsync() to ensure external packages
+        /// are handled correctly. External packages are in external destinations not scanned
+        /// by the incremental refresh, so they must be explicitly excluded from "removed" detection.
         /// </summary>
         private async void RefreshPackagesIncremental()
         {
@@ -1149,11 +1155,11 @@ namespace VPM
                         _reactiveFilterManager.Initialize(_packageManager.PackageMetadata);
                     }
                     
-                    // Sync filter manager with current UI selections before refreshing filter lists
-                    // This ensures filter counts are calculated correctly based on active filters
-                    UpdateFilterManagerFromUI();
+                    // Sync filter manager with current UI selections
+                    UpdateFilterManagerFromUI(applyFilters: false);
                     
-                    // Refresh filter lists in background to update counts
+                    // Refresh filter lists in background
+                    // NOTE: _isLoadingPackages will be set to false at the END of RefreshFilterLists
                     _ = Task.Run(() => RefreshFilterLists());
                 }
             }
@@ -1208,13 +1214,13 @@ namespace VPM
 
         private Task UpdatePackageListAsync(bool refreshFilterLists = true)
         {
-            // MEMORY FIX: Cancel any previous filter operation to prevent accumulating tasks
+            // Cancel any previous filter operation
             _filterCts?.Cancel();
             _filterCts?.Dispose();
             _filterCts = new System.Threading.CancellationTokenSource();
             var filterToken = _filterCts.Token;
             
-            // Save current state before clearing
+            // Save current state
             var selectedPackageNames = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()
                 .Select(p => p.Name)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1223,185 +1229,89 @@ namespace VPM
             if (PackageDataGrid != null)
             {
                 var scrollViewer = FindVisualChild<ScrollViewer>(PackageDataGrid);
-                if (scrollViewer != null)
-                {
-                    scrollOffset = scrollViewer.VerticalOffset;
-                }
+                scrollOffset = scrollViewer?.VerticalOffset ?? 0;
             }
             
-            // Capture current sort descriptions before refresh (handles both SortingManager and DataGrid column header sorting)
             var savedSortDescriptions = PackagesView?.SortDescriptions?.ToList() 
                 ?? new List<System.ComponentModel.SortDescription>();
 
-            // ⚠️ MEMORY GUARD: Detect filter-only operations and use view filtering
-            // This prevents the 500MB+ memory leak that occurred when ReplaceAll was used for filtering.
-            // 
-            // RULE: If packages are already loaded and we're just filtering (not refreshing filter lists),
-            // use CollectionView.Filter instead of replacing the entire collection.
-            // 
-            // See ApplyViewFilterAsync documentation for memory comparison details.
-            bool isFilterOnlyOperation = !refreshFilterLists && Packages.Count > 0;
-            
-            if (isFilterOnlyOperation)
+            // For filter-only operations, use view filtering (memory efficient)
+            if (!refreshFilterLists && Packages.Count > 0)
             {
-                // Use view-based filtering - O(1) memory vs O(n) for ReplaceAll
                 return ApplyViewFilterAsync(selectedPackageNames, scrollOffset, filterToken);
             }
 
-            // Step 1: Clear UI immediately (only for full refresh)
+            // Full refresh - clear and reload
             Packages.Clear();
             Dependencies.Clear();
             SetStatus("Loading packages...");
-
-            // Step 2: Update filter lists in background (only if requested - don't refresh when just applying filters)
-            // CRITICAL FIX: Move to background thread to prevent UI thread blocking during startup
-            if (refreshFilterLists)
-            {
-                _ = Task.Run(() => RefreshFilterLists(), filterToken);
-            }
             
-            // Step 3: Load packages in background - WPF handles virtualization
+            // Load packages in background
             _ = Task.Run(async () =>
             {
-                // MEMORY FIX: Check cancellation early
                 if (filterToken.IsCancellationRequested) return;
+                
                 try
                 {
-                    // Clear version cache
                     _versionCacheBuilt = false;
-
-                    var allPackages = new List<PackageItem>();
-                    var processedCount = 0;
-                    var filteredCount = 0;
-
-                    // Calculate dependents count for all packages
                     var dependentsCount = CalculateDependentsCount();
                     
-                    // MEMORY FIX: Check if we need to rebuild the cache (metadata changed)
+                    // Rebuild cache if needed
                     var currentMetadataVersion = _packageManager.PackageMetadata.Count;
-                    bool rebuildCache = _packageItemCacheVersion != currentMetadataVersion;
                     
-                    if (rebuildCache)
+                    // Also check if destination names have changed (for rename detection)
+                    var currentDestinationNames = string.Join("|", 
+                        (_settingsManager?.Settings?.MoveToDestinations ?? new List<MoveToDestination>())
+                            .Where(d => d?.IsValid() == true)
+                            .OrderBy(d => d.Name)
+                            .Select(d => d.Name));
+                    var currentDestinationHash = currentDestinationNames.GetHashCode().ToString();
+                    
+                    if (_packageItemCacheVersion != currentMetadataVersion || _cachedDestinationNamesHash != currentDestinationHash)
                     {
                         _packageItemCache.Clear();
                         _packageItemCacheVersion = currentMetadataVersion;
+                        _cachedDestinationNamesHash = currentDestinationHash;
                     }
 
-                    // MEMORY FIX: Check cancellation before expensive operation
                     if (filterToken.IsCancellationRequested) return;
                     
-                    // MEMORY FIX: Create filter snapshot ONCE before PLINQ query
-                    // This prevents creating 10+ new HashSets for every single package
                     var filterSnapshot = _filterManager.GetSnapshot();
                     
-                    // Build lookup for external destination visibility
-                    var destVisibility = (_settingsManager?.Settings?.MoveToDestinations ?? new List<MoveToDestination>())
-                        .ToDictionary(d => d.Name, d => d.ShowInMainTable, StringComparer.OrdinalIgnoreCase);
+                    // Build external destination visibility lookup
+                    var destVisibility = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var dest in (_settingsManager?.Settings?.MoveToDestinations ?? new List<MoveToDestination>()))
+                    {
+                        if (dest?.IsValid() == true && !string.IsNullOrWhiteSpace(dest.Name))
+                            destVisibility[dest.Name] = dest.ShowInMainTable;
+                    }
                     
-                    // Process and filter packages - REUSE cached PackageItem objects
-                    // MEMORY FIX: Use WithCancellation to stop PLINQ early if cancelled
+                    // Filter and create package items
                     var filteredItems = _packageManager.PackageMetadata
                         .AsParallel()
                         .WithCancellation(filterToken)
                         .WithDegreeOfParallelism(Environment.ProcessorCount)
-                        .Where(kvp => {
-                            // Filter out external packages from hidden destinations
-                            if (kvp.Value.IsExternal && !string.IsNullOrEmpty(kvp.Value.ExternalDestinationName))
-                            {
-                                if (!destVisibility.TryGetValue(kvp.Value.ExternalDestinationName, out var showInTable) || !showInTable)
-                                    return false;
-                            }
-                            return _filterManager.MatchesFilters(kvp.Value, filterSnapshot, kvp.Key);
-                        })
-                        .Select(kvp => 
-                        {
-                            var metadataKey = kvp.Key;
-                            var metadata = kvp.Value;
-                            
-                            // MEMORY FIX: Try to get cached PackageItem first
-                            if (_packageItemCache.TryGetValue(metadataKey, out var cachedItem))
-                            {
-                                // Update mutable properties that may have changed
-                                cachedItem.IsFavorite = _favoritesManager?.IsFavorite(cachedItem.Name) ?? false;
-                                cachedItem.IsAutoInstall = _autoInstallManager?.IsAutoInstall(cachedItem.Name) ?? false;
-                                return cachedItem;
-                            }
-                            
-                            // Create new PackageItem only if not in cache
-                            string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
-                                ? metadataKey 
-                                : Path.GetFileNameWithoutExtension(metadata.Filename);
-                            
-                            var dependentsCountValue = dependentsCount.TryGetValue(packageName, out var count) ? count : 0;
-                            
-                            var newItem = new PackageItem
-                            {
-                                MetadataKey = metadataKey,
-                                Name = packageName,
-                                Status = metadata.Status,
-                                Creator = metadata.CreatorName,
-                                DependencyCount = metadata.Dependencies?.Count ?? 0,
-                                DependentsCount = dependentsCountValue,
-                                FileSize = metadata.FileSize,
-                                ModifiedDate = metadata.ModifiedDate,
-                                IsLatestVersion = true,
-                                IsOptimized = metadata.IsOptimized,
-                                IsDuplicate = metadata.IsDuplicate,
-                                DuplicateLocationCount = metadata.DuplicateLocationCount,
-                                IsOldVersion = metadata.IsOldVersion,
-                                LatestVersionNumber = metadata.LatestVersionNumber,
-                                IsFavorite = _favoritesManager?.IsFavorite(packageName) ?? false,
-                                IsAutoInstall = _autoInstallManager?.IsAutoInstall(packageName) ?? false,
-                                MorphCount = metadata.MorphCount,
-                                HairCount = metadata.HairCount,
-                                ClothingCount = metadata.ClothingCount,
-                                SceneCount = metadata.SceneCount,
-                                LooksCount = metadata.LooksCount,
-                                PosesCount = metadata.PosesCount,
-                                AssetsCount = metadata.AssetsCount,
-                                ScriptsCount = metadata.ScriptsCount,
-                                PluginsCount = metadata.PluginsCount,
-                                SubScenesCount = metadata.SubScenesCount,
-                                SkinsCount = metadata.SkinsCount,
-                                MissingDependencyCount = metadata.MissingDependencyCount,
-                                ExternalDestinationName = metadata.ExternalDestinationName,
-                                ExternalDestinationColorHex = metadata.ExternalDestinationColorHex
-                            };
-                            
-                            // Cache the new item for reuse
-                            _packageItemCache[metadataKey] = newItem;
-                            return newItem;
-                        })
+                        .Where(kvp => ShouldIncludePackage(kvp.Value, kvp.Key, filterSnapshot, destVisibility))
+                        .Select(kvp => GetOrCreatePackageItem(kvp.Key, kvp.Value, dependentsCount))
                         .ToList();
 
-                    processedCount = _packageManager.PackageMetadata.Count;
+                    var processedCount = _packageManager.PackageMetadata.Count;
                     
-                    // Handle duplicate filtering - show only one instance per duplicate group
+                    // Handle duplicate filtering
+                    List<PackageItem> allPackages;
                     if (_filterManager.FilterDuplicates)
                     {
+                        allPackages = new List<PackageItem>();
                         var seenDuplicates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         foreach (var item in filteredItems)
                         {
                             if (item.DuplicateLocationCount > 1)
                             {
-                                // Get the base package name from the filename
-                                string basePackageName = item.Name;
-                                
-                                // Remove version suffixes to get the core package name (consistent with counting logic)
-                                var parts = basePackageName.Split('.');
-                                if (parts.Length >= 3) // Creator.PackageName.Version format
-                                {
-                                    basePackageName = $"{parts[0]}.{parts[1]}"; // Creator.PackageName
-                                }
-                                
-                                // Skip if we've already seen this duplicate
-                                if (seenDuplicates.Contains(basePackageName))
-                                {
-                                    continue;
-                                }
+                                var parts = item.Name.Split('.');
+                                var basePackageName = parts.Length >= 3 ? $"{parts[0]}.{parts[1]}" : item.Name;
+                                if (seenDuplicates.Contains(basePackageName)) continue;
                                 seenDuplicates.Add(basePackageName);
                             }
-                            
                             allPackages.Add(item);
                         }
                     }
@@ -1409,22 +1319,17 @@ namespace VPM
                     {
                         allPackages = filteredItems;
                     }
-                    
-                    filteredCount = allPackages.Count;
 
-                    // MEMORY FIX: Check cancellation before UI update
                     if (filterToken.IsCancellationRequested) return;
                     
-                    // Update UI in one shot - packages already filtered in background
+                    // Update UI
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        // MEMORY FIX: Check cancellation inside UI thread too
                         if (filterToken.IsCancellationRequested) return;
+                        
                         _suppressSelectionEvents = true;
                         try
                         {
-                            // CRITICAL FIX for .NET 10: Use DeferRefresh to prevent massive memory allocation
-                            // during view sorting when updating large collections
                             if (PackagesView != null)
                             {
                                 using (PackagesView.DeferRefresh())
@@ -1443,44 +1348,37 @@ namespace VPM
                             _suppressSelectionEvents = false;
                         }
 
-                        // Defer sorting and selection restoration to ContextIdle priority
-                        // This allows the UI to render the initial data before applying sort
+                        // Defer sorting and selection restoration
                         _ = Dispatcher.BeginInvoke(new Action(() =>
                         {
                             _suppressSelectionEvents = true;
                             try
                             {
-                                // Reapply sorting - first try SortingManager, then fall back to saved sort descriptions
-                                // This handles both button-based sorting and DataGrid column header sorting
+                                if (PackagesView != null) PackagesView.Filter = null;
+                                
+                                // Reapply sorting
                                 var packageState = _sortingManager?.GetSortingState("Packages");
                                 if (packageState?.CurrentSortOption is PackageSortOption)
                                 {
-                                    // SortingManager has a stored state - use it
                                     ReapplySorting();
                                 }
                                 else if (savedSortDescriptions.Count > 0 && PackagesView != null)
                                 {
-                                    // No SortingManager state - restore the captured sort descriptions
-                                    // This preserves DataGrid column header sorting
                                     using (PackagesView.DeferRefresh())
                                     {
                                         PackagesView.SortDescriptions.Clear();
                                         foreach (var sortDesc in savedSortDescriptions)
-                                        {
                                             PackagesView.SortDescriptions.Add(sortDesc);
-                                        }
                                     }
                                 }
 
-                                // Restore selection after sorting is applied
+                                // Restore selection
                                 if (selectedPackageNames.Count > 0 && PackageDataGrid != null)
                                 {
                                     foreach (var item in Packages)
                                     {
                                         if (selectedPackageNames.Contains(item.Name))
-                                        {
                                             PackageDataGrid.SelectedItems.Add(item);
-                                        }
                                     }
                                 }
                                 
@@ -1491,47 +1389,43 @@ namespace VPM
                                 _suppressSelectionEvents = false;
                             }
 
-                            // Restore scroll position and refresh images after selection is restored
+                            // Restore scroll position
                             _ = Dispatcher.BeginInvoke(new Action(async () =>
                             {
-                                // Small delay to ensure virtualization is complete
                                 await Task.Delay(50);
-                                
-                                if (PackageDataGrid != null)
-                                {
-                                    var scrollViewer = FindVisualChild<ScrollViewer>(PackageDataGrid);
-                                    if (scrollViewer != null)
-                                    {
-                                        scrollViewer.ScrollToVerticalOffset(scrollOffset);
-                                    }
-                                }
-                                
-                                // Refresh images for restored selection
+                                var scrollViewer = PackageDataGrid != null ? FindVisualChild<ScrollViewer>(PackageDataGrid) : null;
+                                scrollViewer?.ScrollToVerticalOffset(scrollOffset);
                                 if (PackageDataGrid?.SelectedItems?.Count > 0)
-                                {
                                     _ = RefreshSelectionDisplaysImmediate();
-                                }
                             }), DispatcherPriority.ContextIdle);
                         }), DispatcherPriority.ContextIdle);
 
-                        // Count unique packages (archived and optimized versions count as one)
+                        // Update status
                         var uniquePackageCount = allPackages
                             .Select(p => p.Name.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
-                                ? p.Name.Substring(0, p.Name.Length - 9) 
-                                : p.Name)
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .Count();
+                                ? p.Name.Substring(0, p.Name.Length - 9) : p.Name)
+                            .Distinct(StringComparer.OrdinalIgnoreCase).Count();
                         
                         var uniqueTotalCount = _packageManager.PackageMetadata.Keys
                             .Select(k => k.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
-                                ? k.Substring(0, k.Length - 9) 
-                                : k)
-                            .Distinct(StringComparer.OrdinalIgnoreCase)
-                            .Count();
+                                ? k.Substring(0, k.Length - 9) : k)
+                            .Distinct(StringComparer.OrdinalIgnoreCase).Count();
 
                         SetStatus(allPackages.Count == processedCount
                             ? $"Showing all {allPackages.Count:N0} entries ({uniquePackageCount:N0} unique packages)"
                             : $"Showing {allPackages.Count:N0} of {processedCount:N0} entries ({uniquePackageCount:N0} of {uniqueTotalCount:N0} unique packages)");
+                        
+                        // Refresh filter lists AFTER packages are loaded
+                        // NOTE: _isLoadingPackages will be set to false at the END of RefreshFilterLists
+                        // after all UI updates complete, not here
+                        if (refreshFilterLists)
+                        {
+                            _ = Task.Run(() => RefreshFilterLists());
+                        }
+                        else
+                        {
+                            _isLoadingPackages = false;
+                        }
                     }, DispatcherPriority.Normal);
                 }
                 catch (Exception)
@@ -1539,65 +1433,151 @@ namespace VPM
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         SetStatus("Error loading packages");
+                        _isLoadingPackages = false;
                     });
                 }
             });
 
-            // Return immediately - background task continues
             UpdateUI();
-            
             return Task.CompletedTask;
         }
         
         /// <summary>
-        /// MEMORY FIX: Apply filtering using CollectionView.Filter instead of replacing the entire collection.
-        /// This is much more memory efficient as it doesn't create new lists - just hides/shows existing items.
-        /// 
-        /// ⚠️ CRITICAL: Always use this method for filter operations instead of ReplaceAll.
-        /// ReplaceAll creates O(n) memory copies per call, causing 500MB+ memory spikes per filter click.
-        /// CollectionView.Filter is O(1) memory - it just shows/hides existing items.
-        /// 
-        /// Memory comparison for 20,000 packages:
-        /// - ReplaceAll approach: ~400-500MB per filter click (creates 2 list copies)
-        /// - CollectionView.Filter: ~1MB per filter click (just a HashSet of keys)
+        /// Determines if a package should be included in the filtered results.
+        /// External packages have special filtering rules but still respect search text.
+        /// </summary>
+        private bool ShouldIncludePackage(VarMetadata metadata, string key, FilterState filterSnapshot, Dictionary<string, bool> destVisibility)
+        {
+            // External packages have special filtering rules
+            if (metadata.IsExternal && !string.IsNullOrEmpty(metadata.ExternalDestinationName))
+            {
+                // Only hide if explicitly configured as hidden (ShowInMainTable=false)
+                // If destination not found in config, INCLUDE the package (fail-open)
+                if (destVisibility.TryGetValue(metadata.ExternalDestinationName, out var showInTable) && !showInTable)
+                    return false;
+                
+                // Apply search text filter to external packages
+                if (!string.IsNullOrEmpty(filterSnapshot.SearchText))
+                {
+                    string packageName = key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
+                        ? key : Path.GetFileNameWithoutExtension(metadata.Filename);
+                    if (!SearchHelper.MatchesPackageSearch(packageName, filterSnapshot.SearchTerms))
+                        return false;
+                }
+                
+                // If a destination filter is active, only include if this package matches the selected destination
+                if (filterSnapshot.SelectedDestinations.Count > 0)
+                {
+                    // Build the full destination key including subfolder if present
+                    string packageDestKey = metadata.ExternalDestinationName;
+                    if (!string.IsNullOrEmpty(metadata.ExternalDestinationSubfolder))
+                    {
+                        packageDestKey = $"{metadata.ExternalDestinationName}/{metadata.ExternalDestinationSubfolder}";
+                    }
+                    
+                    return filterSnapshot.SelectedDestinations.Contains(packageDestKey);
+                }
+                
+                // External packages are shown (unless hidden via ShowInMainTable above or search filter)
+                return true;
+            }
+            
+            // Non-external packages go through normal filtering
+            return _filterManager.MatchesFilters(metadata, filterSnapshot, key);
+        }
+        
+        /// <summary>
+        /// Gets a cached PackageItem or creates a new one.
+        /// </summary>
+        private PackageItem GetOrCreatePackageItem(string metadataKey, VarMetadata metadata, Dictionary<string, int> dependentsCount)
+        {
+            if (_packageItemCache.TryGetValue(metadataKey, out var cachedItem))
+            {
+                cachedItem.IsFavorite = _favoritesManager?.IsFavorite(cachedItem.Name) ?? false;
+                cachedItem.IsAutoInstall = _autoInstallManager?.IsAutoInstall(cachedItem.Name) ?? false;
+                return cachedItem;
+            }
+            
+            string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
+                ? metadataKey : Path.GetFileNameWithoutExtension(metadata.Filename);
+            
+            var newItem = new PackageItem
+            {
+                MetadataKey = metadataKey,
+                Name = packageName,
+                Status = metadata.Status,
+                Creator = metadata.CreatorName,
+                DependencyCount = metadata.Dependencies?.Count ?? 0,
+                DependentsCount = dependentsCount.TryGetValue(packageName, out var count) ? count : 0,
+                FileSize = metadata.FileSize,
+                ModifiedDate = metadata.ModifiedDate,
+                IsLatestVersion = true,
+                IsOptimized = metadata.IsOptimized,
+                IsDuplicate = metadata.IsDuplicate,
+                DuplicateLocationCount = metadata.DuplicateLocationCount,
+                IsOldVersion = metadata.IsOldVersion,
+                LatestVersionNumber = metadata.LatestVersionNumber,
+                IsFavorite = _favoritesManager?.IsFavorite(packageName) ?? false,
+                IsAutoInstall = _autoInstallManager?.IsAutoInstall(packageName) ?? false,
+                MorphCount = metadata.MorphCount,
+                HairCount = metadata.HairCount,
+                ClothingCount = metadata.ClothingCount,
+                SceneCount = metadata.SceneCount,
+                LooksCount = metadata.LooksCount,
+                PosesCount = metadata.PosesCount,
+                AssetsCount = metadata.AssetsCount,
+                ScriptsCount = metadata.ScriptsCount,
+                PluginsCount = metadata.PluginsCount,
+                SubScenesCount = metadata.SubScenesCount,
+                SkinsCount = metadata.SkinsCount,
+                MissingDependencyCount = metadata.MissingDependencyCount,
+                ExternalDestinationName = metadata.ExternalDestinationName,
+                ExternalDestinationColorHex = metadata.ExternalDestinationColorHex,
+                OriginalExternalDestinationColorHex = metadata.OriginalExternalDestinationColorHex
+            };
+            
+            _packageItemCache[metadataKey] = newItem;
+            return newItem;
+        }
+        
+        /// <summary>
+        /// Apply filtering using CollectionView.Filter (memory efficient - O(1) vs O(n) for ReplaceAll).
         /// </summary>
         private Task ApplyViewFilterAsync(HashSet<string> selectedPackageNames, double scrollOffset, System.Threading.CancellationToken filterToken)
         {
-            // Create filter snapshot on UI thread (fast operation)
             var filterSnapshot = _filterManager.GetSnapshot();
             
-            // Build a HashSet of matching metadata keys for O(1) lookup
-            var matchingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // Build external destination visibility lookup
+            var destVisibility = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var dest in (_settingsManager?.Settings?.MoveToDestinations ?? new List<MoveToDestination>()))
+            {
+                if (dest?.IsValid() == true && !string.IsNullOrWhiteSpace(dest.Name))
+                    destVisibility[dest.Name] = dest.ShowInMainTable;
+            }
             
+            // Build matching keys using the same logic as UpdatePackageListAsync
+            var matchingKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var kvp in _packageManager.PackageMetadata)
             {
                 if (filterToken.IsCancellationRequested) break;
-                
-                if (_filterManager.MatchesFilters(kvp.Value, filterSnapshot, kvp.Key))
-                {
+                if (ShouldIncludePackage(kvp.Value, kvp.Key, filterSnapshot, destVisibility))
                     matchingKeys.Add(kvp.Key);
-                }
             }
             
             if (filterToken.IsCancellationRequested) return Task.CompletedTask;
             
-            // Apply filter to view - this doesn't copy data, just shows/hides items
+            // Apply filter to view
             _suppressSelectionEvents = true;
             try
             {
-                using (PackagesView.DeferRefresh())
+                if (PackagesView != null)
                 {
-                    PackagesView.Filter = item =>
+                    using (PackagesView.DeferRefresh())
                     {
-                        if (item is PackageItem pkg)
-                        {
-                            return matchingKeys.Contains(pkg.MetadataKey);
-                        }
-                        return false;
-                    };
+                        PackagesView.Filter = item => item is PackageItem pkg && matchingKeys.Contains(pkg.MetadataKey);
+                    }
                 }
                 
-                // Reapply sorting
                 ReapplySorting();
                 
                 // Restore selection
@@ -1606,23 +1586,20 @@ namespace VPM
                     foreach (var item in PackagesView)
                     {
                         if (item is PackageItem pkg && selectedPackageNames.Contains(pkg.Name))
-                        {
                             PackageDataGrid.SelectedItems.Add(pkg);
-                        }
                     }
                 }
                 
                 // Update status
-                var visibleCount = PackagesView.Cast<object>().Count();
+                var visibleCount = PackagesView?.Cast<object>().Count() ?? 0;
                 var totalCount = Packages.Count;
-                SetStatus($"Showing {visibleCount:N0} of {totalCount:N0} packages");
+                SetStatus(totalCount == visibleCount 
+                    ? $"Showing all {totalCount:N0} packages"
+                    : $"Showing {visibleCount:N0} of {totalCount:N0} packages");
                 
                 // Restore scroll position
-                if (PackageDataGrid != null)
-                {
-                    var scrollViewer = FindVisualChild<ScrollViewer>(PackageDataGrid);
-                    scrollViewer?.ScrollToVerticalOffset(scrollOffset);
-                }
+                var scrollViewer = PackageDataGrid != null ? FindVisualChild<ScrollViewer>(PackageDataGrid) : null;
+                scrollViewer?.ScrollToVerticalOffset(scrollOffset);
             }
             finally
             {
@@ -1642,11 +1619,16 @@ namespace VPM
             // CRITICAL FIX: This method now runs on background thread
             // Build all filter data on background thread first, then update UI on UI thread
             
+            // CRITICAL: Suppress selection events while updating filter lists to prevent ApplyFilters from being called
+            bool savedSuppressSelectionEvents = _suppressSelectionEvents;
+            _suppressSelectionEvents = true;
+            
             try
             {
                 // In unlinked mode, we need to show counts based on filtered packages
                 // to avoid showing creators/categories that have no matching packages
                 var packagesToCount = _packageManager.PackageMetadata;
+                var allPackagesForDestinationCounts = _packageManager.PackageMetadata; // Always use all packages for destination counts
                 
                 if (!_cascadeFiltering)
                 {
@@ -1673,7 +1655,61 @@ namespace VPM
                 var fileSizeCounts = _filterManager.GetFileSizeCounts(packagesToCount);
                 var subfolderCounts = _filterManager.GetSubfolderCounts(packagesToCount);
                 var dateCounts = GetDateFilterCounts(packagesToCount);
-                var destinationCounts = _filterManager.GetDestinationCounts(packagesToCount);
+                var destinationCountsFiltered = _filterManager.GetDestinationCounts(packagesToCount);
+                var destinationCountsAll = _filterManager.GetDestinationCounts(_packageManager.PackageMetadata);
+
+                // Build set of nested destination names to exclude from filter list
+                var nestedDestinationNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var configuredDestinations = _settingsManager?.Settings?.MoveToDestinations;
+                if (configuredDestinations != null)
+                {
+                    foreach (var dest in configuredDestinations)
+                    {
+                        if (dest == null || !dest.IsValid())
+                            continue;
+                        
+                        var destPath = System.IO.Path.GetFullPath(dest.Path).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                        
+                        // Check if this destination is nested inside another configured destination
+                        foreach (var other in configuredDestinations)
+                        {
+                            if (other == null || !other.IsValid() || other.Name.Equals(dest.Name, StringComparison.OrdinalIgnoreCase))
+                                continue;
+                            
+                            var otherPath = System.IO.Path.GetFullPath(other.Path).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                            
+                            // If destPath is inside otherPath, mark it as nested
+                            if (destPath.StartsWith(otherPath + System.IO.Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                            {
+                                nestedDestinationNames.Add(dest.Name);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                var destinationNamesAll = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var name in destinationCountsAll.Keys)
+                {
+                    if (!string.IsNullOrWhiteSpace(name) && !nestedDestinationNames.Contains(name))
+                        destinationNamesAll.Add(name);
+                }
+
+                if (configuredDestinations != null)
+                {
+                    foreach (var dest in configuredDestinations)
+                    {
+                        if (dest == null || !dest.IsEnabled || !dest.IsValid())
+                            continue;
+
+                        // Skip nested destinations - they shouldn't appear as separate filter options
+                        if (nestedDestinationNames.Contains(dest.Name))
+                            continue;
+
+                        if (!string.IsNullOrWhiteSpace(dest.Name))
+                            destinationNamesAll.Add(dest.Name);
+                    }
+                }
                 
                 // Get favorites and autoinstall counts
                 int favoriteCount = 0;
@@ -1985,7 +2021,6 @@ namespace VPM
                         // Update destinations filter list
                         if (DestinationsFilterList != null)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[RefreshFilterLists] Updating DestinationsFilterList with {destinationCounts.Count} destinations");
                             
                             var selectedDestinations = new List<string>();
                             foreach (var item in DestinationsFilterList.SelectedItems)
@@ -2000,21 +2035,27 @@ namespace VPM
                             
                             DestinationsFilterList.Items.Clear();
                             
-                            foreach (var dest in destinationCounts.OrderBy(d => d.Key))
+                            foreach (var destName in destinationNamesAll.OrderBy(d => d))
                             {
-                                if (dest.Value > 0)
+                                // Count ALL packages in THIS specific destination (not just filtered)
+                                // This shows users how many packages are available in each destination
+                                var packagesInDest = allPackagesForDestinationCounts.Values
+                                    .Where(p => p.IsExternal && 
+                                               !string.IsNullOrEmpty(p.ExternalDestinationName) && 
+                                               p.ExternalDestinationName.Equals(destName, StringComparison.OrdinalIgnoreCase))
+                                    .ToList();
+                                
+                                var totalCount = packagesInDest.Count;
+                                
+                                var displayText = $"{destName} ({totalCount:N0})";
+                                DestinationsFilterList.Items.Add(displayText);
+                                
+                                if (selectedDestinations.Contains(destName))
                                 {
-                                    var displayText = $"{dest.Key} ({dest.Value:N0})";
-                                    DestinationsFilterList.Items.Add(displayText);
-                                    
-                                    if (selectedDestinations.Contains(dest.Key))
-                                    {
-                                        DestinationsFilterList.SelectedItems.Add(displayText);
-                                    }
+                                    DestinationsFilterList.SelectedItems.Add(displayText);
                                 }
                             }
                             
-                            System.Diagnostics.Debug.WriteLine($"[RefreshFilterLists] DestinationsFilterList now has {DestinationsFilterList.Items.Count} items");
                         }
                         
                         // Restore filter list sorting after lists are populated
@@ -2022,15 +2063,20 @@ namespace VPM
                         
                         // Force refresh of the UI to ensure selections are properly displayed
                         StatusFilterList?.Items.Refresh();
+                        
+                        // CRITICAL: Set _isLoadingPackages=false AFTER all UI updates complete
+                        // This prevents ApplyFilters from being called during the refresh
+                        _isLoadingPackages = false;
                     }
                     finally
                     {
-                        _suppressSelectionEvents = false;
+                        _suppressSelectionEvents = savedSuppressSelectionEvents;
                     }
                 });
             }
             catch (Exception)
             {
+                _suppressSelectionEvents = savedSuppressSelectionEvents;
             }
         }
 

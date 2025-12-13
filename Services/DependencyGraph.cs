@@ -29,12 +29,14 @@ namespace VPM.Services
         
         /// <summary>
         /// Builds the dependency graph from package metadata
+        /// Includes external packages in the graph so they're properly indexed as dependents
         /// </summary>
         public void Build(IEnumerable<KeyValuePair<string, VarMetadata>> packageMetadata)
         {
             Clear();
             
             // First pass: collect all packages and build base name index
+            // This includes external packages so they can be resolved as dependents
             foreach (var kvp in packageMetadata)
             {
                 var metadata = kvp.Value;
@@ -53,7 +55,7 @@ namespace VPM.Services
                 }
                 versions.Add(packageName);
                 
-                // Initialize empty dependency sets
+                // Initialize empty dependency sets for all packages, including external ones
                 if (!_dependencies.ContainsKey(packageName))
                     _dependencies[packageName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }

@@ -188,11 +188,31 @@ namespace VPM.Services
             }
 
             // Find deleted files
+            // CRITICAL: Skip external packages - they are in external destinations not scanned here
             foreach (var trackedFile in _fileStates.Keys.ToList())
             {
                 if (!currentFiles.Contains(trackedFile))
                 {
-                    result.RemovedFiles.Add(trackedFile);
+                    // Check if this is an external package by looking at its metadata
+                    // External packages have paths outside the standard VAM folders
+                    bool isExternal = false;
+                    if (_packageManager?.PackageMetadata != null)
+                    {
+                        foreach (var kvp in _packageManager.PackageMetadata)
+                        {
+                            if (kvp.Value.FilePath?.Equals(trackedFile, StringComparison.OrdinalIgnoreCase) == true)
+                            {
+                                isExternal = kvp.Value.IsExternal;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Only mark as removed if it's NOT an external package
+                    if (!isExternal)
+                    {
+                        result.RemovedFiles.Add(trackedFile);
+                    }
                 }
             }
 

@@ -635,6 +635,7 @@ namespace VPM
 
             // Use stored metadata key for O(1) performance
             _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var packageMetadata);
+            
             if (packageMetadata?.Dependencies != null && packageMetadata.Dependencies.Any())
             {
                 int depCount = 0;
@@ -676,6 +677,14 @@ namespace VPM
                     
                     var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
                     
+                    // Check if dependency exists in external destinations
+                    var externalDestinationColor = CheckDependencyInExternalDestinations(baseName);
+                    if (!string.IsNullOrEmpty(externalDestinationColor))
+                    {
+                        // Found in external destination - use the destination's configured status color
+                        status = externalDestinationColor;
+                    }
+                    
                     var dependencyItem = new DependencyItem
                     {
                         Name = baseName,
@@ -709,6 +718,38 @@ namespace VPM
             
             // Update toolbar buttons after dependencies change
             UpdateToolbarButtons();
+        }
+        
+        /// <summary>
+        /// Checks if a dependency package exists in any external destination
+        /// Returns the destination's status color if found, otherwise empty string
+        /// </summary>
+        private string CheckDependencyInExternalDestinations(string packageBaseName)
+        {
+            if (string.IsNullOrEmpty(packageBaseName) || _packageManager?.PackageMetadata == null)
+                return "";
+            
+            // Search through all packages in metadata to find external ones matching the dependency
+            foreach (var kvp in _packageManager.PackageMetadata)
+            {
+                var metadata = kvp.Value;
+                
+                // Check if this is an external package
+                if (!metadata.IsExternal || string.IsNullOrEmpty(metadata.ExternalDestinationName))
+                    continue;
+                
+                // Build the package name from metadata (Creator.PackageName format)
+                var packageName = $"{metadata.CreatorName}.{metadata.PackageName}";
+                
+                // Check if this matches the dependency we're looking for
+                if (packageName.Equals(packageBaseName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Return the external destination's configured status color
+                    return metadata.ExternalDestinationColorHex ?? "#808080";
+                }
+            }
+            
+            return "";
         }
 
         private void DisplayConsolidatedDependencies(List<PackageItem> selectedPackages)
@@ -771,6 +812,14 @@ namespace VPM
                         if (!allDependencies.ContainsKey(dependencyName))
                         {
                             var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                            
+                            // Check if dependency exists in external destinations
+                            var externalDestinationColor = CheckDependencyInExternalDestinations(baseName);
+                            if (!string.IsNullOrEmpty(externalDestinationColor))
+                            {
+                                // Found in external destination - use the destination's configured status color
+                                status = externalDestinationColor;
+                            }
                             
                             allDependencies[dependencyName] = new DependencyItem
                             {
@@ -1005,7 +1054,25 @@ namespace VPM
                         }
                     }
                     
-                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    // Check if dependent is in PackageMetadata (includes external packages)
+                    string status = "Unknown";
+                    if (_packageManager.PackageMetadata.TryGetValue(dependentName, out var dependentMetadata))
+                    {
+                        // For external packages, use their destination color; otherwise use file manager status
+                        if (dependentMetadata.IsExternal && !string.IsNullOrEmpty(dependentMetadata.ExternalDestinationColorHex))
+                        {
+                            status = dependentMetadata.ExternalDestinationColorHex;
+                        }
+                        else
+                        {
+                            status = dependentMetadata.Status;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to file manager status for non-metadata packages
+                        status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    }
                     
                     var dependentItem = new DependencyItem
                     {
@@ -1084,7 +1151,25 @@ namespace VPM
                         }
                     }
                     
-                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    // Check if dependent is in PackageMetadata (includes external packages)
+                    string status = "Unknown";
+                    if (_packageManager.PackageMetadata.TryGetValue(dependentName, out var dependentMetadata))
+                    {
+                        // For external packages, use their destination color; otherwise use file manager status
+                        if (dependentMetadata.IsExternal && !string.IsNullOrEmpty(dependentMetadata.ExternalDestinationColorHex))
+                        {
+                            status = dependentMetadata.ExternalDestinationColorHex;
+                        }
+                        else
+                        {
+                            status = dependentMetadata.Status;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to file manager status for non-metadata packages
+                        status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    }
                     
                     allDependents[dependentName] = new DependencyItem
                     {

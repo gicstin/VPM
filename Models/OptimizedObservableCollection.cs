@@ -91,12 +91,6 @@ namespace VPM.Models
                 return;
             }
             
-            // GUARD: Log warning if called frequently (potential memory leak pattern)
-            #if DEBUG
-            System.Diagnostics.Debug.WriteLine($"[OptimizedObservableCollection] ReplaceAll called with {itemsList.Count} items. " +
-                "If this is for filtering, consider using CollectionView.Filter instead.");
-            #endif
-
             _suppressNotification = true;
             try
             {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -185,7 +186,17 @@ namespace VPM
         private void StatusFilterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             // Prevent recursion during programmatic updates
-            if (_suppressSelectionEvents) return;
+            if (_suppressSelectionEvents)
+            {
+                System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Suppressed - _suppressSelectionEvents is true");
+                return;
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Triggered - Selected items: {StatusFilterList?.SelectedItems.Count ?? 0}");
+            foreach (var item in StatusFilterList?.SelectedItems ?? new System.Collections.ArrayList())
+            {
+                System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Selected: {item}");
+            }
             
             // Apply filters immediately when selection changes
             ApplyFilters();
@@ -2574,9 +2585,12 @@ namespace VPM
                     return;
 
                 // Handle based on status
-                if (selectedDep.Status == "Loaded" || selectedDep.Status == "Available")
+                // Check if status is a hex color (external destination) or standard status
+                bool isExternalDestination = !string.IsNullOrEmpty(selectedDep.Status) && selectedDep.Status.StartsWith("#");
+                
+                if (selectedDep.Status == "Loaded" || selectedDep.Status == "Available" || isExternalDestination)
                 {
-                    // Open folder path for loaded/available items
+                    // Open folder path for loaded/available items or external destinations
                     OpenDependencyFolderPath(selectedDep);
                 }
                 else if (selectedDep.Status == "Missing" || selectedDep.Status == "Unknown")
@@ -2595,9 +2609,23 @@ namespace VPM
         {
             try
             {
+                if (dependency == null)
+                    return;
+                
                 if (_packageFileManager == null)
                 {
                     SetStatus("Package file manager not initialized");
+                    return;
+                }
+
+                // First, check if this dependency exists in external destinations
+                var externalFilePath = FindDependencyInExternalDestinations(dependency.Name);
+                
+                if (!string.IsNullOrEmpty(externalFilePath) && System.IO.File.Exists(externalFilePath))
+                {
+                    // Open folder and select the external file
+                    OpenFolderAndSelectFile(externalFilePath);
+                    SetStatus($"Opened folder for: {dependency.Name}");
                     return;
                 }
 
@@ -2640,6 +2668,41 @@ namespace VPM
             {
                 SetStatus($"Failed to open folder: {ex.Message}");
             }
+        }
+        
+        /// <summary>
+        /// Finds a dependency package in external destinations
+        /// Returns the file path if found, otherwise empty string
+        /// </summary>
+        private string FindDependencyInExternalDestinations(string packageBaseName)
+        {
+            if (string.IsNullOrEmpty(packageBaseName) || _packageManager?.PackageMetadata == null)
+                return "";
+            
+            // Search through all packages in metadata to find external ones matching the dependency
+            foreach (var kvp in _packageManager.PackageMetadata)
+            {
+                var metadata = kvp.Value;
+                
+                // Check if this is an external package
+                if (!metadata.IsExternal || string.IsNullOrEmpty(metadata.ExternalDestinationName))
+                    continue;
+                
+                // Build the package name from metadata (Creator.PackageName format)
+                var packageName = $"{metadata.CreatorName}.{metadata.PackageName}";
+                
+                // Check if this matches the dependency we're looking for
+                if (packageName.Equals(packageBaseName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Return the file path if it exists
+                    if (!string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
+                    {
+                        return metadata.FilePath;
+                    }
+                }
+            }
+            
+            return "";
         }
 
         private void CopyDependencyToClipboard(DependencyItem dependency)
@@ -3488,7 +3551,8 @@ namespace VPM
                 SubScenesCount = metadata.SubScenesCount,
                 SkinsCount = metadata.SkinsCount,
                 ExternalDestinationName = metadata.ExternalDestinationName,
-                ExternalDestinationColorHex = metadata.ExternalDestinationColorHex
+                ExternalDestinationColorHex = metadata.ExternalDestinationColorHex,
+                OriginalExternalDestinationColorHex = metadata.OriginalExternalDestinationColorHex
             };
         }
 
@@ -3821,7 +3885,7 @@ namespace VPM
                 // Ensure filter exists in order (migration for old settings)
                 if (!filterOrder.Contains(filterType))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MoveFilter] Filter '{filterType}' not found in order, adding it");
+                    Debug.WriteLine($"[MoveFilter] Filter '{filterType}' not found in order, adding it");
                     filterOrder.Add(filterType);
                     SaveCurrentFilterOrder(filterOrder);
                 }
@@ -3830,7 +3894,7 @@ namespace VPM
                 int currentIndex = filterOrder.IndexOf(filterType);
                 if (currentIndex == -1)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MoveFilter] Filter '{filterType}' could not be found after migration attempt");
+                    Debug.WriteLine($"[MoveFilter] Filter '{filterType}' could not be found after migration attempt");
                     return;
                 }
 
@@ -3838,7 +3902,7 @@ namespace VPM
                 int newIndex = currentIndex + direction;
                 if (newIndex < 0 || newIndex >= filterOrder.Count)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[MoveFilter] Cannot move filter '{filterType}' beyond bounds (index {currentIndex}, direction {direction})");
+                    Debug.WriteLine($"[MoveFilter] Cannot move filter '{filterType}' beyond bounds (index {currentIndex}, direction {direction})");
                     return; // Can't move beyond bounds
                 }
 
@@ -3850,11 +3914,11 @@ namespace VPM
                 SaveCurrentFilterOrder(filterOrder);
                 RefreshFilterOrder();
                 
-                System.Diagnostics.Debug.WriteLine($"[MoveFilter] Successfully moved filter '{filterType}' from index {currentIndex} to {newIndex}");
+                Debug.WriteLine($"[MoveFilter] Successfully moved filter '{filterType}' from index {currentIndex} to {newIndex}");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[MoveFilter] Error moving filter '{filterType}': {ex.Message}");
+                Debug.WriteLine($"[MoveFilter] Error moving filter '{filterType}': {ex.Message}");
             }
         }
 
@@ -3938,13 +4002,13 @@ namespace VPM
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine($"[RefreshFilterOrder] Warning: Filter '{filterType}' in order list but not found in container");
+                        Debug.WriteLine($"[RefreshFilterOrder] Warning: Filter '{filterType}' in order list but not found in container");
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[RefreshFilterOrder] Error refreshing filter order: {ex.Message}");
+                Debug.WriteLine($"[RefreshFilterOrder] Error refreshing filter order: {ex.Message}");
             }
         }
 
