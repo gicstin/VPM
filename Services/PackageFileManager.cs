@@ -1532,6 +1532,7 @@ namespace VPM.Services
                 
                 // Scan ArchivedPackages folder (Archived packages) - including subfolders
                 // Archived packages are independent and can coexist with Loaded/Available packages
+                // Use TryAdd to avoid overwriting Loaded or Available status
                 if (Directory.Exists(_archivedPackagesFolder))
                 {
                     var archivedFiles = Directory.GetFiles(_archivedPackagesFolder, "*.var", SearchOption.AllDirectories);
@@ -1540,7 +1541,8 @@ namespace VPM.Services
                         var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
                         if (!string.IsNullOrEmpty(packageName))
                         {
-                            _packageStatusIndex[packageName] = "Archived";
+                            // Only add as Archived if not already marked as Loaded or Available
+                            _packageStatusIndex.TryAdd(packageName, "Archived");
                         }
                     }
                 }

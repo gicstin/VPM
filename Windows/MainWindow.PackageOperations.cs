@@ -453,6 +453,19 @@ namespace VPM
                     if (successfullyLoaded.Count > 0)
                     {
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
+                        
+                        // Refresh package status index to reflect newly loaded packages and dependencies
+                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
+                        
+                        // Refresh the dependency display to show updated statuses
+                        if (PackageDataGrid?.SelectedItems?.Count > 0)
+                        {
+                            var selectedPackage = PackageDataGrid.SelectedItems[0] as PackageItem;
+                            if (selectedPackage != null)
+                            {
+                                DisplayDependencies(selectedPackage);
+                            }
+                        }
                     }
 
                     // Re-enable UI BEFORE refreshing image grid
@@ -795,6 +808,19 @@ namespace VPM
                     if (successfullyLoaded.Count > 0)
                     {
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
+                        
+                        // Refresh package status index to reflect newly loaded packages
+                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
+                        
+                        // Refresh the dependency display to show updated statuses
+                        if (PackageDataGrid?.SelectedItems?.Count > 0)
+                        {
+                            var selectedPackage = PackageDataGrid.SelectedItems[0] as PackageItem;
+                            if (selectedPackage != null)
+                            {
+                                DisplayDependencies(selectedPackage);
+                            }
+                        }
                     }
 
                     // Refresh image grid to show newly loaded dependencies
