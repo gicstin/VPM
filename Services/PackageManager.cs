@@ -967,20 +967,16 @@ namespace VPM.Services
                    normalizedPath.Contains("addonpackages/");
         }
 
-        private (int morphs, int hair, int clothing, int scenes, int looks, int poses, int assets, int scripts, int plugins, int subScenes, int skins, List<string> expandedList) CountContentItems(List<string> contentList)
+        private (int morphs, int hair, int clothing, int scenes, int looks, int poses, int assets, int scripts, int plugins, int subScenes, int skins) CountContentItems(List<string> contentList)
         {
             if (contentList == null || contentList.Count == 0)
             {
-                return (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, new List<string>());
+                return (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
             }
             
             
             var processedAssetFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var processedPluginFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            // Since we now perform complete archive scanning, contentList already contains
-            // all individual files (no directories). We can use it directly for counting and UI.
-            var allFilesForUI = new List<string>(contentList);
             
             int morphCount = 0;
             int hairCount = 0;
@@ -1068,9 +1064,7 @@ namespace VPM.Services
                 }
             }
             
-            // Return the expanded file list for UI display
-            // This will be stored in metadata.AllFiles so the UI can show all individual files
-            return (morphCount, hairCount, clothingCount, sceneCount, looksCount, posesCount, assetsCount, scriptsCount, pluginsCount, subScenesCount, skinsCount, allFilesForUI);
+            return (morphCount, hairCount, clothingCount, sceneCount, looksCount, posesCount, assetsCount, scriptsCount, pluginsCount, subScenesCount, skinsCount);
         }
 
         public VarScanResult ScanSingleVarOptimized(string varPath, bool indexAllFiles = false)
@@ -1303,16 +1297,12 @@ namespace VPM.Services
             // VarMetadata uses lazy initialization, so null is fine for empty collections
             if (source.Dependencies?.Count > 0)
                 clone.Dependencies = new List<string>(source.Dependencies);
-            if (source.ContentList?.Count > 0)
-                clone.ContentList = new List<string>(source.ContentList);
             if (source.ContentTypes?.Count > 0)
                 clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
             if (source.Categories?.Count > 0)
                 clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
             if (source.UserTags?.Count > 0)
                 clone.UserTags = new List<string>(source.UserTags);
-            if (source.AllFiles?.Count > 0)
-                clone.AllFiles = new List<string>(source.AllFiles);
             if (source.MissingDependencies?.Count > 0)
                 clone.MissingDependencies = new List<string>(source.MissingDependencies);
             if (source.ClothingTags?.Count > 0)
@@ -1473,6 +1463,11 @@ namespace VPM.Services
             
             // Populate dependency counts for each package
             PopulateDependencyCounts();
+
+            // MEMORY FIX: Snapshot graph is large (PackageSnapshot/PackageVariant) and can retain
+            // substantial metadata/string graphs. After materializing PackageMetadata, we can
+            // discard snapshots to reduce steady-state RAM usage.
+            _snapshotCache.Clear();
             
             // Save binary cache asynchronously after scanning completes (fire-and-forget)
             // Don't await to avoid blocking the UI
@@ -2586,12 +2581,8 @@ namespace VPM.Services
             metadata.SubScenesCount = contentCounts.subScenes;
             metadata.SkinsCount = contentCounts.skins;
             
-            // Store the expanded file list for UI display
-            // This contains all individual files from expanded directories
-            metadata.AllFiles = contentCounts.expandedList;
-            
-            // MEMORY FIX: Clear ContentList after processing - AllFiles now has the data
-            // This prevents storing duplicate file lists (saves gigabytes of memory)
+            // MEMORY FIX: Clear ContentList after processing.
+            // Full per-file lists are loaded on-demand by the UI to avoid retaining huge lists for every package.
             metadata.ContentList.Clear();
             metadata.ContentList = null;
             

@@ -891,17 +891,28 @@ namespace VPM
                 // Check for package updates after packages are loaded
                 _ = CheckForPackageUpdatesAsync();
 
-                // Build image index from cached metadata (fast - no VAR file opening required)
-                // This uses VarMetadata.AllFiles which is already in the binary cache
-                // Packages without AllFiles will have images indexed on-demand when selected
-                if (_imageManager.ImageIndex.Count == 0)
+                // Image previews are indexed on-demand from VAR files when a package is selected.
+                // To improve UX for first selection after startup, pre-index a small number of loaded packages.
+                try
                 {
-                    var packagesWithFiles = _packageManager.PackageMetadata.Count(p => p.Value.AllFiles?.Count > 0);
-                    
-                    if (packagesWithFiles > 0)
+                    if (_imageManager != null && _packageManager != null)
                     {
-                        _imageManager.BuildImageIndexFromMetadata(_packageManager.PackageMetadata);
+                        var preloadPaths = _packageManager.PackageMetadata.Values
+                            .Where(m => m != null && string.Equals(m.Status, "Loaded", StringComparison.OrdinalIgnoreCase))
+                            .Select(m => m.FilePath)
+                            .Where(p => !string.IsNullOrEmpty(p) && File.Exists(p))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Take(50)
+                            .ToList();
+
+                        if (preloadPaths.Count > 0)
+                        {
+                            await _imageManager.BuildImageIndexFromVarsAsync(preloadPaths, forceRebuild: false);
+                        }
                     }
+                }
+                catch
+                {
                 }
 
                 SetStatus("Ready");

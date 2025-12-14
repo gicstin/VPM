@@ -70,30 +70,6 @@ namespace VPM.Services
                 return result;
             }
             
-            // Check for improper folder structure (no Custom or Saves folders)
-            // This is a VAM requirement - packages must have content in these folders
-            // Only check if ContentList is not null (null means we couldn't determine content)
-            if (metadata.ContentList != null)
-            {
-                if (metadata.ContentList.Count == 0)
-                {
-                    result.IsDamaged = true;
-                    result.DamageReason = "No Custom/ or Saves/ folders found";
-                    return result;
-                }
-                
-                var hasProperStructure = metadata.ContentList.Any(path =>
-                    path.StartsWith("Custom/", StringComparison.OrdinalIgnoreCase) ||
-                    path.StartsWith("Saves/", StringComparison.OrdinalIgnoreCase));
-                    
-                if (!hasProperStructure)
-                {
-                    result.IsDamaged = true;
-                    result.DamageReason = "No Custom/ or Saves/ folders found";
-                    return result;
-                }
-            }
-            
             return result;
         }
     }

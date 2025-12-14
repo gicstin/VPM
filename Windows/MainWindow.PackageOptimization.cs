@@ -1309,7 +1309,7 @@ namespace VPM
                     
                     // CRITICAL FIX: If IsMorphAsset is false but we have content, re-detect it now
                     // The cached metadata might be stale or from before morph detection was added
-                    if (packageMetadata != null && !packageMetadata.IsMorphAsset && packageMetadata.ContentList != null && packageMetadata.ContentList.Count > 0)
+                    if (packageMetadata != null && !packageMetadata.IsMorphAsset && packageMetadata.MorphCount > 0)
                     {
                         // Force re-detection of morph asset status by clearing the cache first
                         // Pass the file path so binary cache can be properly invalidated using the actual filename

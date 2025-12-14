@@ -2462,7 +2462,7 @@ namespace VPM
                         // All items have same status - proceed with operation
                         var status = statuses[0];
 
-                        if (status == "Available")
+                        if (status == "Available" || status == "Outdated" || status == "Archived")
                         {
                             // Trigger load
                             LoadDependencies_Click(sender, e);
@@ -2638,7 +2638,7 @@ namespace VPM
                         // All items have same status - proceed with operation
                         var status = statuses[0];
                         
-                        if (status == "Available")
+                        if (status == "Available" || status == "Outdated" || status == "Archived")
                         {
                             // Trigger load
                             LoadDependencies_Click(sender, e);

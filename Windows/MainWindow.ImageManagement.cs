@@ -775,6 +775,41 @@ namespace VPM
 
                 // Capture necessary data for background processing
                 var gameFolder = _settingsManager?.Settings?.SelectedFolder;
+
+                // Ensure selected packages are indexed for image display.
+                // On startup, ImageIndex may be empty (or not yet populated for these packages),
+                // but we still want previews to show without requiring a load/unload operation.
+                try
+                {
+                    if (_imageManager != null && _packageManager != null)
+                    {
+                        var pathsToIndex = new List<string>();
+
+                        foreach (var package in selectedPackages)
+                        {
+                            var packageKey = !string.IsNullOrEmpty(package.MetadataKey) ? package.MetadataKey : package.Name;
+                            if (_packageManager.PackageMetadata.TryGetValue(packageKey, out var meta) &&
+                                meta != null &&
+                                !string.IsNullOrEmpty(meta.FilePath))
+                            {
+                                var packageBase = System.IO.Path.GetFileNameWithoutExtension(meta.Filename);
+                                if (!_imageManager.ImageIndex.ContainsKey(packageBase) && System.IO.File.Exists(meta.FilePath))
+                                {
+                                    pathsToIndex.Add(meta.FilePath);
+                                }
+                            }
+                        }
+
+                        if (pathsToIndex.Count > 0)
+                        {
+                            await _imageManager.BuildImageIndexFromVarsAsync(pathsToIndex, forceRebuild: false);
+                        }
+                    }
+                }
+                catch
+                {
+                    // Non-critical: image indexing will fall back to showing no previews.
+                }
                 
                 // Run heavy processing on background thread
                 await Task.Run(async () => 

@@ -169,7 +169,7 @@ namespace VPM.Services
         /// Releases all open archive handles.
         /// Call this before bulk file operations.
         /// </summary>
-        public void ReleaseAllArchiveHandles()
+        public void ClearUnusedCaches()
         {
             try
             {
@@ -320,11 +320,6 @@ namespace VPM.Services
             {
                 await _asyncPool.ReleaseFileLocksAsync(pathsToRelease);
             }
-            
-            // Only force GC once at the end of the batch operation, not per package
-            // This significantly reduces overhead when releasing many packages
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
         }
 
         /// <summary>
@@ -1282,76 +1277,9 @@ namespace VPM.Services
         /// </summary>
         public void BuildImageIndexFromMetadata(Dictionary<string, VarMetadata> packageMetadata)
         {
-            if (packageMetadata == null || packageMetadata.Count == 0)
-                return;
-            
-            // Process in parallel for speed
-            var results = packageMetadata
-                .AsParallel()
-                .WithDegreeOfParallelism(Environment.ProcessorCount)
-                .Select(kvp =>
-                {
-                    var metadata = kvp.Value;
-                    var packageName = Path.GetFileNameWithoutExtension(metadata.Filename);
-                    
-                    // Skip if no files or already indexed
-                    if (metadata.AllFiles == null || metadata.AllFiles.Count == 0)
-                        return (packageName, (List<ImageLocation>)null);
-                    
-                    // Flatten to just filenames for pairing check (same as IndexImagesInVar)
-                    // Use a List instead of HashSet to preserve duplicates (multiple files can have same name in different folders)
-                    var allFilesFlattened = metadata.AllFiles
-                        .Select(f => Path.GetFileName(f).ToLowerInvariant())
-                        .ToList();
-                    
-                    // Filter for valid preview images using the same rules as VAR scanning
-                    var imageLocations = metadata.AllFiles
-                        .Where(f => 
-                        {
-                            var ext = Path.GetExtension(f).ToLowerInvariant();
-                            // Must be an image file first
-                            if (ext != ".jpg" && ext != ".jpeg" && ext != ".png")
-                                return false;
-                            
-                            var filename = Path.GetFileName(f).ToLowerInvariant();
-                            
-                            // Use PreviewImageValidator pairing logic
-                            return PreviewImageValidator.IsPreviewImage(filename, allFilesFlattened);
-                        })
-                        .Select(f => new ImageLocation
-                        {
-                            VarFilePath = metadata.FilePath,
-                            InternalPath = f,
-                            FileSize = 0
-                        })
-                        .ToList();
-                    
-                    // MEMORY FIX: Clear AllFiles after extracting image locations
-                    // This frees gigabytes of string data that's no longer needed
-                    metadata.AllFiles.Clear();
-                    metadata.AllFiles = null;
-                    
-                    return (packageName, imageLocations);
-                })
-                .Where(r => r.Item2 != null && r.Item2.Count > 0)
-                .ToList();
-            
-            // Update ImageIndex
-            _varArchiveLock.EnterWriteLock();
-            try
-            {
-                foreach (var (packageName, locations) in results)
-                {
-                    ImageIndex[packageName] = locations;
-                }
-            }
-            finally
-            {
-                _varArchiveLock.ExitWriteLock();
-            }
-            
-            // MEMORY FIX: Force garbage collection to reclaim the freed AllFiles memory
-            GC.Collect(2, GCCollectionMode.Optimized, false);
+            // VarMetadata.AllFiles is no longer retained/serialized for memory reasons.
+            // Image indexing is performed on-demand via BuildImageIndexFromVarsAsync.
+            return;
         }
 
         /// <summary>

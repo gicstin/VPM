@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -365,6 +366,12 @@ namespace VPM
     {
         public static readonly ThumbnailPathConverter Instance = new ThumbnailPathConverter();
 
+        private static readonly object _cacheLock = new object();
+        private static readonly Dictionary<string, BitmapImage> _cache = new Dictionary<string, BitmapImage>(StringComparer.OrdinalIgnoreCase);
+        private static readonly LinkedList<string> _lru = new LinkedList<string>();
+        private static readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new Dictionary<string, LinkedListNode<string>>(StringComparer.OrdinalIgnoreCase);
+        private const int MaxCacheSize = 256;
+
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             if (value is string thumbnailPath && !string.IsNullOrWhiteSpace(thumbnailPath))
@@ -373,7 +380,54 @@ namespace VPM
                 {
                     if (File.Exists(thumbnailPath))
                     {
-                        return new BitmapImage(new Uri(thumbnailPath, UriKind.Absolute));
+                        lock (_cacheLock)
+                        {
+                            if (_cache.TryGetValue(thumbnailPath, out var cached))
+                            {
+                                if (_lruNodes.TryGetValue(thumbnailPath, out var node))
+                                {
+                                    _lru.Remove(node);
+                                    _lru.AddFirst(node);
+                                }
+                                return cached;
+                            }
+                        }
+
+                        var bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+                        bitmap.UriSource = new Uri(thumbnailPath, UriKind.Absolute);
+                        bitmap.DecodePixelWidth = 128;
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+
+                        lock (_cacheLock)
+                        {
+                            if (_cache.ContainsKey(thumbnailPath))
+                            {
+                                return _cache[thumbnailPath];
+                            }
+
+                            _cache[thumbnailPath] = bitmap;
+                            if (_lruNodes.TryGetValue(thumbnailPath, out var existingNode))
+                            {
+                                _lru.Remove(existingNode);
+                                _lruNodes.Remove(thumbnailPath);
+                            }
+                            var newNode = _lru.AddFirst(thumbnailPath);
+                            _lruNodes[thumbnailPath] = newNode;
+
+                            while (_cache.Count > MaxCacheSize && _lru.Last != null)
+                            {
+                                var keyToRemove = _lru.Last.Value;
+                                _lru.RemoveLast();
+                                _lruNodes.Remove(keyToRemove);
+                                _cache.Remove(keyToRemove);
+                            }
+                        }
+
+                        return bitmap;
                     }
                 }
                 catch

@@ -24,6 +24,134 @@ namespace VPM
     {
         #region Package Information Display
 
+        private readonly Dictionary<string, List<string>> _packageFilesCache = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly LinkedList<string> _packageFilesCacheLru = new LinkedList<string>();
+        private readonly Dictionary<string, LinkedListNode<string>> _packageFilesCacheLruNodes = new Dictionary<string, LinkedListNode<string>>(StringComparer.OrdinalIgnoreCase);
+        private const int MAX_PACKAGE_FILES_CACHE = 20;
+
+        private string ResolvePackageVarPath(PackageItem packageItem, VarMetadata metadata)
+        {
+            try
+            {
+                if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                {
+                    return metadata.FilePath;
+                }
+
+                if (string.IsNullOrEmpty(_settingsManager?.Settings?.SelectedFolder))
+                {
+                    return null;
+                }
+
+                var vamFolder = _settingsManager.Settings.SelectedFolder;
+                var filename = metadata?.Filename;
+                if (string.IsNullOrEmpty(filename))
+                {
+                    filename = packageItem?.Name;
+                    if (!string.IsNullOrEmpty(filename) && !filename.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                    {
+                        filename += ".var";
+                    }
+                }
+
+                if (string.IsNullOrEmpty(filename))
+                {
+                    return null;
+                }
+
+                var possiblePaths = new[]
+                {
+                    Path.Combine(vamFolder, "AddonPackages", filename),
+                    Path.Combine(vamFolder, "AllPackages", filename),
+                    Path.Combine(vamFolder, "ArchivedPackages", filename)
+                };
+
+                foreach (var path in possiblePaths)
+                {
+                    if (File.Exists(path))
+                    {
+                        return path;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private List<string> LoadPackageFilesForDisplay(PackageItem packageItem, VarMetadata packageMetadata)
+        {
+            try
+            {
+                var varPath = ResolvePackageVarPath(packageItem, packageMetadata);
+                if (string.IsNullOrEmpty(varPath))
+                {
+                    return new List<string>();
+                }
+
+                var cacheKey = varPath;
+                if (packageMetadata != null)
+                {
+                    try
+                    {
+                        var fi = new FileInfo(varPath);
+                        cacheKey = $"{varPath}|{fi.Length}|{fi.LastWriteTimeUtc.Ticks}";
+                    }
+                    catch
+                    {
+                        cacheKey = varPath;
+                    }
+                }
+
+                if (_packageFilesCache.TryGetValue(cacheKey, out var cached))
+                {
+                    if (_packageFilesCacheLruNodes.TryGetValue(cacheKey, out var node))
+                    {
+                        _packageFilesCacheLru.Remove(node);
+                        _packageFilesCacheLru.AddFirst(node);
+                    }
+                    return cached;
+                }
+
+                using var archive = SharpCompressHelper.OpenForRead(varPath);
+                var results = new List<string>();
+
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry == null) continue;
+                    if (entry.Key.EndsWith("/")) continue;
+
+                    results.Add(entry.Key);
+                }
+
+                // Cache the results with LRU eviction to keep memory bounded
+                _packageFilesCache[cacheKey] = results;
+                if (_packageFilesCacheLruNodes.TryGetValue(cacheKey, out var existingNode))
+                {
+                    _packageFilesCacheLru.Remove(existingNode);
+                    _packageFilesCacheLruNodes.Remove(cacheKey);
+                }
+                var newNode = _packageFilesCacheLru.AddFirst(cacheKey);
+                _packageFilesCacheLruNodes[cacheKey] = newNode;
+
+                while (_packageFilesCache.Count > MAX_PACKAGE_FILES_CACHE && _packageFilesCacheLru.Last != null)
+                {
+                    var removeKey = _packageFilesCacheLru.Last.Value;
+                    _packageFilesCacheLru.RemoveLast();
+                    _packageFilesCacheLruNodes.Remove(removeKey);
+                    _packageFilesCache.Remove(removeKey);
+                }
+
+                return results;
+            }
+            catch
+            {
+                return new List<string>();
+            }
+        }
+
         private void DisplayPackageInfo(PackageItem packageItem)
         {
             // Use stored metadata key for O(1) performance
@@ -61,10 +189,7 @@ namespace VPM
             
             var categoryFiles = new Dictionary<string, List<string>>();
             
-            // Use AllFiles (expanded file list) if available, otherwise fall back to ContentList
-            var filesToProcess = (packageMetadata.AllFiles != null && packageMetadata.AllFiles.Count > 0) 
-                ? packageMetadata.AllFiles 
-                : packageMetadata.ContentList;
+            var filesToProcess = LoadPackageFilesForDisplay(packageItem, packageMetadata);
             
             if (filesToProcess != null && filesToProcess.Count > 0)
             {
@@ -168,7 +293,9 @@ namespace VPM
                 CanUserSortColumns = false,
                 BorderThickness = new Thickness(0),
                 VerticalGridLinesBrush = Brushes.Transparent,
-                RowHeight = double.NaN
+                RowHeight = double.NaN,
+                EnableRowVirtualization = true,
+                EnableColumnVirtualization = true
             };
             
             var cellStyle = new Style(typeof(DataGridCell));

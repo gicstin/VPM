@@ -15,7 +15,7 @@ namespace VPM.Services
     /// </summary>
     public class BinaryMetadataCache : IDisposable
     {
-        private const int CACHE_VERSION = 13; // Added ClothingTags and HairTags
+        private const int CACHE_VERSION = 14; // Removed ContentList and AllFiles from cache payload
         private readonly string _cacheFilePath;
         private readonly string _cacheDirectory;
         private readonly Dictionary<string, CachedMetadata> _cache = new(StringComparer.OrdinalIgnoreCase);
@@ -458,15 +458,19 @@ namespace VPM.Services
                 }
             }
 
-            // Read ContentList - intern paths (major source of duplicate strings)
-            var contentCount = reader.ReadInt32();
-            if (contentCount > 0)
+            // ContentList is not stored in cache (loaded on-demand)
+            // Still consume serialized payload to keep the reader aligned.
+            try
             {
-                metadata.ContentList = new List<string>(contentCount);
+                var contentCount = reader.ReadInt32();
                 for (int i = 0; i < contentCount; i++)
                 {
-                    metadata.ContentList.Add(StringPool.InternPath(reader.ReadString()));
+                    reader.ReadString();
                 }
+            }
+            catch
+            {
+                // Leave as null
             }
 
             // Read ContentTypes HashSet - intern (small set of known values)
@@ -502,22 +506,18 @@ namespace VPM.Services
                 }
             }
 
-            // Read AllFiles list - intern paths (MAJOR source of duplicate strings - 219MB wasted)
+            // AllFiles is not stored in cache (loaded on-demand)
             try
             {
                 var allFilesCount = reader.ReadInt32();
-                if (allFilesCount > 0)
+                for (int i = 0; i < allFilesCount; i++)
                 {
-                    metadata.AllFiles = new List<string>(allFilesCount);
-                    for (int i = 0; i < allFilesCount; i++)
-                    {
-                        metadata.AllFiles.Add(StringPool.InternPath(reader.ReadString()));
-                    }
+                    reader.ReadString();
                 }
             }
             catch
             {
-                // If AllFiles can't be read (old cache format), leave as null (lazy init)
+                // Leave as null
             }
 
             // Read MissingDependencies list - intern package names
@@ -634,13 +634,8 @@ namespace VPM.Services
                 writer.Write(dep ?? "");
             }
 
-            // Write ContentList
-            var contentList = metadata.ContentList ?? new List<string>();
-            writer.Write(contentList.Count);
-            foreach (var content in contentList)
-            {
-                writer.Write(content ?? "");
-            }
+            // ContentList not stored in cache (loaded on-demand)
+            writer.Write(0);
 
             // Write ContentTypes HashSet
             var contentTypes = metadata.ContentTypes ?? new HashSet<string>();
@@ -666,13 +661,8 @@ namespace VPM.Services
                 writer.Write(tag ?? "");
             }
 
-            // Write AllFiles list (complete file index from archive)
-            var allFiles = metadata.AllFiles ?? new List<string>();
-            writer.Write(allFiles.Count);
-            foreach (var file in allFiles)
-            {
-                writer.Write(file ?? "");
-            }
+            // AllFiles not stored in cache (loaded on-demand)
+            writer.Write(0);
 
             // Write MissingDependencies list
             var missingDeps = metadata.MissingDependencies ?? new List<string>();
@@ -751,16 +741,12 @@ namespace VPM.Services
             // VarMetadata uses lazy initialization, so null is fine for empty collections
             if (source.Dependencies?.Count > 0)
                 clone.Dependencies = new List<string>(source.Dependencies);
-            if (source.ContentList?.Count > 0)
-                clone.ContentList = new List<string>(source.ContentList);
             if (source.ContentTypes?.Count > 0)
                 clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
             if (source.Categories?.Count > 0)
                 clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
             if (source.UserTags?.Count > 0)
                 clone.UserTags = new List<string>(source.UserTags);
-            if (source.AllFiles?.Count > 0)
-                clone.AllFiles = new List<string>(source.AllFiles);
             if (source.MissingDependencies?.Count > 0)
                 clone.MissingDependencies = new List<string>(source.MissingDependencies);
             if (source.ClothingTags?.Count > 0)

@@ -293,10 +293,13 @@ namespace VPM
                     }
                 }
 
-                // Find available dependencies (local)
+                // Find available dependencies (local) - includes Available, Outdated, and Archived
                 var availableDependencies = allDependencies
                     .Where(d => !packagesToLoad.Contains(d))
-                    .Where(d => _packageFileManager?.GetPackageStatus(d) == "Available")
+                    .Where(d => {
+                        var status = _packageFileManager?.GetPackageStatus(d);
+                        return status == "Available" || status == "Outdated" || status == "Archived";
+                    })
                     .ToList();
 
                 // Find external dependencies (in external destinations)
@@ -669,14 +672,14 @@ namespace VPM
             {
                 if (!EnsureVamFolderSelected()) return;
 
-                // Include both Available and external dependencies (hex color status indicates external)
+                // Include Available, Outdated, Archived, and external dependencies (hex color status indicates external)
                 var selectedDependencies = DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
-                    .Where(d => d.Status == "Available" || (d.Status?.StartsWith("#") == true))
+                    .Where(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || (d.Status?.StartsWith("#") == true))
                     .ToList();
 
                 if (selectedDependencies.Count == 0)
                 {
-                    MessageBox.Show("No available or external dependencies selected.", "No Dependencies",
+                    MessageBox.Show("No available, outdated, archived, or external dependencies selected.", "No Dependencies",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -706,9 +709,9 @@ namespace VPM
 
                 try
                 {
-                    // Separate external dependencies (hex color status) from regular available dependencies
+                    // Separate external dependencies (hex color status) from regular available/outdated/archived dependencies
                     var externalDeps = selectedDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
-                    var regularDeps = selectedDependencies.Where(d => d.Status == "Available").ToList();
+                    var regularDeps = selectedDependencies.Where(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived").ToList();
                     
                     var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
 
@@ -1501,14 +1504,17 @@ namespace VPM
                 var hasExternal = selectedDependencies.Any(d => d.Status?.StartsWith("#") == true); // Hex color = external
                 var hasMissing = selectedDependencies.Any(d => d.Status == "Missing");
                 var hasUnknown = selectedDependencies.Any(d => d.Status == "Unknown");
+                var hasOutdated = selectedDependencies.Any(d => d.Status == "Outdated");
+                var hasArchived = selectedDependencies.Any(d => d.Status == "Archived");
                 var hasOptimizable = selectedDependencies.Any(d => d.Status != "Missing" && d.Status != "Unknown");
 
                 // Check if all selected dependencies have the same status (for keyboard shortcut hint)
                 var allStatuses = selectedDependencies.Select(d => d.Status).Distinct().ToList();
                 bool allSameStatus = allStatuses.Count == 1;
 
-                // Show Load button if any dependencies are Available or External
-                LoadDependenciesButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
+                // Show Load button if any dependencies are Available, Outdated, Archived, or External
+                // Outdated/Archived means an old version exists but can still be loaded
+                LoadDependenciesButton.Visibility = (hasAvailable || hasOutdated || hasArchived || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Show Unload button if any dependencies are Loaded
                 UnloadDependenciesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
@@ -1517,13 +1523,13 @@ namespace VPM
                 OptimizeDependenciesButton.Visibility = hasOptimizable ? Visibility.Visible : Visibility.Collapsed;
 
                 // Update button text to reflect count and keyboard shortcuts
-                if (hasAvailable || hasExternal)
+                if (hasAvailable || hasOutdated || hasArchived || hasExternal)
                 {
-                    // Count both available and external dependencies for load operations
-                    var loadableCount = selectedDependencies.Count(d => d.Status == "Available" || (d.Status?.StartsWith("#") == true));
+                    // Count available, outdated, archived, and external dependencies for load operations
+                    var loadableCount = selectedDependencies.Count(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || (d.Status?.StartsWith("#") == true));
 
                     // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
-                    if (allSameStatus && allStatuses[0] == "Available" && _dependenciesDataGridHasFocus)
+                    if (allSameStatus && (allStatuses[0] == "Available" || allStatuses[0] == "Outdated" || allStatuses[0] == "Archived") && _dependenciesDataGridHasFocus)
                     {
                         LoadDependenciesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
                     }
