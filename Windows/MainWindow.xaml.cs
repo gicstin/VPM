@@ -158,24 +158,26 @@ namespace VPM
 
             // Initialize service managers
             _imageManager = new ImageManager(_cacheFolder, this);
-            _packageManager = new PackageManager(_cacheFolder, _imageManager.PreviewImageIndex);
+            
+            // Initialize PackageFileManager first (before PackageManager) so it can be passed to PackageManager
+            InitializePackageFileManager();
+            
+            // Now initialize PackageManager with PackageFileManager reference
+            _packageManager = new PackageManager(_cacheFolder, _imageManager.PreviewImageIndex, _packageFileManager);
 
             _filterManager = new FilterManager();
             _reactiveFilterManager = new ReactiveFilterManager(_filterManager);
             
-            // Initialize incremental package refresh
-            _incrementalRefresh = new IncrementalPackageRefresh(_packageManager);
-            _incrementalRefresh.PackagesUpdated += OnIncrementalPackagesUpdated;
-            _incrementalRefresh.FullRefreshRecommended += OnFullRefreshRecommended;
+            // Incremental refresh disabled - using full refresh only
+            // _incrementalRefresh = new IncrementalPackageRefresh(_packageManager);
+            // _incrementalRefresh.PackagesUpdated += OnIncrementalPackagesUpdated;
+            // _incrementalRefresh.FullRefreshRecommended += OnFullRefreshRecommended;
             
             // Sync file size filter settings from AppSettings to FilterManager
             _filterManager.FileSizeTinyMax = _settingsManager.Settings.FileSizeTinyMax;
             _filterManager.FileSizeSmallMax = _settingsManager.Settings.FileSizeSmallMax;
             _filterManager.FileSizeMediumMax = _settingsManager.Settings.FileSizeMediumMax;
             _filterManager.HideArchivedPackages = _settingsManager.Settings.HideArchivedPackages;
-
-            // Initialize PackageFileManager if we have a selected folder
-            InitializePackageFileManager();
 
             // Initialize SceneScanner and UnifiedCustomContentScanner
             if (!string.IsNullOrEmpty(_settingsManager.Settings.SelectedFolder))

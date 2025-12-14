@@ -281,6 +281,13 @@ namespace VPM.Services
         {
             var result = new ValidationResult { IsValid = true };
             
+            // Validate that the package file exists and is accessible
+            if (string.IsNullOrEmpty(packagePath) || !File.Exists(packagePath))
+            {
+                result.ErrorMessage = $"Package file not found or not accessible: {packagePath}";
+                return result;
+            }
+            
             // Check if original archive exists for intelligent upscaling
             string archivePackagePath = null;
             bool hasArchiveSource = false;

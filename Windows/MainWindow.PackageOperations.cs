@@ -1394,9 +1394,10 @@ namespace VPM
                 // Show Load +Deps button if any packages are Available or External
                 LoadPackagesWithDepsButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
 
-                // Check if all selected packages have the same status (for keyboard shortcut hint)
-                var allStatuses = selectedPackages.Select(p => p.Status).Distinct().ToList();
-                bool allSameStatus = allStatuses.Count == 1;
+                // Check if all selected packages have the same normalized status (for keyboard shortcut hint)
+                // For EXTERNAL packages, treat them as "Available" for status comparison
+                var normalizedStatuses = selectedPackages.Select(p => p.IsExternal ? "Available" : p.Status).Distinct().ToList();
+                bool allSameStatus = normalizedStatuses.Count == 1;
 
                 // Update button text and tooltip to reflect count
                 // Show keyboard shortcut hint consistently when all items have same status
@@ -1405,8 +1406,8 @@ namespace VPM
                     // Count both available and external packages for load operations
                     var loadableCount = selectedPackages.Count(p => p.Status == "Available" || p.IsExternal);
 
-                    // Show keyboard shortcut if all selected items have same status
-                    if (allSameStatus && allStatuses[0] == "Available")
+                    // Show keyboard shortcut if all selected items have same normalized status
+                    if (allSameStatus && normalizedStatuses[0] == "Available")
                     {
                         LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
                         LoadPackagesButton.ToolTip = loadableCount == 1 ? "Load selected package" : $"Load {loadableCount} selected packages";
@@ -1415,7 +1416,7 @@ namespace VPM
                     }
                     else
                     {
-                        // Mixed statuses or external packages - no keyboard shortcut
+                        // Mixed statuses - no keyboard shortcut
                         LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load" : $"📥 Load ({loadableCount})";
                         LoadPackagesButton.ToolTip = $"Load {loadableCount} available/external packages";
                         LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({loadableCount})";
@@ -1428,7 +1429,7 @@ namespace VPM
                     var loadedCount = selectedPackages.Count(p => p.Status == "Loaded");
 
                     // Show keyboard shortcut if all selected items have same status
-                    if (allSameStatus && allStatuses[0] == "Loaded")
+                    if (allSameStatus && normalizedStatuses[0] == "Loaded")
                     {
                         UnloadPackagesButton.Content = loadedCount == 1 ? "📤 Unload (Space)" : $"📤 Unload ({loadedCount}) (Ctrl+Space)";
                         UnloadPackagesButton.ToolTip = loadedCount == 1 ? "Unload selected package" : $"Unload {loadedCount} selected packages";

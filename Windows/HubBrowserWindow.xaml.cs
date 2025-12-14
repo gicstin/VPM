@@ -2083,16 +2083,13 @@ namespace VPM.Windows
             var downloadableDeps = _currentDependencies.Count(f => f.CanDownload);
             var totalDownloadable = downloadableFiles + downloadableDeps;
             
-            // Total items in the list (for display)
-            var totalItems = _currentFiles.Count + _currentDependencies.Count;
-            
             // Make sure button is visible and progress is hidden
             DownloadAllButton.Visibility = Visibility.Visible;
             DownloadProgressContainer.Visibility = Visibility.Collapsed;
             
             DownloadAllButton.IsEnabled = totalDownloadable > 0;
             DownloadAllButton.Content = totalDownloadable > 0 
-                ? $"⬇ Download All ({totalItems})" 
+                ? $"⬇ Download All ({totalDownloadable})" 
                 : "✓ All Installed";
         }
 

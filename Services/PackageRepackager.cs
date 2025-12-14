@@ -10,6 +10,7 @@ using System.Globalization;
 using System.Threading;
 using SharpCompress.Archives;
 using SharpCompress.Archives.Zip;
+using SharpCompress.Common;
 
 namespace VPM.Services
 {
@@ -35,6 +36,61 @@ namespace VPM.Services
             }
             
             _performanceTimer = new OptimizationTimer();
+        }
+
+        /// <summary>
+        /// Gets the effective archive folder, checking both custom and default locations.
+        /// Returns the configured custom archive path if set and valid, otherwise returns the default.
+        /// </summary>
+        public string GetEffectiveArchiveFolder(string defaultArchivedFolder)
+        {
+            if (_settingsManager != null && !string.IsNullOrWhiteSpace(_settingsManager.Settings.CustomArchivePath))
+            {
+                string customPath = _settingsManager.Settings.CustomArchivePath;
+                if (Directory.Exists(customPath) || Path.IsPathRooted(customPath))
+                {
+                    return customPath;
+                }
+            }
+            return defaultArchivedFolder;
+        }
+
+        /// <summary>
+        /// Finds the backup file with the largest size from both old and new archive paths.
+        /// Returns the path to the largest backup, or null if no backup exists.
+        /// </summary>
+        public string FindLargestBackup(string packageFilename, string defaultArchivedFolder)
+        {
+            var backupCandidates = new List<(string path, long size)>();
+
+            // Check default archive path
+            string defaultBackupPath = Path.Combine(defaultArchivedFolder, packageFilename);
+            if (File.Exists(defaultBackupPath))
+            {
+                var fileInfo = new FileInfo(defaultBackupPath);
+                backupCandidates.Add((defaultBackupPath, fileInfo.Length));
+            }
+
+            // Check custom archive path if configured
+            if (_settingsManager != null && !string.IsNullOrWhiteSpace(_settingsManager.Settings.CustomArchivePath))
+            {
+                string customPath = _settingsManager.Settings.CustomArchivePath;
+                if (Directory.Exists(customPath))
+                {
+                    string customBackupPath = Path.Combine(customPath, packageFilename);
+                    if (File.Exists(customBackupPath))
+                    {
+                        var fileInfo = new FileInfo(customBackupPath);
+                        backupCandidates.Add((customBackupPath, fileInfo.Length));
+                    }
+                }
+            }
+
+            // Return the largest backup, or null if none found
+            if (backupCandidates.Count == 0)
+                return null;
+
+            return backupCandidates.OrderByDescending(x => x.size).First().path;
         }
 
         /// <summary>
@@ -108,6 +164,10 @@ namespace VPM.Services
         {
             // Create error log file for debugging
             string errorLogPath = Path.Combine(Path.GetTempPath(), "VPM_OptimizationErrors.log");
+            
+            // CRITICAL FIX: Use custom archive path if configured, otherwise use the provided default
+            // This ensures external packages use the correct archive location
+            archivedFolder = GetEffectiveArchiveFolder(archivedFolder);
             
             // CRITICAL FIX: Acquire exclusive write access at the START of optimization
             // This blocks ALL image loading operations from opening the file while we work on it.
@@ -183,13 +243,16 @@ namespace VPM.Services
                 }
                 
                 // Now acquire exclusive write access for all files that might be modified
+                // Use a longer timeout (60 seconds) for archived packages since image loaders may take time to release handles
+                var lockTimeout = isSourceInArchive ? TimeSpan.FromSeconds(60) : TimeSpan.FromSeconds(30);
+                
                 if (filesToLock.Count > 1)
                 {
-                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(filesToLock, TimeSpan.FromSeconds(30));
+                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(filesToLock, lockTimeout);
                 }
                 else
                 {
-                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(sourceVarPath, TimeSpan.FromSeconds(30));
+                    writeLock = await FileAccessController.Instance.AcquireWriteAccessAsync(sourceVarPath, lockTimeout);
                 }
             }
             catch (TimeoutException)
@@ -224,16 +287,14 @@ namespace VPM.Services
                 if (isSourceInArchive && createBackup)
                 {
                     // SCENARIO 3: Optimizing old version package from archive folder
-                    // Old version packages need to be copied to a backup location with #archived suffix
-                    // This preserves the original old version while creating an optimized version
+                    // Old version packages are preserved in archive with original name and date
                     progressCallback?.Invoke("Backing up old version and optimizing...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
-                    // Create backup of old version with #archived suffix
-                    string backupFilename = Path.GetFileNameWithoutExtension(filename) + "#archived" + Path.GetExtension(filename);
-                    string backupPath = Path.Combine(archivedFolder, backupFilename);
+                    // Keep original filename without #archived suffix
+                    string backupPath = Path.Combine(archivedFolder, filename);
                     
                     // Only create backup if it doesn't already exist
                     if (!File.Exists(backupPath))
@@ -241,6 +302,18 @@ namespace VPM.Services
                         try
                         {
                             File.Copy(sourceVarPath, backupPath, overwrite: false);
+                            
+                            // Preserve original file dates
+                            try
+                            {
+                                var sourceFileInfo = new FileInfo(sourceVarPath);
+                                File.SetCreationTime(backupPath, sourceFileInfo.CreationTime);
+                                File.SetLastWriteTime(backupPath, sourceFileInfo.LastWriteTime);
+                            }
+                            catch
+                            {
+                                // If we can't set dates, continue anyway - the copy succeeded
+                            }
                         }
                         catch (IOException)
                         {
@@ -248,7 +321,8 @@ namespace VPM.Services
                         }
                     }
                     
-                    // Determine output folder (AddonPackages or AllPackages)
+                    // For external packages, write optimized version back to source location
+                    // For VAM root packages, write to AddonPackages/AllPackages
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
                     string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
                     
@@ -265,7 +339,8 @@ namespace VPM.Services
                         }
                         else
                         {
-                            throw new InvalidOperationException("Could not find AddonPackages or AllPackages folder to write optimized package.");
+                            // External location - write back to original source location
+                            finalOutputPath = sourceVarPath;
                         }
                     }
                     
@@ -280,7 +355,8 @@ namespace VPM.Services
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
-                    // Determine output folder (AddonPackages or AllPackages)
+                    // For external packages, write optimized version back to source location
+                    // For VAM root packages, write to AddonPackages/AllPackages
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
                     string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
                     
@@ -297,7 +373,8 @@ namespace VPM.Services
                         }
                         else
                         {
-                            throw new InvalidOperationException("Could not find AddonPackages or AllPackages folder to write optimized package.");
+                            // External location - write back to original source location
+                            finalOutputPath = sourceVarPath;
                         }
                     }
                     
@@ -485,14 +562,12 @@ namespace VPM.Services
                         if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(fileToModify);
                         await ReleaseFileHandlesAsync(100);
                         
-                        // Use SharpCompress to read and re-write the archive with metadata updates
-                        // NOTE: Use OpenForReadInternal because we already hold the write lock
+                        string updatedMetaJsonFinal = null;
                         using (var archive = SharpCompressHelper.OpenForReadInternal(fileToModify))
                         {
                             string originalMetaJson = null;
                             DateTime? originalMetaJsonDate = null;
                             
-                            // Read original meta.json
                             var metaEntry = archive.Archive.Entries.FirstOrDefault(e => e.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase));
                             if (metaEntry != null)
                             {
@@ -503,76 +578,146 @@ namespace VPM.Services
                                 }
                                 originalMetaJsonDate = metaEntry.LastModifiedTime ?? DateTime.Now;
                             }
-                            
-                            // Track metadata changes for description update
+
                             List<string> dependencyChanges = null;
                             bool morphPreloadChanged = false;
                             string metaJsonToUpdate = originalMetaJson;
-                            
-                            // Update meta.json with dependency changes if needed
+
                             if (!string.IsNullOrEmpty(originalMetaJson) && (config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload))
                             {
                                 metaJsonToUpdate = originalMetaJson;
-                                
+
                                 if (config.ForceLatestDependencies)
                                 {
                                     var conversionResult = ConvertDependenciesToLatest(metaJsonToUpdate);
                                     metaJsonToUpdate = conversionResult.updatedJson;
                                     dependencyChanges = conversionResult.changes;
                                 }
-                                
+
                                 if (config.DisabledDependencies != null && config.DisabledDependencies.Count > 0)
                                 {
                                     metaJsonToUpdate = RemoveDisabledDependencies(metaJsonToUpdate, config.DisabledDependencies);
                                 }
-                                
+
                                 if (config.DisableMorphPreload && !config.IsMorphAsset)
                                 {
                                     metaJsonToUpdate = SetPreloadMorphsFlag(metaJsonToUpdate, false);
                                     morphPreloadChanged = true;
                                 }
                             }
-                            
-                            // Update description with optimization flags (even for minification-only)
+
                             if (!string.IsNullOrEmpty(metaJsonToUpdate))
                             {
-                                string updatedMetaJson = UpdateMetaJsonDescription(
+                                updatedMetaJsonFinal = UpdateMetaJsonDescription(
                                     metaJsonToUpdate,
-                                    new System.Collections.Concurrent.ConcurrentBag<string>(), // No texture conversions in this path
-                                    new List<string>(), // No hair conversions in this path
-                                    new List<string>(), // No light conversions in this path
-                                    false, // No mirror disabling in this path
-                                    0, // No size changes to report
+                                    new System.Collections.Concurrent.ConcurrentBag<string>(),
+                                    new List<string>(),
+                                    new List<string>(),
+                                    false,
+                                    0,
                                     0,
                                     originalMetaJsonDate,
                                     dependencyChanges,
                                     config.DisabledDependencies,
                                     morphPreloadChanged,
                                     config.MinifyJson);
-                                
-                                // Apply JSON minification to meta.json if enabled
+
                                 if (config.MinifyJson)
                                 {
-                                    updatedMetaJson = MinifyJson(updatedMetaJson);
+                                    updatedMetaJsonFinal = MinifyJson(updatedMetaJsonFinal);
                                 }
-                                
-                                // Note: For metadata-only updates with SharpCompress, we need to re-create the archive
-                                // This is a limitation of SharpCompress - it doesn't support in-place updates like ZipArchive.Update
-                                // For now, we'll skip this optimization and let the full repackage path handle it
                             }
-                            
-                            // Note: For in-place JSON minification with SharpCompress, we would need to re-create the archive
-                            // This is a limitation of SharpCompress - it doesn't support in-place updates
-                            // For now, this optimization is skipped for metadata-only updates
+
+                            if (updatedMetaJsonFinal == null)
+                            {
+                                updatedMetaJsonFinal = originalMetaJson;
+                            }
+
+                            if (updatedMetaJsonFinal != null)
+                            {
+                                jsonSizeBeforeMinify = Encoding.UTF8.GetByteCount(originalMetaJson ?? string.Empty);
+                                jsonSizeAfterMinify = Encoding.UTF8.GetByteCount(updatedMetaJsonFinal);
+                            }
+
+                            var outputDirectoryForTemp = Path.GetDirectoryName(fileToModify);
+                            tempOutputPath = Path.Combine(outputDirectoryForTemp, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + Path.GetFileName(fileToModify));
+                            if (File.Exists(tempOutputPath))
+                            {
+                                File.Delete(tempOutputPath);
+                            }
+
+                            using (var outputArchive = ZipArchive.Create())
+                            {
+                                outputArchive.DeflateCompressionLevel = SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression;
+
+                                foreach (var entry in archive.Archive.Entries)
+                                {
+                                    if (entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        continue;
+                                    }
+
+                                    SharpCompressHelper.CopyEntryDirect(archive.Archive, entry, outputArchive);
+                                }
+
+                                if (!string.IsNullOrEmpty(updatedMetaJsonFinal))
+                                {
+                                    outputArchive.AddEntry("meta.json", new MemoryStream(Encoding.UTF8.GetBytes(updatedMetaJsonFinal)), closeStream: true);
+                                }
+
+                                using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                                {
+                                    outputArchive.SaveTo(outputFileStream, CompressionType.Deflate);
+                                }
+                            }
                         }
-                        
+
+                        if (File.Exists(fileToModify))
+                        {
+                            for (int deleteAttempt = 1; deleteAttempt <= 10; deleteAttempt++)
+                            {
+                                try
+                                {
+                                    File.Delete(fileToModify);
+                                    break;
+                                }
+                                catch (IOException) when (deleteAttempt < 10)
+                                {
+                                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(fileToModify);
+                                    FileAccessController.Instance.InvalidateFile(fileToModify);
+                                    GC.Collect();
+                                    GC.WaitForPendingFinalizers();
+                                    await Task.Delay(100 * deleteAttempt);
+                                }
+                            }
+                        }
+
+                        for (int copyAttempt = 1; copyAttempt <= 10; copyAttempt++)
+                        {
+                            try
+                            {
+                                File.Copy(tempOutputPath, fileToModify, overwrite: true);
+                                break;
+                            }
+                            catch (IOException) when (copyAttempt < 10)
+                            {
+                                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(fileToModify);
+                                FileAccessController.Instance.InvalidateFile(fileToModify);
+                                GC.Collect();
+                                GC.WaitForPendingFinalizers();
+                                await Task.Delay(100 * copyAttempt);
+                            }
+                        }
+
+                        try { if (!string.IsNullOrEmpty(tempOutputPath) && File.Exists(tempOutputPath)) File.Delete(tempOutputPath); } catch { }
+
                         progressCallback?.Invoke("Metadata update complete!", 1, 1);
                         
                         // Get file sizes for statistics
-                        long metadataUpdateSize = new FileInfo(finalOutputPath).Length;
+                        long metadataUpdateSize = new FileInfo(fileToModify).Length;
                         return new RepackageResult
                         {
-                            OutputPath = finalOutputPath,
+                            OutputPath = fileToModify,
                             OriginalSize = originalFileSize,
                             NewSize = metadataUpdateSize,
                             TexturesConverted = 0,

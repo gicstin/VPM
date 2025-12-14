@@ -224,6 +224,45 @@ namespace VPM.Services
             // Resolve package name once for all filters that need it
             packageName = ResolvePackageName(metadata, packageName);
 
+            // CRITICAL: Early filter for external packages
+            // External packages should ONLY appear when:
+            // 1. "External" filter is explicitly selected in SelectedStatuses, OR
+            // 2. External destination filter is selected, OR
+            // 3. NO other filters are active (show all packages)
+            bool isExternalPackage = metadata.IsExternal;
+            
+            if (isExternalPackage)
+            {
+                // Check if any non-External/Local status filter is active
+                bool hasNonExternalStatusFilter = state.SelectedStatuses.Count > 0 && 
+                    !(state.SelectedStatuses.Count == 1 && (state.SelectedStatuses.Contains("External") || state.SelectedStatuses.Contains("Local"))) &&
+                    !(state.SelectedStatuses.Count == 2 && state.SelectedStatuses.Contains("External") && state.SelectedStatuses.Contains("Local"));
+                
+                // Check if any other filter types are active
+                bool hasOtherFiltersActive = state.SelectedFavoriteStatuses.Count > 0 ||
+                                            state.SelectedAutoInstallStatuses.Count > 0 ||
+                                            state.SelectedOptimizationStatuses.Count > 0 ||
+                                            state.SelectedVersionStatuses.Count > 0 ||
+                                            state.FilterDuplicates ||
+                                            state.FilterNoDependents ||
+                                            state.FilterNoDependencies ||
+                                            state.SelectedCategories.Count > 0 ||
+                                            state.SelectedCreators.Count > 0 ||
+                                            state.SelectedLicenseTypes.Count > 0 ||
+                                            state.SelectedFileSizeRanges.Count > 0 ||
+                                            state.SelectedSubfolders.Count > 0 ||
+                                            !string.IsNullOrEmpty(state.SelectedDamagedFilter) ||
+                                            !string.IsNullOrEmpty(state.SearchText) ||
+                                            state.SelectedClothingTags.Count > 0 ||
+                                            state.SelectedHairTags.Count > 0;
+                
+                // Exclude external packages if any non-External/Local filter is active
+                if (hasNonExternalStatusFilter || (hasOtherFiltersActive && state.SelectedDestinations.Count == 0))
+                {
+                    return false;
+                }
+            }
+
             // 1. Search text filter (most restrictive, check first)
             if (!string.IsNullOrEmpty(state.SearchText))
             {
@@ -242,39 +281,63 @@ namespace VPM.Services
                 if (metadata.VariantRole != null && metadata.VariantRole.Equals("Archived", StringComparison.OrdinalIgnoreCase))
                     return false;
                 
-                // Check if package is archived by filename suffix (backup marker)
-                if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                    return false;
-                
                 // Check if package is in archive folder (handle both "archive" and "ArchivedPackages")
+                // IMPORTANT: Only filter by path if it's in the standard ArchivedPackages folder
+                // Don't filter packages in custom archive locations - those are handled by VariantRole/Status
                 string pathToCheck = !string.IsNullOrEmpty(metadata.FilePath) ? metadata.FilePath : metadata.Filename;
                 if (!string.IsNullOrEmpty(pathToCheck))
                 {
-                    if (pathToCheck.IndexOf("\\archive\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                        return false;
-                    
+                    // Only check for standard VAM archive folder, not custom archive locations
                     if (pathToCheck.IndexOf("\\ArchivedPackages\\", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        if (metadata.Filename != null && metadata.Filename.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                            return false;
-                    }
+                        return false;
                 }
             }
 
             // 3. Status filter (HashSet lookup O(1))
             // IMPORTANT: External packages have Status set to their destination name (e.g., "Backup"),
-            // not standard statuses like "Loaded"/"Available". Skip status filtering for external packages
-            // unless a destination filter is explicitly selected.
-            bool isExternalPackage = metadata.IsExternal && !string.IsNullOrEmpty(metadata.ExternalDestinationName);
+            // not standard statuses like "Loaded"/"Available". Handle External/Local filters separately.
             
-            if (!isExternalPackage)
+            if (state.SelectedStatuses.Count > 0)
             {
-                if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
-                    return false;
+                // Check if "External" or "Local" filters are selected
+                bool hasExternalFilter = state.SelectedStatuses.Contains("External");
+                bool hasLocalFilter = state.SelectedStatuses.Contains("Local");
                 
-                if (state.SelectedStatuses.Count > 0 && !state.SelectedStatuses.Contains(metadata.Status))
-                    return false;
+                if (hasExternalFilter || hasLocalFilter)
+                {
+                    // If External/Local filters are selected, check package type
+                    bool matchesExternalLocal = false;
+                    if (hasExternalFilter && isExternalPackage)
+                        matchesExternalLocal = true;
+                    if (hasLocalFilter && !isExternalPackage)
+                        matchesExternalLocal = true;
+                    
+                    if (!matchesExternalLocal)
+                        return false;
+                    
+                    // Remove External/Local from the status set for further processing
+                    var otherStatuses = new HashSet<string>(state.SelectedStatuses, StringComparer.OrdinalIgnoreCase);
+                    otherStatuses.Remove("External");
+                    otherStatuses.Remove("Local");
+                    
+                    // If there are other statuses besides External/Local, check them for non-external packages
+                    if (otherStatuses.Count > 0 && !isExternalPackage)
+                    {
+                        if (!otherStatuses.Contains(metadata.Status))
+                            return false;
+                    }
+                }
+                else
+                {
+                    // No External/Local filters - apply normal status filtering
+                    // Skip status filtering for external packages (they don't have standard statuses)
+                    if (!isExternalPackage && !state.SelectedStatuses.Contains(metadata.Status))
+                        return false;
+                }
             }
+            
+            if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
+                return false;
 
             // 4. Optimization status filter
             if (state.SelectedOptimizationStatuses.Count > 0)
@@ -576,12 +639,6 @@ namespace VPM.Services
                     // Extract base package name (without version/variant suffixes)
                     string basePackageName = kvp.Key;
                     
-                    // Remove archived suffix if present
-                    if (basePackageName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-                    {
-                        basePackageName = basePackageName.Substring(0, basePackageName.Length - 9);
-                    }
-                    
                     // Remove variant suffixes (e.g., #1, #2, etc.)
                     int hashIndex = basePackageName.LastIndexOf('#');
                     if (hashIndex > 0)
@@ -637,6 +694,11 @@ namespace VPM.Services
             {
                 var packageKey = kvp.Key;
                 var package = kvp.Value;
+                
+                if (package.IsExternal)
+                {
+                    continue;
+                }
                 
                 if (!string.IsNullOrEmpty(package.Status))
                 {

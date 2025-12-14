@@ -2326,6 +2326,9 @@ namespace VPM.Services
                     PreviewImageIndex.TryRemove(key, out _);
                 }
                 
+                // Clear disk cache entries for this package
+                _diskCache.InvalidatePackageCache(packageName);
+                
                 // NOTE: Do NOT remove from ImageIndex here - we need to preserve the image locations
                 // The image index should only be cleared when the package is permanently removed from the system
                 // Only clear the signatures so the index will be rebuilt if the file changes

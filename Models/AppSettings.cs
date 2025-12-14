@@ -115,6 +115,7 @@ namespace VPM.Models
         private bool _disableMorphPreload = true;
         private bool _minifyJsonFiles = true;
         private long _textureCompressionQuality = 90L;
+        private string _customArchivePath = "";
         
         // Settings versioning for migrations
         private int _settingsVersion = 2;
@@ -623,6 +624,12 @@ namespace VPM.Models
             set => SetProperty(ref _textureCompressionQuality, Math.Max(10, Math.Min(100, value)));
         }
 
+        public string CustomArchivePath
+        {
+            get => _customArchivePath;
+            set => SetProperty(ref _customArchivePath, value ?? "");
+        }
+
         public int SettingsVersion
         {
             get => _settingsVersion;
@@ -761,6 +768,7 @@ namespace VPM.Models
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,
                 MinifyJsonFiles = true,
+                CustomArchivePath = "",
                 SettingsVersion = 2,
                 PackageFilterOrder = new List<string>(FilterConfiguration.PackageFilters),
                 SceneFilterOrder = new List<string>(FilterConfiguration.SceneFilters),

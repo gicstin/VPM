@@ -999,6 +999,30 @@ namespace VPM
                         StatusFilterList.SelectedItems.Add(displayText);
                     }
                 }
+
+                // Add External/Local package type filters
+                var externalCount = filteredPackages.Values.Count(p => p.IsExternal);
+                var localCount = filteredPackages.Values.Count(p => !p.IsExternal);
+                
+                if (externalCount > 0)
+                {
+                    var displayText = $"External ({externalCount:N0})";
+                    StatusFilterList.Items.Add(displayText);
+                    if (selectedStatuses.Contains("External"))
+                    {
+                        StatusFilterList.SelectedItems.Add(displayText);
+                    }
+                }
+                
+                if (localCount > 0)
+                {
+                    var displayText = $"Local ({localCount:N0})";
+                    StatusFilterList.Items.Add(displayText);
+                    if (selectedStatuses.Contains("Local"))
+                    {
+                        StatusFilterList.SelectedItems.Add(displayText);
+                    }
+                }
             }
             finally
             {
@@ -1412,18 +1436,26 @@ namespace VPM
                         }
                     }
                     
-                    // Add external destination counts
-                    var destCounts = _filterManager.GetDestinationCounts(_packageManager.PackageMetadata);
+                    // Add External/Local package type filters
+                    var externalCount = _packageManager.PackageMetadata.Values.Count(p => p.IsExternal);
+                    var localCount = _packageManager.PackageMetadata.Values.Count(p => !p.IsExternal);
                     
-                    foreach (var dest in destCounts.OrderBy(s => s.Key))
+                    if (externalCount > 0)
                     {
-                        var displayText = $"{dest.Key} ({dest.Value:N0})";
+                        var displayText = $"External ({externalCount:N0})";
                         StatusFilterList.Items.Add(displayText);
-                        
-                        // Restore selection if this destination was previously selected
-                        if (selectedStatuses.Contains(dest.Key))
+                        if (selectedStatuses.Contains("External"))
                         {
-                            System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring destination selection: '{displayText}'");
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
+                    if (localCount > 0)
+                    {
+                        var displayText = $"Local ({localCount:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        if (selectedStatuses.Contains("Local"))
+                        {
                             StatusFilterList.SelectedItems.Add(displayText);
                         }
                     }
@@ -1735,8 +1767,9 @@ namespace VPM
                 }
             }
             
-            // Add dependency status items (No Dependents / No Dependencies)
+            // Add dependency status counts (No Dependents / No Dependencies)
             var depCounts = _filterManager.GetDependencyStatusCounts(filteredPackages);
+
             foreach (var dep in depCounts.OrderBy(s => s.Key))
             {
                 var displayText = $"{dep.Key} ({dep.Value:N0})";
@@ -1748,15 +1781,43 @@ namespace VPM
                 }
             }
             
+            // Add External/Local package type filters
+            var externalCount = filteredPackages.Values.Count(p => p.IsExternal);
+            var localCount = filteredPackages.Values.Count(p => !p.IsExternal);
+            
+            if (externalCount > 0)
+            {
+                var displayText = $"External ({externalCount:N0})";
+                StatusFilterList.Items.Add(displayText);
+                if (selectedStatuses.Contains("External"))
+                {
+                    StatusFilterList.SelectedItems.Add(displayText);
+                }
+            }
+            
+            if (localCount > 0)
+            {
+                var displayText = $"Local ({localCount:N0})";
+                StatusFilterList.Items.Add(displayText);
+                if (selectedStatuses.Contains("Local"))
+                {
+                    StatusFilterList.SelectedItems.Add(displayText);
+                }
+            }
+            
             // Add favorites option
             if (_favoritesManager != null && _packageManager?.PackageMetadata != null)
             {
                 var favorites = _favoritesManager.GetAllFavorites();
                 int favoriteCount = 0;
                 
-                // Count from ALL packages, not filtered packages
-                foreach (var pkg in _packageManager.PackageMetadata.Values)
+                // Count from filtered packages, excluding external packages
+                foreach (var pkg in filteredPackages.Values)
                 {
+                    // Skip external packages - they should not appear in favorites filter
+                    if (pkg.IsExternal)
+                        continue;
+                    
                     var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
                     if (favorites.Contains(pkgName))
                         favoriteCount++;
@@ -1777,9 +1838,13 @@ namespace VPM
                 var autoInstall = _autoInstallManager.GetAllAutoInstall();
                 int autoInstallCount = 0;
                 
-                // Count from ALL packages, not filtered packages
-                foreach (var pkg in _packageManager.PackageMetadata.Values)
+                // Count from filtered packages, excluding external packages
+                foreach (var pkg in filteredPackages.Values)
                 {
+                    // Skip external packages - they should not appear in autoinstall filter
+                    if (pkg.IsExternal)
+                        continue;
+                    
                     var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
                     if (autoInstall.Contains(pkgName))
                         autoInstallCount++;

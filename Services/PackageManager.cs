@@ -151,12 +151,15 @@ namespace VPM.Services
             return await operation(); // Final try
         }
 
-        public PackageManager(string cacheFolder, ConcurrentDictionary<string, List<ImageLocation>> previewImageIndex)
+        private PackageFileManager _packageFileManager;
+
+        public PackageManager(string cacheFolder, ConcurrentDictionary<string, List<ImageLocation>> previewImageIndex, PackageFileManager packageFileManager = null)
         {
             _cacheFolder = cacheFolder;
             _binaryCache = new BinaryMetadataCache();
             _varScanner = new OptimizedVarScanner();
             _previewImageIndex = previewImageIndex;
+            _packageFileManager = packageFileManager;
 
             // Match any filename ending in .var - we'll parse the content more flexibly
             _varPattern = new Regex(@"^(.+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -1692,6 +1695,36 @@ namespace VPM.Services
                 }
             }
 
+            // Register external package statuses in PackageFileManager's index
+            // This ensures external packages are properly recognized by GetPackageStatus()
+            if (_packageFileManager != null)
+            {
+                var externalPackageStatuses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                
+                foreach (var metadata in PackageMetadata.Values)
+                {
+                    if (string.Equals(metadata.VariantRole, "External", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Use the destination name as the status for external packages
+                        var creatorName = metadata.CreatorName ?? "";
+                        var packageName = metadata.PackageName ?? "";
+                        var status = metadata.ExternalDestinationName ?? "External";
+                        
+                        if (!string.IsNullOrWhiteSpace(creatorName) && !string.IsNullOrWhiteSpace(packageName))
+                        {
+                            var fullPackageName = $"{creatorName}.{packageName}";
+                            externalPackageStatuses[fullPackageName] = status;
+                        }
+                    }
+                }
+                
+                // Register all external package statuses at once
+                if (externalPackageStatuses.Count > 0)
+                {
+                    _packageFileManager.RegisterExternalPackageStatuses(externalPackageStatuses);
+                }
+            }
+
             // Re-detect old versions and dependencies after adding external packages
             DetectOldVersions();
             DetectMissingDependencies();
@@ -2126,7 +2159,7 @@ namespace VPM.Services
         /// Invalidates all caches for a specific package.
         /// Call this after modifying a package file (e.g., optimization).
         /// </summary>
-        public void InvalidatePackageCache(string packageName)
+        public void InvalidatePackageCache(string packageName, string filePath = null)
         {
             if (string.IsNullOrWhiteSpace(packageName))
             {
@@ -2151,8 +2184,18 @@ namespace VPM.Services
 
             _previewImageIndex.TryRemove(baseName, out _);
             
-            // Also remove from binary cache
-            _binaryCache.Remove(baseName);
+            // Remove from binary cache using the actual filename if provided
+            // The binary cache uses full filename as key, not the base package name
+            if (!string.IsNullOrWhiteSpace(filePath))
+            {
+                string filename = Path.GetFileName(filePath);
+                _binaryCache.Remove(filename);
+            }
+            else
+            {
+                // Fallback: try to remove by base name (for backwards compatibility)
+                _binaryCache.Remove(baseName);
+            }
         }
 
         /// <summary>
@@ -2208,6 +2251,16 @@ namespace VPM.Services
             if (!freshMetadata.IsOptimized)
             {
                 freshMetadata.ModifiedDate = fileInfo.LastWriteTime;
+            }
+            
+            // Preserve external destination information if the input metadata has it
+            if (metadata != null && !string.IsNullOrEmpty(metadata.ExternalDestinationName))
+            {
+                freshMetadata.ExternalDestinationName = metadata.ExternalDestinationName;
+                freshMetadata.ExternalDestinationColorHex = metadata.ExternalDestinationColorHex;
+                freshMetadata.ExternalDestinationSubfolder = metadata.ExternalDestinationSubfolder;
+                freshMetadata.OriginalExternalDestinationName = metadata.OriginalExternalDestinationName;
+                freshMetadata.OriginalExternalDestinationColorHex = metadata.OriginalExternalDestinationColorHex;
             }
 
             snapshot.AddOrUpdateVariant(new PackageVariant(

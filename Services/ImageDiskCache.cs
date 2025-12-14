@@ -891,6 +891,77 @@ namespace VPM.Services
                 // Ignore deletion errors
             }
         }
+        
+        /// <summary>
+        /// Invalidates disk cache entries for a specific package.
+        /// This is used when a package is restored from backup or its file signature changes.
+        /// </summary>
+        public void InvalidatePackageCache(string packageName)
+        {
+            if (string.IsNullOrEmpty(packageName))
+                return;
+            
+            lock (_cacheLock)
+            {
+                try
+                {
+                    // Remove all index entries for this package
+                    var keysToRemove = _indexCache.Keys
+                        .Where(k => k.StartsWith(packageName + "|", StringComparison.OrdinalIgnoreCase) ||
+                                   k.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in keysToRemove)
+                    {
+                        _indexCache.Remove(key);
+                    }
+                    
+                    // Remove from memory LRU cache
+                    var memoryKeysToRemove = _memoryLruCache.Keys
+                        .Where(k => k.StartsWith(packageName + "|", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in memoryKeysToRemove)
+                    {
+                        _memoryLruCache.Remove(key);
+                        if (_memoryLruNodes.TryGetValue(key, out var node))
+                        {
+                            _memoryLruOrder.Remove(node);
+                            _memoryLruNodes.Remove(key);
+                        }
+                    }
+                    
+                    // Remove from pending writes
+                    var pendingKeysToRemove = _pendingWrites.Keys
+                        .Where(k => k.StartsWith(packageName + "|", StringComparison.OrdinalIgnoreCase) ||
+                                   k.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in pendingKeysToRemove)
+                    {
+                        if (_pendingWrites.TryGetValue(key, out var cache))
+                        {
+                            _pendingWritesBytes -= cache.Images.Values.Sum(img => img.Length);
+                        }
+                        _pendingWrites.Remove(key);
+                    }
+                    
+                    // Remove from invalid entries cache
+                    var invalidKeysToRemove = _invalidEntries
+                        .Where(k => k.StartsWith(packageName + "::", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    foreach (var key in invalidKeysToRemove)
+                    {
+                        _invalidEntries.Remove(key);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Ignore errors during invalidation
+                }
+            }
+        }
     }
 }
 

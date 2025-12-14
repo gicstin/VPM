@@ -188,14 +188,7 @@ namespace VPM
             // Prevent recursion during programmatic updates
             if (_suppressSelectionEvents)
             {
-                System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Suppressed - _suppressSelectionEvents is true");
                 return;
-            }
-            
-            System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Triggered - Selected items: {StatusFilterList?.SelectedItems.Count ?? 0}");
-            foreach (var item in StatusFilterList?.SelectedItems ?? new System.Collections.ArrayList())
-            {
-                System.Diagnostics.Debug.WriteLine($"[StatusFilterList_SelectionChanged] Selected: {item}");
             }
             
             // Apply filters immediately when selection changes
@@ -605,8 +598,9 @@ namespace VPM
                     return;
                 }
 
-                // For external packages, use metadata FilePath directly (same as context menu)
-                if (package.IsExternal && _packageManager?.PackageMetadata != null)
+                // First, try to get FilePath from metadata (works for both external and restored packages)
+                // This is important because restored packages may have different file signatures
+                if (_packageManager?.PackageMetadata != null)
                 {
                     if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata))
                     {
@@ -619,7 +613,7 @@ namespace VPM
                     }
                 }
 
-                // Get the file path for this package
+                // Fallback: Get the file path from PackageFileManager
                 // Use MetadataKey for accurate lookup (handles multiple versions of same package)
                 // MetadataKey includes version and status information for precise matching
                 PackageFileInfo fileInfo;
@@ -2348,13 +2342,15 @@ namespace VPM
                 {
                     var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>().ToList();
                     
-                    // Check if all selected items have the same status
-                    var statuses = selectedPackages.Select(p => p.Status).Distinct().ToList();
+                    // For EXTERNAL packages, treat them as "Available" for load purposes
+                    var normalizedStatuses = selectedPackages.Select(p => 
+                        p.IsExternal ? "Available" : p.Status
+                    ).Distinct().ToList();
                     
-                    if (statuses.Count == 1)
+                    if (normalizedStatuses.Count == 1)
                     {
-                        // All items have same status - proceed with operation
-                        var status = statuses[0];
+                        // All items have same normalized status - proceed with operation
+                        var status = normalizedStatuses[0];
                         
                         if (status == "Available")
                         {
@@ -5799,7 +5795,7 @@ namespace VPM
         
         /// <summary>
         /// Updates the Restore Original menu item header and visibility based on selected packages.
-        /// Shows count of optimized packages that have backups available in ArchivedPackages.
+        /// Shows count of optimized packages that have backups available in ArchivedPackages or custom archive location.
         /// </summary>
         private void UpdateRestoreOriginalMenuItem(MenuItem restoreOriginalItem)
         {
@@ -5811,13 +5807,17 @@ namespace VPM
                 return;
             }
             
-            // Count packages that are optimized AND have a backup in ArchivedPackages
+            // Count packages that are optimized AND have a backup in ArchivedPackages or custom archive location
             int restorableCount = 0;
             string gameRoot = _settingsManager?.Settings?.SelectedFolder;
             
             if (!string.IsNullOrEmpty(gameRoot))
             {
-                string archivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+                string defaultArchivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+                
+                // Get effective archive folder (custom or default)
+                var repackagerForArchive = new PackageRepackager(_imageManager, _settingsManager);
+                string effectiveArchivedFolder = repackagerForArchive.GetEffectiveArchiveFolder(defaultArchivedFolder);
                 
                 foreach (var packageItem in selectedPackages)
                 {
@@ -5825,9 +5825,9 @@ namespace VPM
                     {
                         if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
                         {
-                            // Check if backup exists in ArchivedPackages
+                            // Check if backup exists in effective archive location
                             string fileName = Path.GetFileName(metadata.FilePath);
-                            string backupPath = Path.Combine(archivedFolder, fileName);
+                            string backupPath = Path.Combine(effectiveArchivedFolder, fileName);
                             
                             if (File.Exists(backupPath))
                             {
@@ -5852,7 +5852,7 @@ namespace VPM
         }
         
         /// <summary>
-        /// Restores original packages from ArchivedPackages backup location.
+        /// Restores original packages from ArchivedPackages or custom archive backup location.
         /// Deletes the optimized version and moves the original back to its active location.
         /// </summary>
         private async void RestoreOriginal_Click(object sender, RoutedEventArgs e)
@@ -5869,7 +5869,11 @@ namespace VPM
                 return;
             }
             
-            string archivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+            string defaultArchivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
+            
+            // Get effective archive folder (custom or default)
+            var repackagerForArchive = new PackageRepackager(_imageManager, _settingsManager);
+            string effectiveArchivedFolder = repackagerForArchive.GetEffectiveArchiveFolder(defaultArchivedFolder);
             
             // Build list of restorable packages
             var restorablePackages = new List<(PackageItem Package, VarMetadata Metadata, string BackupPath)>();
@@ -5881,7 +5885,7 @@ namespace VPM
                     if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
                     {
                         string fileName = Path.GetFileName(metadata.FilePath);
-                        string backupPath = Path.Combine(archivedFolder, fileName);
+                        string backupPath = Path.Combine(effectiveArchivedFolder, fileName);
                         
                         if (File.Exists(backupPath))
                         {
@@ -5930,6 +5934,13 @@ namespace VPM
             // Release file locks for all packages being restored
             var packagesToRelease = restorablePackages.Select(p => p.Package.Name).ToList();
             await _imageManager.ReleasePackagesAsync(packagesToRelease);
+            
+            // Invalidate image cache for packages being restored
+            // This ensures fresh image loads after restoration since file paths/signatures will change
+            foreach (var (packageItem, metadata, backupPath) in restorablePackages)
+            {
+                _imageManager.InvalidatePackageCache(packageItem.Name);
+            }
             
             // Small delay to ensure handles are released
             await Task.Delay(200);
@@ -6428,8 +6439,39 @@ namespace VPM
                 {
                     try
                     {
-                        if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) != true ||
-                            metadata == null || string.IsNullOrEmpty(metadata.FilePath))
+                        VarMetadata metadata = null;
+                        
+                        // Try primary lookup using MetadataKey
+                        if (!(_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out metadata) == true && metadata != null))
+                        {
+                            // Fallback 1: Try lookup by package name (for cases where MetadataKey might be stale)
+                            foreach (var kvp in _packageManager?.PackageMetadata ?? new Dictionary<string, VarMetadata>())
+                            {
+                                if (kvp.Value?.Filename != null && 
+                                    Path.GetFileNameWithoutExtension(kvp.Value.Filename).Equals(packageItem.Name, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    metadata = kvp.Value;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // Fallback 2: Try lookup by creator.packagename pattern
+                        if (metadata == null)
+                        {
+                            foreach (var kvp in _packageManager?.PackageMetadata ?? new Dictionary<string, VarMetadata>())
+                            {
+                                var fullName = $"{kvp.Value?.CreatorName}.{kvp.Value?.PackageName}";
+                                if (fullName.Equals(packageItem.Name, StringComparison.OrdinalIgnoreCase) ||
+                                    kvp.Key.StartsWith(fullName, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    metadata = kvp.Value;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (metadata == null || string.IsNullOrEmpty(metadata.FilePath))
                         {
                             failureCount++;
                             failedPackages.Add($"{packageItem.DisplayName}: Package metadata not found");

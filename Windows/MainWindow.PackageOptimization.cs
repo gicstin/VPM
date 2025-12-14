@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -29,6 +30,67 @@ namespace VPM
         // UI Constants are defined in MainWindow.xaml.cs
 
         /// <summary>
+        /// Opens the archive path selector window
+        /// </summary>
+        private void OpenArchivePathSelector()
+        {
+            try
+            {
+                var archivePathWindow = new ArchivePathSelectorWindow(_settingsManager)
+                {
+                    Owner = this
+                };
+                
+                if (archivePathWindow.ShowDialog() == true)
+                {
+                    MessageBox.Show(
+                        string.IsNullOrWhiteSpace(archivePathWindow.SelectedPath) 
+                            ? "Archive path cleared. Default ArchivedPackages folder will be used." 
+                            : $"Archive path configured:\n{archivePathWindow.SelectedPath}",
+                        "Archive Path Updated",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error opening archive path selector:\n{ex.Message}", "Error", 
+                              MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static string DescribeInvalidPackageName(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+            {
+                return "Invalid package name: empty.";
+            }
+
+            var trimmed = packageName.Trim();
+            var stem = trimmed.EndsWith(".var", StringComparison.OrdinalIgnoreCase)
+                ? trimmed[..^4]
+                : trimmed;
+
+            var parts = stem.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 3)
+            {
+                return "Invalid package name format. Expected <creator>.<name>.<integerVersion> (exactly 3 dot-separated parts).";
+            }
+
+            if (string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+            {
+                return "Invalid package name format. Expected <creator>.<name>.<integerVersion>.";
+            }
+
+            if (!int.TryParse(parts[2], out _))
+            {
+                return $"Invalid package version '{parts[2]}'. Expected an integer version (e.g., Creator.Package.1).";
+            }
+
+            return string.Empty;
+        }
+
+        /// <summary>
         /// Gets the file path for a package
         /// </summary>
         private string GetPackagePath(PackageItem package)
@@ -44,7 +106,20 @@ namespace VPM
                 // MetadataKey is the actual filename from the metadata dictionary
                 string lookupKey = !string.IsNullOrEmpty(package.MetadataKey) ? package.MetadataKey : package.Name;
                 
-                // Try to get the package file info
+                // First check if package is in PackageManager metadata (handles external packages)
+                if (_packageManager?.PackageMetadata != null)
+                {
+                    if (_packageManager.PackageMetadata.TryGetValue(lookupKey, out var metadata))
+                    {
+                        // Check if it's an external package with a valid FilePath
+                        if (metadata.IsExternal && !string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
+                        {
+                            return metadata.FilePath;
+                        }
+                    }
+                }
+                
+                // Try to get the package file info from standard locations
                 var fileInfo = _packageFileManager.GetPackageFileInfo(lookupKey);
                 if (fileInfo != null && !string.IsNullOrEmpty(fileInfo.CurrentPath))
                 {
@@ -94,7 +169,11 @@ namespace VPM
                 var pkgInfo = _packageFileManager?.GetPackageFileInfo(packageName);
                 if (pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath))
                 {
-                    MessageBox.Show($"Could not find package: {packageName}", "Error", 
+                    var packageNameIssue = DescribeInvalidPackageName(packageName);
+                    var errorMessage = string.IsNullOrEmpty(packageNameIssue)
+                        ? $"Could not find package: {packageName}"
+                        : $"Could not find package: {packageName}\n{packageNameIssue}";
+                    MessageBox.Show(errorMessage, "Error", 
                                   MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
@@ -110,9 +189,13 @@ namespace VPM
                 }
 
                 // Get VAM root folder for ArchivedPackages
-                string packageDirectory = Path.GetDirectoryName(packagePath);
-                string vamRootFolder = Path.GetDirectoryName(packageDirectory); // Go up one level from AddonPackages
-                string archivedFolder = Path.Combine(vamRootFolder, "ArchivedPackages");
+                // Use _selectedFolder (actual VAM root) instead of deriving from package path
+                // This handles external packages correctly
+                string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                
+                // Get effective archive folder (custom or default)
+                var repackager = new PackageRepackager(_imageManager, _settingsManager);
+                string archivedFolder = repackager.GetEffectiveArchiveFolder(defaultArchivedFolder);
                 
                 // Check if package is already optimized (exists in archive)
                 bool isAlreadyOptimized = false;
@@ -153,9 +236,20 @@ namespace VPM
                 // Check if we're reading from archive and file exists in main folder
                 if (isAlreadyOptimized)
                 {
-                    // Check if optimized file already exists in AddonPackages
-                    string addonPackagesFolder = Path.Combine(vamRootFolder, "AddonPackages");
-                    string existingOptimizedPath = Path.Combine(addonPackagesFolder, Path.GetFileName(packagePath));
+                    // For external packages, the optimized file will be in the same folder as source
+                    // For VAM root packages, check AddonPackages folder
+                    string existingOptimizedPath = packagePath;
+                    
+                    // Also check AddonPackages if it exists (for VAM root packages)
+                    string addonPackagesFolder = Path.Combine(_selectedFolder, "AddonPackages");
+                    if (Directory.Exists(addonPackagesFolder))
+                    {
+                        string addonPackagesPath = Path.Combine(addonPackagesFolder, Path.GetFileName(packagePath));
+                        if (File.Exists(addonPackagesPath))
+                        {
+                            existingOptimizedPath = addonPackagesPath;
+                        }
+                    }
                     
                     if (File.Exists(existingOptimizedPath))
                     {
@@ -254,8 +348,8 @@ namespace VPM
                     long newPackageSize = 0;
                     int texturesConverted = 0;
                     
-                    var repackager = new VarRepackager(_imageManager, _settingsManager);
-                    var repackageResult = await repackager.RepackageVarWithStatsAsync(packagePath, archivedFolder, conversions, (message, current, total) =>
+                    var varRepackager = new VarRepackager(_imageManager, _settingsManager);
+                    var repackageResult = await varRepackager.RepackageVarWithStatsAsync(packagePath, archivedFolder, conversions, (message, current, total) =>
                     {
                         // Use BeginInvoke to prevent UI blocking during frequent progress updates
                         Dispatcher.BeginInvoke(() =>
@@ -493,25 +587,68 @@ namespace VPM
                 // Clear bitmap cache to force reload of images
                 _imageManager?.ClearBitmapCache();
                 
-                // Find the package in the grid
-                var packageItem = PackageDataGrid.Items.Cast<PackageItem>()
-                    .FirstOrDefault(p => p.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                // Find the package in the grid - try multiple ways to find it
+                PackageItem packageItem = null;
+                
+                // Try 1: Direct lookup in DataGrid items
+                if (PackageDataGrid?.Items != null)
+                {
+                    packageItem = PackageDataGrid.Items.Cast<PackageItem>()
+                        .FirstOrDefault(p => p.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                }
+                
+                // Try 2: If not found, search in the Packages collection (works even when window is minimized)
+                if (packageItem == null && Packages != null)
+                {
+                    packageItem = Packages.FirstOrDefault(p => p.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                }
+                
+                // Try 3: If still not found, try by matching filename pattern
+                if (packageItem == null && Packages != null)
+                {
+                    packageItem = Packages.FirstOrDefault(p => 
+                        Path.GetFileNameWithoutExtension(p.Name).Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
+                        p.Name.Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                }
                 
                 if (packageItem == null)
                 {
+                    // Package not found in UI - still update metadata in background
+                    // This handles the case where window is minimized or package is not visible
+                    await UpdatePackageMetadataOnly(packageName);
                     return;
                 }
                 
                 // Get updated file info using MetadataKey for accurate lookup (handles multiple versions of same package)
-                PackageFileInfo pkgInfo;
-                if (!string.IsNullOrEmpty(packageItem.MetadataKey))
+                PackageFileInfo pkgInfo = null;
+                
+                // For EXTERNAL packages, get the path directly from metadata since they're not in the standard package index
+                if (packageItem.IsExternal && _packageManager?.PackageMetadata != null)
                 {
-                    pkgInfo = _packageFileManager?.GetPackageFileInfoByMetadataKey(packageItem.MetadataKey);
+                    if (_packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var metadata) && metadata != null)
+                    {
+                        pkgInfo = new PackageFileInfo
+                        {
+                            PackageName = packageItem.Name,
+                            CurrentPath = metadata.FilePath,
+                            Status = metadata.Status ?? "External"
+                        };
+                    }
                 }
-                else
+                
+                // For LOCAL packages, use the standard lookup
+                if (pkgInfo == null)
                 {
-                    pkgInfo = _packageFileManager?.GetPackageFileInfo(packageName);
+                    if (!string.IsNullOrEmpty(packageItem.MetadataKey))
+                    {
+                        pkgInfo = _packageFileManager?.GetPackageFileInfoByMetadataKey(packageItem.MetadataKey);
+                    }
+                    else
+                    {
+                        pkgInfo = _packageFileManager?.GetPackageFileInfo(packageName);
+                    }
                 }
+                
                 if (pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath))
                 {
                     return;
@@ -521,10 +658,11 @@ namespace VPM
                 if (_packageManager != null)
                 {
                     // Use the new public method to invalidate all caches
-                    _packageManager.InvalidatePackageCache(packageName);
+                    // Pass the file path so binary cache can be properly invalidated using the actual filename
+                    _packageManager.InvalidatePackageCache(packageName, pkgInfo.CurrentPath);
                     if (!string.IsNullOrEmpty(packageItem.MetadataKey))
                     {
-                        _packageManager.InvalidatePackageCache(packageItem.MetadataKey);
+                        _packageManager.InvalidatePackageCache(packageItem.MetadataKey, pkgInfo.CurrentPath);
                     }
                 }
                 
@@ -534,8 +672,21 @@ namespace VPM
                 
                 if (updatedMetadata != null)
                 {
-                    // Preserve the correct status from pkgInfo
-                    updatedMetadata.Status = pkgInfo.Status;
+                    // For EXTERNAL packages, preserve the external destination information
+                    // For LOCAL packages, use the status from pkgInfo
+                    if (!string.IsNullOrEmpty(packageItem.ExternalDestinationName))
+                    {
+                        // EXTERNAL package - preserve external destination info
+                        updatedMetadata.ExternalDestinationName = packageItem.ExternalDestinationName;
+                        updatedMetadata.ExternalDestinationColorHex = packageItem.ExternalDestinationColorHex;
+                        updatedMetadata.Status = packageItem.ExternalDestinationName;
+                    }
+                    else
+                    {
+                        // LOCAL package - use status from pkgInfo
+                        updatedMetadata.Status = pkgInfo.Status;
+                    }
+                    
                     updatedMetadata.FilePath = pkgInfo.CurrentPath;
                     
                     // Update all caches with fresh metadata (including thread cache and signature cache)
@@ -548,7 +699,6 @@ namespace VPM
                     // Update the package item with new data
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        
                         // Preserve the original status if the new status is Unknown
                         string originalStatus = packageItem.Status;
                         
@@ -630,6 +780,74 @@ namespace VPM
             catch
             {
                 // Silently handle errors - package refresh is not critical
+            }
+        }
+
+        /// <summary>
+        /// Updates package metadata without UI refresh.
+        /// Used when the package isn't found in the UI (window minimized, external package on different disk, etc.)
+        /// </summary>
+        private async System.Threading.Tasks.Task UpdatePackageMetadataOnly(string packageName)
+        {
+            try
+            {
+                // Find the package in PackageManager metadata
+                VarMetadata metadata = null;
+                string metadataKey = null;
+                
+                // Search for the package in metadata
+                foreach (var kvp in _packageManager?.PackageMetadata ?? new Dictionary<string, VarMetadata>())
+                {
+                    if (kvp.Value?.Filename != null && 
+                        Path.GetFileNameWithoutExtension(kvp.Value.Filename).Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        metadata = kvp.Value;
+                        metadataKey = kvp.Key;
+                        break;
+                    }
+                }
+                
+                if (metadata == null || string.IsNullOrEmpty(metadata.FilePath))
+                {
+                    return;
+                }
+                
+                // Invalidate cache
+                if (_packageManager != null)
+                {
+                    _packageManager.InvalidatePackageCache(packageName, metadata.FilePath);
+                    if (!string.IsNullOrEmpty(metadataKey))
+                    {
+                        _packageManager.InvalidatePackageCache(metadataKey, metadata.FilePath);
+                    }
+                }
+                
+                // Re-parse metadata
+                var updatedMetadata = await System.Threading.Tasks.Task.Run(() => 
+                    _packageManager?.ParseVarMetadataComplete(metadata.FilePath));
+                
+                if (updatedMetadata != null)
+                {
+                    updatedMetadata.FilePath = metadata.FilePath;
+                    
+                    // Preserve external destination info if applicable
+                    if (!string.IsNullOrEmpty(metadata.ExternalDestinationName))
+                    {
+                        updatedMetadata.ExternalDestinationName = metadata.ExternalDestinationName;
+                        updatedMetadata.ExternalDestinationColorHex = metadata.ExternalDestinationColorHex;
+                        updatedMetadata.Status = metadata.ExternalDestinationName;
+                    }
+                    
+                    // Update cache
+                    if (_packageManager != null && !string.IsNullOrEmpty(metadataKey))
+                    {
+                        _packageManager.PackageMetadata[metadataKey] = updatedMetadata;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Silently handle errors - metadata update is not critical
             }
         }
 
@@ -1048,7 +1266,11 @@ namespace VPM
                 
                 if (pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath))
                 {
-                    MessageBox.Show($"Could not find package: {packageName}", "Error", 
+                    var packageNameIssue = DescribeInvalidPackageName(packageName);
+                    var errorMessage = string.IsNullOrEmpty(packageNameIssue)
+                        ? $"Could not find package: {packageName}"
+                        : $"Could not find package: {packageName}\n{packageNameIssue}";
+                    MessageBox.Show(errorMessage, "Error", 
                                   MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
@@ -1068,20 +1290,36 @@ namespace VPM
                 VarMetadata packageMetadata = null;
                 if (_packageManager?.PackageMetadata != null)
                 {
+                    // Try to find metadata by packageName first
                     _packageManager.PackageMetadata.TryGetValue(packageName, out packageMetadata);
+                    
+                    // If not found, search for matching keys (handles external packages)
+                    if (packageMetadata == null)
+                    {
+                        var matchingKey = _packageManager.PackageMetadata.Keys
+                            .FirstOrDefault(k => k.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
+                                               k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase) ||
+                                               Path.GetFileNameWithoutExtension(k).Equals(packageName, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (!string.IsNullOrEmpty(matchingKey))
+                        {
+                            _packageManager.PackageMetadata.TryGetValue(matchingKey, out packageMetadata);
+                        }
+                    }
                     
                     // CRITICAL FIX: If IsMorphAsset is false but we have content, re-detect it now
                     // The cached metadata might be stale or from before morph detection was added
                     if (packageMetadata != null && !packageMetadata.IsMorphAsset && packageMetadata.ContentList != null && packageMetadata.ContentList.Count > 0)
                     {
                         // Force re-detection of morph asset status by clearing the cache first
-                        _packageManager?.InvalidatePackageCache(packageName);
+                        // Pass the file path so binary cache can be properly invalidated using the actual filename
+                        _packageManager?.InvalidatePackageCache(packageName, packagePath);
                         
                         var freshMetadata = _packageManager?.ParseVarMetadataComplete(packagePath);
                         if (freshMetadata != null)
                         {
                             packageMetadata = freshMetadata;
-                            // Update cache with fresh metadata
+                            // Update cache with fresh metadata using packageName as key
                             _packageManager.PackageMetadata[packageName] = freshMetadata;
                         }
                     }
@@ -1097,7 +1335,20 @@ namespace VPM
                 // User may want to optimize to a different resolution
                 if (selectedTextures.Count > 0)
                 {
-                    hasActualTextureChanges = true;
+                    // Verify that at least one texture will actually be converted
+                    // (not already at target resolution)
+                    foreach (var texture in selectedTextures)
+                    {
+                        string targetResolution = texture.ConvertTo8K ? "8K" :
+                                                texture.ConvertTo4K ? "4K" :
+                                                texture.ConvertTo2K ? "2K" : "2K";
+                        
+                        if (targetResolution != texture.Resolution)
+                        {
+                            hasActualTextureChanges = true;
+                            break;
+                        }
+                    }
                 }
                 
                 // Check if hair settings have actual changes
@@ -1163,7 +1414,11 @@ namespace VPM
                 
 
                 // Get VAM root folder for ArchivedPackages - always use game root, not subfolder
-                string archivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                
+                // Get effective archive folder (custom or default)
+                var repackagerForArchive = new PackageRepackager(_imageManager, _settingsManager);
+                string archivedFolder = repackagerForArchive.GetEffectiveArchiveFolder(defaultArchivedFolder);
                 
                 // Check if we're reading from archive and file exists in main folder
                 string archiveFilePath = Path.Combine(archivedFolder, Path.GetFileName(packagePath));
@@ -1311,9 +1566,13 @@ namespace VPM
                 
                 var repackageStartTime = benchmarkStart.ElapsedMilliseconds;
                 var repackager = new PackageRepackager(_imageManager, _settingsManager);
+                
+                // Get effective archive folder (custom or default)
+                string effectiveArchiveFolder = repackager.GetEffectiveArchiveFolder(archivedFolder);
+                
                 var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
                     packagePath, 
-                    archivedFolder, 
+                    effectiveArchiveFolder, 
                     config, 
                     null, // No progress callback
                     needsBackup); // Pass the backup flag
@@ -1335,16 +1594,36 @@ namespace VPM
                 }
 
                 // CRITICAL: Clear metadata cache BEFORE refresh to force re-parsing
+                // For external packages, we need to remove using the correct metadata key
                 if (_packageManager?.PackageMetadata != null)
                 {
-                    _packageManager.PackageMetadata.Remove(packageName);
+                    Debug.WriteLine($"[OPTIMIZE] Clearing metadata for package: {packageName}");
+                    Debug.WriteLine($"[OPTIMIZE] Total metadata keys before clear: {_packageManager.PackageMetadata.Count}");
+                    
+                    // Find and remove all matching keys (handles external packages with different keys)
+                    var keysToRemove = _packageManager.PackageMetadata.Keys
+                        .Where(k => k.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
+                                   k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase) ||
+                                   Path.GetFileNameWithoutExtension(k).Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    
+                    Debug.WriteLine($"[OPTIMIZE] Found {keysToRemove.Count} keys to remove: {string.Join(", ", keysToRemove)}");
+                    
+                    foreach (var key in keysToRemove)
+                    {
+                        _packageManager.PackageMetadata.Remove(key);
+                        Debug.WriteLine($"[OPTIMIZE] Removed metadata key: {key}");
+                    }
+                    
+                    Debug.WriteLine($"[OPTIMIZE] Total metadata keys after clear: {_packageManager.PackageMetadata.Count}");
                 }
 
                 // Delay to ensure file system has flushed
                 await System.Threading.Tasks.Task.Delay(500);
 
-                // Refresh package data
-                await RefreshSinglePackage(packageName);
+                // Refresh package data using filename (without extension) to avoid parsing issues
+                string filenameWithoutExt = Path.GetFileNameWithoutExtension(packagePath);
+                await RefreshSinglePackage(filenameWithoutExt);
 
                 // Calculate savings
                 long spaceSaved = originalPackageSize - newPackageSize;
@@ -1422,10 +1701,12 @@ namespace VPM
                 var allDependencies = new List<DependencyItemModel>();
                 var skippedPackages = new List<string>();
                 
-                await System.Threading.Tasks.Task.Run(() =>
+                await System.Threading.Tasks.Task.Run(async () =>
                 {
                     int processedCount = 0;
-                    string archivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                    string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                    var repackager = new PackageRepackager(_imageManager, _settingsManager);
+                    string archivedFolder = repackager.GetEffectiveArchiveFolder(defaultArchivedFolder);
                     
                     foreach (var package in packages)
                     {
@@ -1442,6 +1723,12 @@ namespace VPM
                             }
 
                             // Validate textures
+                            // Close any file handles before attempting to read texture data
+                            if (_imageManager != null)
+                            {
+                                await _imageManager.CloseFileHandlesAsync(packagePath);
+                            }
+                            
                             var textureValidator = new Services.TextureValidator();
                             var textureResult = textureValidator.ValidatePackageTextures(packagePath, archivedFolder);
                             
@@ -1892,11 +2179,12 @@ namespace VPM
                 var bottomGrid = new Grid();
                 bottomGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Progress bar row
                 bottomGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Status + checkbox + buttons row
-                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Left side: status
-                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Middle: checkbox
-                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Right side: buttons
+                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Left side: archive path button
+                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Progress bar + status area
+                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Checkbox
+                bottomGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Optimize button
 
-                // Create modern progress bar (spans all columns on row 0)
+                // Create modern progress bar (spans columns 1 on row 0)
                 var progressBar = new ProgressBar
                 {
                     Height = 3,
@@ -1905,19 +2193,18 @@ namespace VPM
                     Value = 0,
                     Maximum = 100,
                     BorderThickness = new Thickness(0),
-                    Margin = new Thickness(0, 0, 8, 0) // Add right margin
+                    Margin = new Thickness(8, 0, 8, 0)
                 };
                 Grid.SetRow(progressBar, 0);
-                Grid.SetColumn(progressBar, 0);
-                Grid.SetColumnSpan(progressBar, 1);
+                Grid.SetColumn(progressBar, 1);
                 bottomGrid.Children.Add(progressBar);
 
-                // Create status panel with messages (row 1, column 0)
+                // Create status panel with messages (row 1, column 1 - spans same width as progress bar)
                 var statusPanelBorder = new Border
                 {
                     Background = new SolidColorBrush(Color.FromRgb(45, 45, 45)),
                     CornerRadius = new CornerRadius(UI_CORNER_RADIUS),
-                    Margin = new Thickness(0, 0, 8, 0),
+                    Margin = new Thickness(8, 0, 8, 0),
                     Padding = new Thickness(12, 8, 12, 8),
                     MinHeight = 40
                 };
@@ -1953,7 +2240,7 @@ namespace VPM
                 statusPanelBorder.Child = statusPanel;
 
                 Grid.SetRow(statusPanelBorder, 1);
-                Grid.SetColumn(statusPanelBorder, 0);
+                Grid.SetColumn(statusPanelBorder, 1);
                 bottomGrid.Children.Add(statusPanelBorder);
 
                 // Create Alert checkbox with modern dark theme styling
@@ -2031,7 +2318,7 @@ namespace VPM
                 alertCheckBox.Style = checkBoxStyle;
                 
                 Grid.SetRow(alertCheckBox, 1);
-                Grid.SetColumn(alertCheckBox, 1);
+                Grid.SetColumn(alertCheckBox, 2);
                 bottomGrid.Children.Add(alertCheckBox);
 
                 // Create rounded button template
@@ -2085,8 +2372,39 @@ namespace VPM
                     await ApplyBulkPackageOptimizations(packages, textureResult, hairResult, dependencyResult, dialog, optimizeButton, tabControl, minifyJson, progressBar, currentPackageText, timeInfoText, alertCheckBox, bottomGrid);
                 };
 
+                // Archive Path button (row 1, column 0 - left side below progress bar)
+                var archivePathButton = new Button
+                {
+                    Content = "Archive Path",
+                    Width = 120,
+                    Height = 40,
+                    Margin = new Thickness(8, 0, 8, 0),
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Background = new SolidColorBrush(Color.FromRgb(100, 150, 200)),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    Template = buttonTemplate,
+                    ToolTip = "Configure custom archive path for package backups",
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                archivePathButton.MouseEnter += (s, e) => archivePathButton.Background = new SolidColorBrush(Color.FromRgb(80, 130, 180));
+                archivePathButton.MouseLeave += (s, e) => archivePathButton.Background = new SolidColorBrush(Color.FromRgb(100, 150, 200));
+
+                archivePathButton.Click += (s, e) =>
+                {
+                    OpenArchivePathSelector();
+                };
+
+                Grid.SetRow(archivePathButton, 1);
+                Grid.SetColumn(archivePathButton, 0);
+                bottomGrid.Children.Add(archivePathButton);
+
+                // Optimize button (row 1, column 3)
                 Grid.SetRow(optimizeButton, 1);
-                Grid.SetColumn(optimizeButton, 2);
+                Grid.SetColumn(optimizeButton, 3);
                 Grid.SetRowSpan(optimizeButton, 1);
                 optimizeButton.VerticalAlignment = VerticalAlignment.Center;
                 bottomGrid.Children.Add(optimizeButton);
@@ -2430,8 +2748,10 @@ namespace VPM
                 long totalNewSize = 0;
                 var packageDetails = new Dictionary<string, OptimizationDetails>();
                 
-                // Get backup folder path for summary window
-                string backupFolderPath = Path.Combine(_selectedFolder, "ArchivedPackages");
+                // Get backup folder path for summary window (use effective archive folder)
+                string defaultBackupFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                var repackagerForBackupPath = new PackageRepackager(_imageManager, _settingsManager);
+                string backupFolderPath = repackagerForBackupPath.GetEffectiveArchiveFolder(defaultBackupFolder);
 
                 // Start timing
                 var startTime = DateTime.Now;
@@ -2481,9 +2801,11 @@ namespace VPM
                             pkgInfo = _packageFileManager?.GetPackageFileInfo(packageName);
                         }
                         long originalSize = 0;
+                        string packagePath = null;
                         if (pkgInfo != null && !string.IsNullOrEmpty(pkgInfo.CurrentPath) && System.IO.File.Exists(pkgInfo.CurrentPath))
                         {
                             originalSize = new FileInfo(pkgInfo.CurrentPath).Length;
+                            packagePath = pkgInfo.CurrentPath;
                         }
 
                         // Get dependencies for this package
@@ -2531,21 +2853,25 @@ namespace VPM
 
                         if (packageFailed) failedPackageCount++;
 
-                        // Get new size
-                        long newSize = 0;
-                        if (pkgInfo != null && !string.IsNullOrEmpty(pkgInfo.CurrentPath) && System.IO.File.Exists(pkgInfo.CurrentPath))
+                        // Use file sizes from the repackager result (already captured correctly)
+                        // The repackager captures originalFileSize at the start and newSize after optimization
+                        long reportOriginalSize = optimizationCoreResult.OriginalSize > 0 ? optimizationCoreResult.OriginalSize : originalSize;
+                        long reportNewSize = optimizationCoreResult.NewSize;
+                        
+                        // If repackager didn't provide new size, fall back to reading from disk
+                        if (reportNewSize == 0 && pkgInfo != null && !string.IsNullOrEmpty(pkgInfo.CurrentPath) && System.IO.File.Exists(pkgInfo.CurrentPath))
                         {
-                            newSize = new FileInfo(pkgInfo.CurrentPath).Length;
+                            reportNewSize = new FileInfo(pkgInfo.CurrentPath).Length;
                         }
 
-                        totalOriginalSize += originalSize;
-                        totalNewSize += newSize;
+                        totalOriginalSize += reportOriginalSize;
+                        totalNewSize += reportNewSize;
 
                         // Track package details for report
                         var details = new OptimizationDetails
                         {
-                            OriginalSize = originalSize,
-                            NewSize = newSize,
+                            OriginalSize = reportOriginalSize,
+                            NewSize = reportNewSize,
                             TextureCount = texturesByPackage.ContainsKey(packageName) ? texturesByPackage[packageName].Count(t => t.HasActualConversion) : 0,
                             HairCount = hairsByPackage.ContainsKey(packageName) ? hairsByPackage[packageName].Count : 0,
                             MirrorCount = mirrorsByPackage.ContainsKey(packageName) ? mirrorsByPackage[packageName].Count : 0,
@@ -2842,6 +3168,8 @@ namespace VPM
             public List<string> Errors { get; set; } = new List<string>();
             public long JsonSizeBeforeMinify { get; set; } = 0;
             public long JsonSizeAfterMinify { get; set; } = 0;
+            public long OriginalSize { get; set; } = 0;
+            public long NewSize { get; set; } = 0;
         }
 
         /// <summary>
@@ -2910,7 +3238,11 @@ namespace VPM
             
             if (pkgInfo == null || string.IsNullOrEmpty(pkgInfo.CurrentPath))
             {
-                throw new Exception($"Could not find package: {packageName}");
+                var packageNameIssue = DescribeInvalidPackageName(packageName);
+                var errorMessage = string.IsNullOrEmpty(packageNameIssue)
+                    ? $"Could not find package: {packageName}"
+                    : $"Could not find package: {packageName}\n{packageNameIssue}";
+                throw new Exception(errorMessage);
             }
 
             string packagePath = pkgInfo.CurrentPath;
@@ -2937,7 +3269,22 @@ namespace VPM
             
             // Determine if ANY optimization is being applied
             // This is resilient to future optimizer additions - any optimization triggers backup
-            bool hasAnyOptimizations = selectedTextures.Count > 0 || 
+            // For textures, verify that at least one will actually be converted (not already at target resolution)
+            bool hasActualTextureConversions = false;
+            foreach (var texture in selectedTextures)
+            {
+                string targetResolution = texture.ConvertTo8K ? "8K" :
+                                        texture.ConvertTo4K ? "4K" :
+                                        texture.ConvertTo2K ? "2K" : "2K";
+                
+                if (targetResolution != texture.Resolution)
+                {
+                    hasActualTextureConversions = true;
+                    break;
+                }
+            }
+            
+            bool hasAnyOptimizations = hasActualTextureConversions || 
                                       selectedHairs.Count > 0 || 
                                       selectedMirrors.Count > 0 || 
                                       selectedLights.Count > 0 || 
@@ -2950,7 +3297,9 @@ namespace VPM
             bool needsBackup = !isAlreadyOptimized && hasAnyOptimizations;
 
             // Get VAM root folder for ArchivedPackages - always use game root, not subfolder
-            string archivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+            string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+            var repackagerForPath = new PackageRepackager(_imageManager, _settingsManager);
+            string archivedFolder = repackagerForPath.GetEffectiveArchiveFolder(defaultArchivedFolder);
 
             // Build optimization config
             var config = new PackageRepackager.OptimizationConfig();
@@ -3054,6 +3403,8 @@ namespace VPM
             coreResult.Errors = optimizationResult.Errors ?? new List<string>();
             coreResult.JsonSizeBeforeMinify = optimizationResult.JsonSizeBeforeMinify;
             coreResult.JsonSizeAfterMinify = optimizationResult.JsonSizeAfterMinify;
+            coreResult.OriginalSize = optimizationResult.OriginalSize;
+            coreResult.NewSize = optimizationResult.NewSize;
 
             // Refresh package in main grid
             await RefreshSinglePackage(packageName);
@@ -3074,7 +3425,9 @@ namespace VPM
                 var allMirrorItems = new List<HairOptimizer.MirrorInfo>();
                 var allLightItems = new List<HairOptimizer.LightInfo>();
 
-                string archivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
+                var repackagerForRefresh = new PackageRepackager(_imageManager, _settingsManager);
+                string archivedFolder = repackagerForRefresh.GetEffectiveArchiveFolder(defaultArchivedFolder);
 
                 foreach (var package in packages)
                 {

@@ -148,6 +148,44 @@ namespace VPM.Services
             return (null, null, 0);
         }
 
+        private static int ParseVersionTokenToSortableInt(string versionToken)
+        {
+            if (string.IsNullOrWhiteSpace(versionToken))
+            {
+                return 0;
+            }
+
+            if (int.TryParse(versionToken, out var exact))
+            {
+                return exact;
+            }
+
+            var normalized = versionToken.Replace('_', '.');
+            var parts = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            var numericParts = new List<int>(parts.Length);
+            foreach (var part in parts)
+            {
+                if (!int.TryParse(part, out var n))
+                {
+                    return 0;
+                }
+                numericParts.Add(n);
+            }
+
+            if (numericParts.Count == 0)
+            {
+                return 0;
+            }
+
+            long sortable = 0;
+            for (int i = 0; i < numericParts.Count && i < 3; i++)
+            {
+                sortable = sortable * 1000 + numericParts[i];
+            }
+
+            return sortable > int.MaxValue ? int.MaxValue : (int)sortable;
+        }
+
         /// <summary>
         /// Finds the latest version of a package in the specified directories
         /// </summary>
@@ -724,11 +762,6 @@ namespace VPM.Services
             if (_disposed)
                 throw new ObjectDisposedException(nameof(PackageFileManager));
 
-            // Prevent loading archived packages
-            if (packageName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-            {
-                return (false, "Cannot load archived packages. Archived packages are read-only.");
-            }
 
             var operationKey = $"load_{packageName}";
 
@@ -988,11 +1021,6 @@ namespace VPM.Services
         /// </summary>
         public async Task<(bool success, string error)> UnloadPackageAsync(string packageName)
         {
-            // Prevent unloading archived packages
-            if (packageName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
-            {
-                return (false, "Cannot unload archived packages. Archived packages are read-only.");
-            }
 
             var operationKey = $"unload_{packageName}";
 
@@ -1306,6 +1334,33 @@ namespace VPM.Services
         }
         
         /// <summary>
+        /// Registers an external package status in the index.
+        /// Called by PackageManager to ensure external packages are recognized by GetPackageStatus.
+        /// </summary>
+        public void RegisterExternalPackageStatus(string packageName, string status)
+        {
+            if (string.IsNullOrWhiteSpace(packageName) || string.IsNullOrWhiteSpace(status))
+                return;
+            
+            // Only add if not already in index (don't override Loaded/Available with External)
+            _packageStatusIndex.TryAdd(packageName, status);
+        }
+        
+        /// <summary>
+        /// Registers multiple external package statuses in the index.
+        /// </summary>
+        public void RegisterExternalPackageStatuses(Dictionary<string, string> packageStatuses)
+        {
+            if (packageStatuses == null || packageStatuses.Count == 0)
+                return;
+            
+            foreach (var kvp in packageStatuses)
+            {
+                RegisterExternalPackageStatus(kvp.Key, kvp.Value);
+            }
+        }
+        
+        /// <summary>
         /// Builds the package status index by scanning available package locations
         /// Uses directory signatures to avoid redundant scans
         /// </summary>
@@ -1369,9 +1424,7 @@ namespace VPM.Services
                         var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
                         if (!string.IsNullOrEmpty(packageName))
                         {
-                            // Create a unique key for archived packages to allow them to coexist with optimized versions
-                            string archivedKey = $"{packageName}#archived";
-                            _packageStatusIndex[archivedKey] = "Archived";
+                            _packageStatusIndex[packageName] = "Archived";
                         }
                     }
                 }
@@ -1554,11 +1607,15 @@ namespace VPM.Services
             string packageBaseKey = fullKey;
             
             var keyParts = fullKey.Split('.');
-            if (keyParts.Length >= 2 && int.TryParse(keyParts[^1], out int version))
+            if (keyParts.Length >= 2)
             {
-                requestedVersion = version;
-                // Remove the version from the end to get the base key (Creator.Package)
-                packageBaseKey = string.Join(".", keyParts.Take(keyParts.Length - 1));
+                var versionToken = keyParts[^1];
+                if (int.TryParse(versionToken, out int version) && version > 0)
+                {
+                    requestedVersion = version;
+                    // Remove the version from the end to get the base key (Creator.Package)
+                    packageBaseKey = string.Join(".", keyParts.Take(keyParts.Length - 1));
+                }
             }
 
             // If no version found, fall back to latest version behavior
@@ -1665,19 +1722,30 @@ namespace VPM.Services
         {
             var info = new PackageFileInfo { PackageName = packageName };
 
-            // Check if this is an archived package (has #archived suffix)
-            if (packageName.EndsWith("#archived", StringComparison.OrdinalIgnoreCase))
+            var exact = FindExactPackagePath(packageName, new[] { _addonPackagesFolder, _allPackagesFolder, _archivedPackagesFolder });
+            if (!string.IsNullOrEmpty(exact))
             {
-                // Remove #archived suffix to get the actual filename
-                string actualPackageName = packageName.Substring(0, packageName.Length - 9);
-                string archivedPathForSuffix = FindLatestPackageVersion(actualPackageName, _archivedPackagesFolder);
-                
-                if (!string.IsNullOrEmpty(archivedPathForSuffix))
+                info.CurrentPath = exact;
+                if (exact.StartsWith(_addonPackagesFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    info.Status = "Loaded";
+                    info.LoadedPath = exact;
+                }
+                else if (exact.StartsWith(_allPackagesFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    info.Status = "Available";
+                    info.AvailablePath = exact;
+                }
+                else if (exact.StartsWith(_archivedPackagesFolder, StringComparison.OrdinalIgnoreCase))
                 {
                     info.Status = "Archived";
-                    info.CurrentPath = archivedPathForSuffix;
-                    return info;
                 }
+                else
+                {
+                    info.Status = "Unknown";
+                }
+
+                return info;
             }
 
             // Check all locations (in priority order)

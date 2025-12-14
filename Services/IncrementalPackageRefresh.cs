@@ -552,6 +552,24 @@ namespace VPM.Services
             if (normalizedPath.Contains("/allpackages/"))
                 return "Available";
 
+            // Check if this is an external package by looking it up in metadata
+            // External packages have their status set to their destination name
+            if (_packageManager?.PackageMetadata != null)
+            {
+                foreach (var kvp in _packageManager.PackageMetadata)
+                {
+                    if (kvp.Value?.FilePath?.Equals(filePath, StringComparison.OrdinalIgnoreCase) == true)
+                    {
+                        // Found the package in metadata
+                        if (kvp.Value.IsExternal && !string.IsNullOrEmpty(kvp.Value.ExternalDestinationName))
+                        {
+                            return kvp.Value.ExternalDestinationName;
+                        }
+                        return kvp.Value.Status ?? "Unknown";
+                    }
+                }
+            }
+
             return "Unknown";
         }
 

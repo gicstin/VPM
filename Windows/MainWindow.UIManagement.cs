@@ -919,254 +919,46 @@ namespace VPM
                 // NOTE: _isLoadingPackages is now set to false in UpdatePackageListAsync after packages are loaded
                 EnableHubButtons();
                 
-                // Start monitoring for incremental changes after initial load
-                if (!string.IsNullOrEmpty(_selectedFolder))
-                {
-                    _incrementalRefresh?.StartMonitoring(_selectedFolder);
-                }
+                // Incremental refresh disabled - using full refresh only
+                // if (!string.IsNullOrEmpty(_selectedFolder))
+                // {
+                //     _incrementalRefresh?.StartMonitoring(_selectedFolder);
+                // }
             }
         }
 
         /// <summary>
-        /// Performs an incremental refresh - only updates changed packages instead of full rescan
-        /// 
-        /// IMPORTANT: When making changes to package filtering or removal logic, also check
-        /// IncrementalPackageRefresh.RefreshIncrementallyAsync() to ensure external packages
-        /// are handled correctly. External packages are in external destinations not scanned
-        /// by the incremental refresh, so they must be explicitly excluded from "removed" detection.
+        /// Incremental refresh disabled - using full refresh only
         /// </summary>
         private async void RefreshPackagesIncremental()
         {
-            if (_incrementalRefresh == null || string.IsNullOrEmpty(_selectedFolder))
-            {
-                RefreshPackages();
-                return;
-            }
-
-            SetStatus("Checking for package changes...");
-
-            try
-            {
-                var result = await _incrementalRefresh.RefreshIncrementallyAsync();
-
-                if (result.RecommendFullRefresh)
-                {
-                    SetStatus("Many changes detected, performing full refresh...");
-                    RefreshPackages();
-                    return;
-                }
-
-                if (!result.HasChanges)
-                {
-                    SetStatus("No package changes detected.");
-                    return;
-                }
-
-                // Apply targeted updates instead of full table refresh
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    ApplyIncrementalUpdates(result);
-                    SetStatus($"Incremental refresh: {result.AddedFiles.Count} added, {result.ModifiedFiles.Count} modified, {result.RemovedFiles.Count} removed.");
-                });
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Incremental refresh failed: {ex.Message}");
-                // Fall back to full refresh
-                RefreshPackages();
-            }
+            // Incremental refresh disabled - always use full refresh
+            RefreshPackages();
         }
 
         /// <summary>
-        /// Called when incremental refresh detects package changes
+        /// Incremental refresh disabled - using full refresh only
         /// </summary>
         private void OnIncrementalPackagesUpdated(object sender, IncrementalRefreshResult result)
         {
-            if (result == null || !result.HasChanges)
-                return;
-
-            Dispatcher.InvokeAsync(() =>
-            {
-                try
-                {
-                    // Apply targeted updates instead of full table refresh
-                    ApplyIncrementalUpdates(result);
-                    
-                    SetStatus($"Auto-detected changes: {result.AddedFiles.Count} added, {result.ModifiedFiles.Count} modified, {result.RemovedFiles.Count} removed.");
-                }
-                catch (Exception)
-                {
-                    // Silently ignore UI update errors
-                }
-            });
+            // Incremental refresh disabled
         }
 
         /// <summary>
-        /// Called when incremental refresh recommends a full refresh
+        /// Incremental refresh disabled - using full refresh only
         /// </summary>
         private void OnFullRefreshRecommended(object sender, EventArgs e)
         {
-            Dispatcher.InvokeAsync(() =>
-            {
-                SetStatus("Many file changes detected. Click Refresh to update package list.");
-            });
+            // Incremental refresh disabled
         }
 
         /// <summary>
-        /// Applies incremental updates to the package list without full refresh.
-        /// Only adds/removes/updates individual items.
+        /// Incremental refresh disabled - using full refresh only
         /// </summary>
         private void ApplyIncrementalUpdates(IncrementalRefreshResult result)
         {
-            if (result == null)
-                return;
-
-            try
-            {
-                // Preserve current selection before making changes
-                var selectedMetadataKeys = PackageDataGrid?.SelectedItems?
-                    .Cast<PackageItem>()
-                    .Select(p => p.MetadataKey)
-                    .Where(k => !string.IsNullOrEmpty(k))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                
-                // Preserve scroll position
-                double scrollOffset = 0;
-                ScrollViewer scrollViewer = null;
-                if (PackageDataGrid != null)
-                {
-                    scrollViewer = FindVisualChild<ScrollViewer>(PackageDataGrid);
-                    if (scrollViewer != null)
-                    {
-                        scrollOffset = scrollViewer.VerticalOffset;
-                    }
-                }
-
-                // Process removed files - remove from UI
-                foreach (var removedFile in result.RemovedFiles)
-                {
-                    // Get the filename without extension (e.g., "Creator.Package.1")
-                    var filename = Path.GetFileNameWithoutExtension(removedFile);
-                    
-                    // Determine the expected MetadataKey based on folder location
-                    string expectedKey = filename;
-                    var lowerPath = removedFile.ToLowerInvariant();
-                    if (lowerPath.Contains("/archivedpackages/") || lowerPath.Contains("\\archivedpackages\\"))
-                        expectedKey = $"{filename}#archived";
-                    else if (lowerPath.Contains("/allpackages/") || lowerPath.Contains("\\allpackages\\"))
-                        expectedKey = $"{filename}#available";
-                    
-                    // Find exact match by MetadataKey
-                    var itemToRemove = Packages.FirstOrDefault(p => 
-                        p.MetadataKey?.Equals(expectedKey, StringComparison.OrdinalIgnoreCase) == true);
-
-                    if (itemToRemove != null)
-                    {
-                        Packages.Remove(itemToRemove);
-                    }
-                }
-
-                // Process added files - add to UI if they pass current filters
-                foreach (var addedFile in result.AddedFiles)
-                {
-                    // Check if metadata exists for this file
-                    var metadata = _packageManager?.PackageMetadata?.Values
-                        .FirstOrDefault(m => m.FilePath?.Equals(addedFile, StringComparison.OrdinalIgnoreCase) == true);
-
-                    if (metadata != null)
-                    {
-                        // Check if it passes current filters
-                        var filterSnapshot = _filterManager?.GetSnapshot();
-                        if (filterSnapshot == null || _filterManager.MatchesFilters(metadata, filterSnapshot))
-                        {
-                            // Create PackageItem and add to collection
-                            var packageItem = CreatePackageItemFromMetadata(metadata);
-                            if (packageItem != null && !Packages.Any(p => p.MetadataKey == packageItem.MetadataKey))
-                            {
-                                Packages.Add(packageItem);
-                            }
-                        }
-                    }
-                }
-
-                // Process modified files - update status/color in place
-                foreach (var modifiedFile in result.ModifiedFiles)
-                {
-                    // Get updated metadata
-                    var metadata = _packageManager?.PackageMetadata?.Values
-                        .FirstOrDefault(m => m.FilePath?.Equals(modifiedFile, StringComparison.OrdinalIgnoreCase) == true);
-
-                    if (metadata == null)
-                        continue;
-
-                    // Find existing item in UI by MetadataKey
-                    var metadataKey = GetMetadataKeyFromMetadata(metadata);
-                    var existingItem = Packages.FirstOrDefault(p => 
-                        p.MetadataKey?.Equals(metadataKey, StringComparison.OrdinalIgnoreCase) == true);
-
-                    if (existingItem != null)
-                    {
-                        // Update the item's properties in place
-                        // StatusColor is computed from Status, so it updates automatically
-                        existingItem.Status = metadata.Status;
-                        existingItem.IsOptimized = metadata.IsOptimized;
-                        existingItem.FileSize = metadata.FileSize;
-                    }
-                }
-
-                // Refresh the view to reflect changes (but don't reset selection)
-                // Note: We avoid calling PackagesView?.Refresh() as it can reset selection
-                // The ObservableCollection changes should automatically update the view
-                
-                // Restore selection
-                if (selectedMetadataKeys.Count > 0 && PackageDataGrid != null)
-                {
-                    // Temporarily suppress selection events to avoid side effects
-                    _suppressSelectionEvents = true;
-                    try
-                    {
-                        PackageDataGrid.SelectedItems.Clear();
-                        foreach (var item in Packages)
-                        {
-                            if (selectedMetadataKeys.Contains(item.MetadataKey))
-                            {
-                                PackageDataGrid.SelectedItems.Add(item);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        _suppressSelectionEvents = false;
-                    }
-                }
-                
-                // Restore scroll position
-                if (scrollViewer != null && scrollOffset > 0)
-                {
-                    scrollViewer.ScrollToVerticalOffset(scrollOffset);
-                }
-                
-                // Update filter counts if packages were added or removed
-                if (result.AddedFiles.Count > 0 || result.RemovedFiles.Count > 0)
-                {
-                    // Update reactive filter manager with new package set
-                    if (_reactiveFilterManager != null && _packageManager?.PackageMetadata != null)
-                    {
-                        _reactiveFilterManager.Initialize(_packageManager.PackageMetadata);
-                    }
-                    
-                    // Sync filter manager with current UI selections
-                    UpdateFilterManagerFromUI(applyFilters: false);
-                    
-                    // Refresh filter lists in background
-                    // NOTE: _isLoadingPackages will be set to false at the END of RefreshFilterLists
-                    _ = Task.Run(() => RefreshFilterLists());
-                }
-            }
-            catch (Exception)
-            {
-                // If incremental update fails, don't crash - user can do full refresh
-            }
+            // Incremental refresh disabled - not applying incremental updates
+            return;
         }
 
         /// <summary>
@@ -1449,7 +1241,7 @@ namespace VPM
         private bool ShouldIncludePackage(VarMetadata metadata, string key, FilterState filterSnapshot, Dictionary<string, bool> destVisibility)
         {
             // External packages have special filtering rules
-            if (metadata.IsExternal && !string.IsNullOrEmpty(metadata.ExternalDestinationName))
+            if (metadata.IsExternal)
             {
                 // Only hide if explicitly configured as hidden (ShowInMainTable=false)
                 // If destination not found in config, INCLUDE the package (fail-open)
@@ -1477,7 +1269,37 @@ namespace VPM
                     
                     return filterSnapshot.SelectedDestinations.Contains(packageDestKey);
                 }
+
+                bool externalExplicitlySelected = filterSnapshot.SelectedStatuses.Contains("External");
+                bool localExplicitlySelected = filterSnapshot.SelectedStatuses.Contains("Local");
                 
+                if (localExplicitlySelected && !externalExplicitlySelected)
+                {
+                    return false;
+                }
+                
+                bool hasAnyNonExternalFilterActive =
+                    (filterSnapshot.SelectedStatuses.Count > 0 && !externalExplicitlySelected && !localExplicitlySelected) ||
+                    filterSnapshot.SelectedFavoriteStatuses.Count > 0 ||
+                    filterSnapshot.SelectedAutoInstallStatuses.Count > 0 ||
+                    filterSnapshot.SelectedOptimizationStatuses.Count > 0 ||
+                    filterSnapshot.SelectedVersionStatuses.Count > 0 ||
+                    filterSnapshot.FilterDuplicates ||
+                    filterSnapshot.FilterNoDependents ||
+                    filterSnapshot.FilterNoDependencies ||
+                    filterSnapshot.SelectedCategories.Count > 0 ||
+                    filterSnapshot.SelectedCreators.Count > 0 ||
+                    filterSnapshot.SelectedLicenseTypes.Count > 0 ||
+                    filterSnapshot.SelectedFileSizeRanges.Count > 0 ||
+                    filterSnapshot.SelectedSubfolders.Count > 0 ||
+                    !string.IsNullOrEmpty(filterSnapshot.SelectedDamagedFilter) ||
+                    (filterSnapshot.DateFilter != null && filterSnapshot.DateFilter.FilterType != DateFilterType.AllTime);
+
+                if (hasAnyNonExternalFilterActive && !externalExplicitlySelected)
+                {
+                    return false;
+                }
+
                 // External packages are shown (unless hidden via ShowInMainTable above or search filter)
                 return true;
             }
@@ -1867,6 +1689,30 @@ namespace VPM
                             StatusFilterList.Items.Add(displayText);
                             
                             if (selectedStatuses.Contains(dep.Key))
+                            {
+                                StatusFilterList.SelectedItems.Add(displayText);
+                            }
+                        }
+
+                        // Add External/Local package type filters
+                        var externalCount = packagesToCount.Values.Count(p => p.IsExternal);
+                        var localCount = packagesToCount.Values.Count(p => !p.IsExternal);
+                        
+                        if (externalCount > 0)
+                        {
+                            var displayText = $"External ({externalCount:N0})";
+                            StatusFilterList.Items.Add(displayText);
+                            if (selectedStatuses.Contains("External"))
+                            {
+                                StatusFilterList.SelectedItems.Add(displayText);
+                            }
+                        }
+                        
+                        if (localCount > 0)
+                        {
+                            var displayText = $"Local ({localCount:N0})";
+                            StatusFilterList.Items.Add(displayText);
+                            if (selectedStatuses.Contains("Local"))
                             {
                                 StatusFilterList.SelectedItems.Add(displayText);
                             }
