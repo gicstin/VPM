@@ -671,6 +671,10 @@ namespace VPM
                 // Subscribe to extraction events from the internal buttons
                 lazyImage.ExtractionRequested -= OnLazyImageExtractionRequested; // Prevent duplicate subscription
                 lazyImage.ExtractionRequested += OnLazyImageExtractionRequested;
+                
+                // Subscribe to texture unloaded event to release memory
+                lazyImage.TextureUnloaded -= OnLazyImageTextureUnloaded;
+                lazyImage.TextureUnloaded += OnLazyImageTextureUnloaded;
 
                 // Initialize button state based on current IsExtracted value
                 // This ensures buttons show even if the property doesn't change
@@ -725,10 +729,22 @@ namespace VPM
             }
         }
 
+        private void OnLazyImageTextureUnloaded(object sender, System.Windows.Media.Imaging.BitmapImage bitmap)
+        {
+            if (bitmap != null && _imageManager != null)
+            {
+                _imageManager.DeregisterTextureUse(bitmap);
+            }
+        }
+
         private void LazyLoadImage_Unloaded(object sender, RoutedEventArgs e)
         {
             if (sender is VPM.Windows.LazyLoadImage lazyImage)
             {
+                // Unsubscribe from events to prevent leaks
+                lazyImage.ExtractionRequested -= OnLazyImageExtractionRequested;
+                lazyImage.TextureUnloaded -= OnLazyImageTextureUnloaded;
+                
                 _virtualizedImageGridManager?.UnregisterImage(lazyImage);
             }
         }

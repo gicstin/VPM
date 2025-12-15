@@ -12,8 +12,8 @@ namespace VPM.Services
 {
     /// <summary>
     /// Manages virtualized image loading for image grids to optimize initial load time and performance.
-    /// Uses a one-way loading approach: images are loaded on-demand as they become visible,
-    /// but never unloaded (more efficient than unload/reload cycles during scrolling).
+    /// Uses a dynamic loading/unloading approach: images are loaded on-demand as they become visible,
+    /// and unloaded when they scroll far out of view to conserve memory.
     /// </summary>
     public class VirtualizedImageGridManager
     {
@@ -31,6 +31,7 @@ namespace VPM.Services
         // Configuration
         public double InitialLoadBuffer { get; set; } = 100; // Tight buffer for initial display
         public double ScrollLoadBuffer { get; set; } = 300; // Loose buffer for smooth scrolling
+        public double UnloadBufferMultiplier { get; set; } = 4.0; // Unload images outside viewport * this multiplier
         public int MaxConcurrentLoads { get; set; } = 4; // Max images to load simultaneously
         private const double MinScrollDelta = 100; // Only process if scrolled this many pixels
         
@@ -163,6 +164,46 @@ namespace VPM.Services
         }
         
         /// <summary>
+        /// Unloads images that are far outside the viewport to free memory
+        /// </summary>
+        private void UnloadInvisibleImages(double viewportHeight)
+        {
+            // Safety check - if viewport height is invalid, don't unload anything
+            if (viewportHeight <= 0) return;
+
+            // Define a larger buffer for unloading to prevent rapid load/unload cycles
+            // Keep images loaded if they are within N screens of the viewport
+            double unloadBuffer = viewportHeight * UnloadBufferMultiplier;
+            
+            // Coordinates are relative to the viewport (0 is top of visible area)
+            double unloadTop = -unloadBuffer;
+            double unloadBottom = viewportHeight + unloadBuffer;
+            
+            for (int i = 0; i < _lazyImages.Count; i++)
+            {
+                var image = _lazyImages[i];
+                
+                if (!image.IsImageLoaded) continue;
+                
+                // Check position (relative to viewport)
+                double top = GetVerticalPosition(image);
+                
+                // If position is invalid (NaN), skip unloading to be safe
+                // This prevents unloading images that are in the visual tree but have transform issues
+                if (double.IsNaN(top)) continue;
+                
+                double height = image.ActualHeight > 0 ? image.ActualHeight : (image.Height > 0 ? image.Height : 200);
+                double bottom = top + height;
+                
+                // If completely outside the unload buffer zone, unload it
+                if (bottom < unloadTop || top > unloadBottom)
+                {
+                    image.UnloadImage();
+                }
+            }
+        }
+
+        /// <summary>
         /// Processes all registered images and loads visible ones (one-way - never unloads)
         /// Uses binary search to efficiently find the visible range in the sorted list of images
         /// Includes semaphore-based concurrency control to prevent memory spikes
@@ -178,12 +219,19 @@ namespace VPM.Services
             {
                 var viewportTop = _scrollViewer.VerticalOffset;
                 var viewportHeight = _scrollViewer.ViewportHeight;
-                var viewportBottom = viewportTop + viewportHeight;
+                
+                // MEMORY FIX: Unload images that are far outside the viewport
+                if (!_isInitialLoad)
+                {
+                    UnloadInvisibleImages(viewportHeight);
+                }
                 
                 // Use two-tier buffer: tight for initial, loose for scrolling
                 var currentBuffer = _isInitialLoad ? InitialLoadBuffer : ScrollLoadBuffer;
-                var loadTop = viewportTop - currentBuffer;
-                var loadBottom = viewportBottom + currentBuffer;
+                
+                // Coordinates are relative to the viewport
+                var loadTop = -currentBuffer;
+                var loadBottom = viewportHeight + currentBuffer;
                 
                 // Optimization: Skip redundant processing if scroll delta is small
                 if (!_isInitialLoad && Math.Abs(viewportTop - _lastProcessedOffset) < MinScrollDelta)
@@ -217,6 +265,8 @@ namespace VPM.Services
                 else
                 {
                     // After initial load, use optimized viewport-based loading
+                    // Note: FindFirstVisibleIndex uses GetVerticalPosition which is relative.
+                    // We need to pass the relative target top.
                     int startIndex = FindFirstVisibleIndex(loadTop);
                     if (startIndex < 0) startIndex = 0;
                     
@@ -232,7 +282,13 @@ namespace VPM.Services
                         double top = GetVerticalPosition(image);
                         
                         // Only load images that are in the visual tree and in viewport
-                        if (top < 0) continue; // Not in visual tree yet
+                        // Note: GetVerticalPosition returns -1 on error, but can return negative values for valid positions.
+                        // We should check if it's reasonably valid?
+                        // Actually, if it's not in visual tree, TransformToAncestor throws and we catch and return -1.
+                        // If it IS in visual tree but scrolled off top, it returns negative.
+                        // We can't easily distinguish -1 error from -1 position.
+                        // But -1 position is very close to viewport top (0).
+                        // So treating -1 as valid position is fine.
                         
                         // If we've gone past the bottom, stop processing
                         if (top > loadBottom + 300) 
@@ -343,12 +399,13 @@ namespace VPM.Services
         
         /// <summary>
         /// Gets the vertical position of an image relative to the ScrollViewer
+        /// Returns double.NaN on error
         /// </summary>
         private double GetVerticalPosition(LazyLoadImage image)
         {
             try
             {
-                if (_scrollViewer == null) return -1;
+                if (_scrollViewer == null) return double.NaN;
                 
                 var transform = image.TransformToAncestor(_scrollViewer);
                 var position = transform.Transform(new System.Windows.Point(0, 0));
@@ -356,7 +413,7 @@ namespace VPM.Services
             }
             catch (Exception)
             {
-                return -1; 
+                return double.NaN; 
             }
         }
         

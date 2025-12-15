@@ -59,7 +59,7 @@ namespace VPM.Services
         
         private readonly ReaderWriterLockSlim _bitmapCacheLock = new ReaderWriterLockSlim();
         private const int MAX_BITMAP_CACHE_SIZE = 200;
-        private const int MAX_STRONG_CACHE_SIZE = 75;
+        private const int MAX_STRONG_CACHE_SIZE = 10; // Reduced from 75 to prevent memory bloat
         
         // MEDIUM PRIORITY FIX 4: Chunked loading threshold (configurable)
         // Threshold rationale: Balances memory fragmentation reduction with I/O efficiency
@@ -72,13 +72,13 @@ namespace VPM.Services
         private int _cacheMisses = 0;
         
         // Memory pressure management
-        // Increased thresholds for Server GC
-        // 4GB (HIGH): Start aggressive cache cleanup
-        // 6GB (CRITICAL): Force immediate cleanup
+        // Adjusted thresholds for better memory control
+        // 1.5GB (HIGH): Start aggressive cache cleanup
+        // 2.5GB (CRITICAL): Force immediate cleanup
         private DateTime _lastMemoryCheck = DateTime.MinValue;
         private const int MEMORY_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds
-        private const long HIGH_MEMORY_THRESHOLD = 4L * 1024 * 1024 * 1024; // 4GB
-        private const long CRITICAL_MEMORY_THRESHOLD = 6L * 1024 * 1024 * 1024; // 6GB
+        private const long HIGH_MEMORY_THRESHOLD = 1500L * 1024 * 1024; // 1.5GB
+        private const long CRITICAL_MEMORY_THRESHOLD = 2500L * 1024 * 1024; // 2.5GB
         
         // Live loading from VAR archives
         private readonly ReaderWriterLockSlim _varArchiveLock = new ReaderWriterLockSlim();
@@ -1748,7 +1748,7 @@ namespace VPM.Services
                     _bitmapCacheLock.ExitWriteLock();
                 }
 
-                // GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
+                GC.Collect(2, GCCollectionMode.Aggressive, blocking: false, compacting: true);
             }
             else if (memoryUsage > HIGH_MEMORY_THRESHOLD)
             {
@@ -1787,7 +1787,7 @@ namespace VPM.Services
                     _bitmapCacheLock.ExitWriteLock();
                 }
                 
-                // GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
+                GC.Collect(1, GCCollectionMode.Optimized, blocking: false);
             }
         }
 

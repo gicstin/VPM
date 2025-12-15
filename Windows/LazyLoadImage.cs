@@ -191,6 +191,7 @@ namespace VPM.Windows
         // Events
         public event EventHandler ImageLoaded;
         public event EventHandler ImageUnloaded;
+        public event EventHandler<BitmapImage> TextureUnloaded;
         public event EventHandler<ExtractionRequestedEventArgs> ExtractionRequested;
         
         public LazyLoadImage()
@@ -466,6 +467,13 @@ namespace VPM.Windows
             {
                 Dispatcher.Invoke(() =>
                 {
+                    // Deregister texture use if we have a source
+                    if (_imageControl.Source is BitmapImage bitmap)
+                    {
+                        // Notify listeners (MainWindow) to deregister texture from ImageManager
+                        TextureUnloaded?.Invoke(this, bitmap);
+                    }
+
                     _imageControl.Source = null;
                     _isLoaded = false;
                     
