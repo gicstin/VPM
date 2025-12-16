@@ -242,6 +242,62 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Clears the in-memory cache dictionary to free memory.
+        /// Call this after the PackageManager has fully loaded the metadata into its own structures.
+        /// The cache file remains on disk.
+        /// </summary>
+        public void ClearMemory()
+        {
+            _cacheLock.EnterWriteLock();
+            try
+            {
+                _cache.Clear();
+                // We don't reset stats here as they might be interesting
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
+        /// Updates the cache from the provided metadata dictionary before saving.
+        /// This is necessary if ClearMemory() was called, as the internal cache would be empty.
+        /// </summary>
+        public void UpdateFrom(Dictionary<string, VarMetadata> currentMetadata)
+        {
+            if (currentMetadata == null) return;
+
+            _cacheLock.EnterWriteLock();
+            try
+            {
+                _cache.Clear();
+                foreach (var kvp in currentMetadata)
+                {
+                    // Only cache if we have valid file info
+                    // We might need to look up file info if it's not in VarMetadata
+                    // But VarMetadata has FileSize and ModifiedDate
+                    
+                    if (kvp.Value != null)
+                    {
+                        long lastWriteTicks = kvp.Value.ModifiedDate?.Ticks ?? 0;
+                        
+                        _cache[kvp.Key] = new CachedMetadata
+                        {
+                            Metadata = CloneMetadata(kvp.Value),
+                            FileSize = kvp.Value.FileSize,
+                            LastWriteTicks = lastWriteTicks
+                        };
+                    }
+                }
+            }
+            finally
+            {
+                _cacheLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
         /// Gets the number of cached entries
         /// </summary>
         public int Count
@@ -414,7 +470,7 @@ namespace VPM.Services
                 Filename = StringPool.Intern(reader.ReadString()),
                 PackageName = StringPool.Intern(reader.ReadString()),
                 CreatorName = StringPool.Intern(reader.ReadString()),
-                Description = reader.ReadString(), // Descriptions are unique, don't intern
+                Description = StringPool.Intern(reader.ReadString()),
                 Version = reader.ReadInt32(),
                 LicenseType = StringPool.InternIgnoreCase(reader.ReadString()),
                 FileCount = reader.ReadInt32(),
@@ -451,10 +507,10 @@ namespace VPM.Services
             var depCount = reader.ReadInt32();
             if (depCount > 0)
             {
-                metadata.Dependencies = new List<string>(depCount);
+                metadata.Dependencies = new string[depCount];
                 for (int i = 0; i < depCount; i++)
                 {
-                    metadata.Dependencies.Add(StringPool.Intern(reader.ReadString()));
+                    metadata.Dependencies[i] = StringPool.Intern(reader.ReadString());
                 }
             }
 
@@ -473,25 +529,25 @@ namespace VPM.Services
                 // Leave as null
             }
 
-            // Read ContentTypes HashSet - intern (small set of known values)
+            // Read ContentTypes List - intern (small set of known values)
             var contentTypesCount = reader.ReadInt32();
             if (contentTypesCount > 0)
             {
-                metadata.ContentTypes = new HashSet<string>(contentTypesCount, StringComparer.OrdinalIgnoreCase);
+                metadata.ContentTypes = new string[contentTypesCount];
                 for (int i = 0; i < contentTypesCount; i++)
                 {
-                    metadata.ContentTypes.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                    metadata.ContentTypes[i] = StringPool.InternIgnoreCase(reader.ReadString());
                 }
             }
 
-            // Read Categories HashSet - intern (small set of known values)
+            // Read Categories List - intern (small set of known values)
             var categoriesCount = reader.ReadInt32();
             if (categoriesCount > 0)
             {
-                metadata.Categories = new HashSet<string>(categoriesCount, StringComparer.OrdinalIgnoreCase);
+                metadata.Categories = new string[categoriesCount];
                 for (int i = 0; i < categoriesCount; i++)
                 {
-                    metadata.Categories.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                    metadata.Categories[i] = StringPool.InternIgnoreCase(reader.ReadString());
                 }
             }
 
@@ -499,10 +555,10 @@ namespace VPM.Services
             var userTagsCount = reader.ReadInt32();
             if (userTagsCount > 0)
             {
-                metadata.UserTags = new List<string>(userTagsCount);
+                metadata.UserTags = new string[userTagsCount];
                 for (int i = 0; i < userTagsCount; i++)
                 {
-                    metadata.UserTags.Add(StringPool.Intern(reader.ReadString()));
+                    metadata.UserTags[i] = StringPool.Intern(reader.ReadString());
                 }
             }
 
@@ -526,10 +582,10 @@ namespace VPM.Services
                 var missingDepsCount = reader.ReadInt32();
                 if (missingDepsCount > 0)
                 {
-                    metadata.MissingDependencies = new List<string>(missingDepsCount);
+                    metadata.MissingDependencies = new string[missingDepsCount];
                     for (int i = 0; i < missingDepsCount; i++)
                     {
-                        metadata.MissingDependencies.Add(StringPool.Intern(reader.ReadString()));
+                        metadata.MissingDependencies[i] = StringPool.Intern(reader.ReadString());
                     }
                 }
             }
@@ -538,16 +594,16 @@ namespace VPM.Services
                 // Leave as null (lazy init)
             }
 
-            // Read ClothingTags HashSet - intern tags
+            // Read ClothingTags List - intern tags
             try
             {
                 var clothingTagsCount = reader.ReadInt32();
                 if (clothingTagsCount > 0)
                 {
-                    metadata.ClothingTags = new HashSet<string>(clothingTagsCount, StringComparer.OrdinalIgnoreCase);
+                    metadata.ClothingTags = new string[clothingTagsCount];
                     for (int i = 0; i < clothingTagsCount; i++)
                     {
-                        metadata.ClothingTags.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                        metadata.ClothingTags[i] = StringPool.InternIgnoreCase(reader.ReadString());
                     }
                 }
             }
@@ -556,16 +612,16 @@ namespace VPM.Services
                 // Leave as null (lazy init)
             }
 
-            // Read HairTags HashSet - intern tags
+            // Read HairTags List - intern tags
             try
             {
                 var hairTagsCount = reader.ReadInt32();
                 if (hairTagsCount > 0)
                 {
-                    metadata.HairTags = new HashSet<string>(hairTagsCount, StringComparer.OrdinalIgnoreCase);
+                    metadata.HairTags = new string[hairTagsCount];
                     for (int i = 0; i < hairTagsCount; i++)
                     {
-                        metadata.HairTags.Add(StringPool.InternIgnoreCase(reader.ReadString()));
+                        metadata.HairTags[i] = StringPool.InternIgnoreCase(reader.ReadString());
                     }
                 }
             }
@@ -627,8 +683,8 @@ namespace VPM.Services
             }
 
             // Write Dependencies list
-            var dependencies = metadata.Dependencies ?? new List<string>();
-            writer.Write(dependencies.Count);
+            var dependencies = metadata.Dependencies ?? Array.Empty<string>();
+            writer.Write(dependencies.Length);
             foreach (var dep in dependencies)
             {
                 writer.Write(dep ?? "");
@@ -637,25 +693,25 @@ namespace VPM.Services
             // ContentList not stored in cache (loaded on-demand)
             writer.Write(0);
 
-            // Write ContentTypes HashSet
-            var contentTypes = metadata.ContentTypes ?? new HashSet<string>();
-            writer.Write(contentTypes.Count);
+            // Write ContentTypes List
+            var contentTypes = metadata.ContentTypes ?? Array.Empty<string>();
+            writer.Write(contentTypes.Length);
             foreach (var type in contentTypes)
             {
                 writer.Write(type ?? "");
             }
 
-            // Write Categories HashSet
-            var categories = metadata.Categories ?? new HashSet<string>();
-            writer.Write(categories.Count);
+            // Write Categories List
+            var categories = metadata.Categories ?? Array.Empty<string>();
+            writer.Write(categories.Length);
             foreach (var category in categories)
             {
                 writer.Write(category ?? "");
             }
 
             // Write UserTags list
-            var userTags = metadata.UserTags ?? new List<string>();
-            writer.Write(userTags.Count);
+            var userTags = metadata.UserTags ?? Array.Empty<string>();
+            writer.Write(userTags.Length);
             foreach (var tag in userTags)
             {
                 writer.Write(tag ?? "");
@@ -665,24 +721,24 @@ namespace VPM.Services
             writer.Write(0);
 
             // Write MissingDependencies list
-            var missingDeps = metadata.MissingDependencies ?? new List<string>();
-            writer.Write(missingDeps.Count);
+            var missingDeps = metadata.MissingDependencies ?? Array.Empty<string>();
+            writer.Write(missingDeps.Length);
             foreach (var dep in missingDeps)
             {
                 writer.Write(dep ?? "");
             }
 
-            // Write ClothingTags HashSet
-            var clothingTags = metadata.ClothingTags ?? new HashSet<string>();
-            writer.Write(clothingTags.Count);
+            // Write ClothingTags List
+            var clothingTags = metadata.ClothingTags ?? Array.Empty<string>();
+            writer.Write(clothingTags.Length);
             foreach (var tag in clothingTags)
             {
                 writer.Write(tag ?? "");
             }
 
-            // Write HairTags HashSet
-            var hairTags = metadata.HairTags ?? new HashSet<string>();
-            writer.Write(hairTags.Count);
+            // Write HairTags List
+            var hairTags = metadata.HairTags ?? Array.Empty<string>();
+            writer.Write(hairTags.Length);
             foreach (var tag in hairTags)
             {
                 writer.Write(tag ?? "");
@@ -739,20 +795,20 @@ namespace VPM.Services
             
             // Only clone non-empty collections to avoid unnecessary allocations
             // VarMetadata uses lazy initialization, so null is fine for empty collections
-            if (source.Dependencies?.Count > 0)
-                clone.Dependencies = new List<string>(source.Dependencies);
-            if (source.ContentTypes?.Count > 0)
-                clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
-            if (source.Categories?.Count > 0)
-                clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
-            if (source.UserTags?.Count > 0)
-                clone.UserTags = new List<string>(source.UserTags);
-            if (source.MissingDependencies?.Count > 0)
-                clone.MissingDependencies = new List<string>(source.MissingDependencies);
-            if (source.ClothingTags?.Count > 0)
-                clone.ClothingTags = new HashSet<string>(source.ClothingTags, StringComparer.OrdinalIgnoreCase);
-            if (source.HairTags?.Count > 0)
-                clone.HairTags = new HashSet<string>(source.HairTags, StringComparer.OrdinalIgnoreCase);
+            if (source.Dependencies?.Length > 0)
+                clone.Dependencies = (string[])source.Dependencies.Clone();
+            if (source.ContentTypes?.Length > 0)
+                clone.ContentTypes = (string[])source.ContentTypes.Clone();
+            if (source.Categories?.Length > 0)
+                clone.Categories = (string[])source.Categories.Clone();
+            if (source.UserTags?.Length > 0)
+                clone.UserTags = (string[])source.UserTags.Clone();
+            if (source.MissingDependencies?.Length > 0)
+                clone.MissingDependencies = (string[])source.MissingDependencies.Clone();
+            if (source.ClothingTags?.Length > 0)
+                clone.ClothingTags = (string[])source.ClothingTags.Clone();
+            if (source.HairTags?.Length > 0)
+                clone.HairTags = (string[])source.HairTags.Clone();
             
             return clone;
         }

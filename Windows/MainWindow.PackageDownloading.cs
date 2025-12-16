@@ -601,7 +601,7 @@ namespace VPM
                     existingPackage.IsOptimized = metadata.IsOptimized;
                     existingPackage.IsDuplicate = metadata.IsDuplicate;
                     existingPackage.DuplicateLocationCount = metadata.DuplicateLocationCount;
-                    existingPackage.DependencyCount = metadata.Dependencies?.Count ?? 0;
+                    existingPackage.DependencyCount = metadata.Dependencies?.Length ?? 0;
                     existingPackage.DependentsCount = 0; // Will be calculated on full refresh
                 }
                 else
@@ -612,7 +612,7 @@ namespace VPM
                         Name = fullPackageName,  // Use full package name with creator and version
                         Status = "Loaded",
                         Creator = metadata.CreatorName ?? "Unknown",
-                        DependencyCount = metadata.Dependencies?.Count ?? 0,
+                        DependencyCount = metadata.Dependencies?.Length ?? 0,
                         DependentsCount = 0, // Will be calculated on full refresh
                         FileSize = metadata.FileSize,
                         ModifiedDate = metadata.ModifiedDate,

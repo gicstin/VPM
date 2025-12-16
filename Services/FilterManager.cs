@@ -401,7 +401,7 @@ namespace VPM.Services
             // 8. Category filter
             if (!string.IsNullOrEmpty(state.SelectedCategory))
             {
-                if (metadata.Categories == null || !metadata.Categories.Contains(state.SelectedCategory))
+                if (metadata.Categories == null || !metadata.Categories.Contains(state.SelectedCategory, StringComparer.OrdinalIgnoreCase))
                     return false;
             }
             
@@ -524,12 +524,12 @@ namespace VPM.Services
         /// <param name="filterTags">Tags to filter by</param>
         /// <param name="requireAll">If true, all filter tags must match (AND). If false, any tag matches (OR).</param>
         /// <returns>True if the item matches the filter</returns>
-        private static bool MatchesTagFilter(HashSet<string> itemTags, HashSet<string> filterTags, bool requireAll)
+        private static bool MatchesTagFilter(string[] itemTags, HashSet<string> filterTags, bool requireAll)
         {
             if (filterTags == null || filterTags.Count == 0)
                 return true;
             
-            if (itemTags == null || itemTags.Count == 0)
+            if (itemTags == null || itemTags.Length == 0)
                 return false;
             
             if (requireAll)
@@ -537,7 +537,8 @@ namespace VPM.Services
                 // AND logic: all filter tags must be present
                 foreach (var filterTag in filterTags)
                 {
-                    if (!itemTags.Contains(filterTag))
+                    // Use Enumerable.Contains with comparer for case-insensitive check
+                    if (!itemTags.Contains(filterTag, StringComparer.OrdinalIgnoreCase))
                         return false;
                 }
                 return true;
@@ -545,9 +546,10 @@ namespace VPM.Services
             else
             {
                 // OR logic: any filter tag matches
-                foreach (var filterTag in filterTags)
+                foreach (var tag in itemTags)
                 {
-                    if (itemTags.Contains(filterTag))
+                    // filterTags is already case-insensitive HashSet
+                    if (filterTags.Contains(tag))
                         return true;
                 }
                 return false;
@@ -1126,7 +1128,7 @@ namespace VPM.Services
             {
                 if (selectedTypes.Count > 0)
                 {
-                    var packageCategories = metadata.Categories ?? new HashSet<string>();
+                    var packageCategories = metadata.Categories ?? Array.Empty<string>();
                     // Convert to HashSet for O(1) lookups instead of O(n) Any() calls
                     var selectedTypesSet = new HashSet<string>(selectedTypes, StringComparer.OrdinalIgnoreCase);
                     bool hasMatchingCategory = packageCategories.Any(category => selectedTypesSet.Contains(category));
@@ -1167,7 +1169,7 @@ namespace VPM.Services
             // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
             foreach (var package in packages.Values)
             {
-                if (package.ClothingTags == null || package.ClothingTags.Count == 0)
+                if (package.ClothingTags == null || package.ClothingTags.Length == 0)
                     continue;
                 
                 foreach (var tag in package.ClothingTags)
@@ -1196,7 +1198,7 @@ namespace VPM.Services
             // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
             foreach (var package in packages.Values)
             {
-                if (package.HairTags == null || package.HairTags.Count == 0)
+                if (package.HairTags == null || package.HairTags.Length == 0)
                     continue;
                 
                 foreach (var tag in package.HairTags)
@@ -1223,7 +1225,7 @@ namespace VPM.Services
             int count = 0;
             foreach (var package in packages.Values)
             {
-                if (package.ClothingTags != null && package.ClothingTags.Count > 0)
+                if (package.ClothingTags != null && package.ClothingTags.Length > 0)
                     count++;
             }
             return count;
@@ -1238,7 +1240,7 @@ namespace VPM.Services
             int count = 0;
             foreach (var package in packages.Values)
             {
-                if (package.HairTags != null && package.HairTags.Count > 0)
+                if (package.HairTags != null && package.HairTags.Length > 0)
                     count++;
             }
             return count;

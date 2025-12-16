@@ -1883,7 +1883,7 @@ namespace VPM
                         Name = packageName,
                         Status = metadata.Status,
                         Creator = metadata.CreatorName ?? "Unknown",
-                        DependencyCount = metadata.Dependencies?.Count ?? 0,
+                        DependencyCount = metadata.Dependencies?.Length ?? 0,
                         DependentsCount = 0, // Will be calculated on full refresh
                         FileSize = metadata.FileSize,
                         ModifiedDate = metadata.ModifiedDate,

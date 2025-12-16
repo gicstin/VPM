@@ -3309,7 +3309,7 @@ namespace VPM.Windows
                 foreach (var kvp in _packageManager.PackageMetadata)
                 {
                     var metadata = kvp.Value;
-                    if (metadata.MissingDependencies != null && metadata.MissingDependencies.Count > 0)
+                    if (metadata.MissingDependencies != null && metadata.MissingDependencies.Length > 0)
                     {
                         foreach (var dep in metadata.MissingDependencies)
                         {

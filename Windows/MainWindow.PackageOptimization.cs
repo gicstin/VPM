@@ -537,7 +537,7 @@ namespace VPM
                         }
                         
                         packageItem.Creator = freshMetadata.CreatorName;
-                        packageItem.DependencyCount = freshMetadata.Dependencies?.Count ?? 0;
+                        packageItem.DependencyCount = freshMetadata.Dependencies?.Length ?? 0;
                         
                         var selectedNames = PreserveDataGridSelections();
                         selectedDeps = PreserveDependenciesDataGridSelections();

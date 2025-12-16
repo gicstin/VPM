@@ -1335,7 +1335,7 @@ namespace VPM
                 Name = packageName,
                 Status = metadata.Status,
                 Creator = metadata.CreatorName,
-                DependencyCount = metadata.Dependencies?.Count ?? 0,
+                DependencyCount = metadata.Dependencies?.Length ?? 0,
                 DependentsCount = dependentsCount.TryGetValue(packageName, out var count) ? count : 0,
                 FileSize = metadata.FileSize,
                 ModifiedDate = metadata.ModifiedDate,
@@ -1499,7 +1499,7 @@ namespace VPM
                             result = metaA.FileSize.CompareTo(metaB.FileSize);
                             break;
                         case PackageSortOption.Dependencies:
-                            result = (metaA.Dependencies?.Count ?? 0).CompareTo(metaB.Dependencies?.Count ?? 0);
+                            result = (metaA.Dependencies?.Length ?? 0).CompareTo(metaB.Dependencies?.Length ?? 0);
                             break;
                         case PackageSortOption.Dependents:
                             int depA = _currentDependentsCounts.TryGetValue(metaA.PackageName, out var cA) ? cA : 0;

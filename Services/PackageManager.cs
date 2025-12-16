@@ -706,7 +706,7 @@ namespace VPM.Services
                     }
                 }
                 
-                metadata.ContentList = contentList;
+                metadata.ContentList = contentList.ToArray();
 
 
                 // Parse meta.json if found
@@ -739,14 +739,15 @@ namespace VPM.Services
                 
                 // Scan for clothing and hair tags from .vam files
                 // Only scan if package has clothing or hair content
-                if (metadata.Categories.Contains("Clothing") || metadata.Categories.Contains("Hair") ||
+                if (metadata.Categories.Contains("Clothing", StringComparer.OrdinalIgnoreCase) || metadata.Categories.Contains("Hair", StringComparer.OrdinalIgnoreCase) ||
                     metadata.ClothingCount > 0 || metadata.HairCount > 0)
                 {
                     try
                     {
+                        // Convert array to list for scanning (scanner expects IEnumerable)
                         var tagResult = _contentTagScanner.ScanForTags(archive.Archive, contentList);
-                        metadata.ClothingTags = tagResult.ClothingTags;
-                        metadata.HairTags = tagResult.HairTags;
+                        metadata.ClothingTags = tagResult.ClothingTags.ToArray();
+                        metadata.HairTags = tagResult.HairTags.ToArray();
                     }
                     catch
                     {
@@ -810,7 +811,7 @@ namespace VPM.Services
                 metadata.PackageName = StringPool.Intern(pkgName ?? filename);
                 if (int.TryParse(version, out var versionInt))
                     metadata.Version = versionInt;
-                metadata.Categories.Add("Unknown");
+                metadata.Categories = new[] { "Unknown" };
                 
                 return (metadata, 0); // Return 0 hash for corrupted packages
             }
@@ -822,14 +823,14 @@ namespace VPM.Services
             return ParseVarMetadata(varPath).metadata;
         }
 
-        private HashSet<string> DetectCategoriesFromContent(List<string> contentList)
+        private string[] DetectCategoriesFromContent(string[] contentList)
         {
             var categories = new HashSet<string>();
             
-            if (contentList == null || contentList.Count == 0)
+            if (contentList == null || contentList.Length == 0)
             {
                 categories.Add("Unknown");
-                return categories;
+                return categories.ToArray();
             }
             
             // Check if this is a morph asset (only contains morphs) and count morphs
@@ -845,7 +846,7 @@ namespace VPM.Services
                 {
                     categories.Add("Morphs");
                 }
-                return categories;
+                return categories.ToArray();
             }
             
             foreach (var content in contentList.Take(100))
@@ -860,12 +861,12 @@ namespace VPM.Services
             if (categories.Count == 0)
                 categories.Add("Unknown");
                 
-            return categories;
+            return categories.ToArray();
         }
 
-        private (bool isMorphAsset, int morphCount) DetectMorphAsset(List<string> contentList)
+        private (bool isMorphAsset, int morphCount) DetectMorphAsset(string[] contentList)
         {
-            if (contentList == null || contentList.Count == 0)
+            if (contentList == null || contentList.Length == 0)
                 return (false, 0);
             
             int morphCount = 0;
@@ -967,9 +968,9 @@ namespace VPM.Services
                    normalizedPath.Contains("addonpackages/");
         }
 
-        private (int morphs, int hair, int clothing, int scenes, int looks, int poses, int assets, int scripts, int plugins, int subScenes, int skins) CountContentItems(List<string> contentList)
+        private (int morphs, int hair, int clothing, int scenes, int looks, int poses, int assets, int scripts, int plugins, int subScenes, int skins) CountContentItems(string[] contentList)
         {
-            if (contentList == null || contentList.Count == 0)
+            if (contentList == null || contentList.Length == 0)
             {
                 return (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
             }
@@ -1295,20 +1296,20 @@ namespace VPM.Services
             
             // Only clone non-empty collections to avoid unnecessary allocations
             // VarMetadata uses lazy initialization, so null is fine for empty collections
-            if (source.Dependencies?.Count > 0)
-                clone.Dependencies = new List<string>(source.Dependencies);
-            if (source.ContentTypes?.Count > 0)
-                clone.ContentTypes = new HashSet<string>(source.ContentTypes, StringComparer.OrdinalIgnoreCase);
-            if (source.Categories?.Count > 0)
-                clone.Categories = new HashSet<string>(source.Categories, StringComparer.OrdinalIgnoreCase);
-            if (source.UserTags?.Count > 0)
-                clone.UserTags = new List<string>(source.UserTags);
-            if (source.MissingDependencies?.Count > 0)
-                clone.MissingDependencies = new List<string>(source.MissingDependencies);
-            if (source.ClothingTags?.Count > 0)
-                clone.ClothingTags = new HashSet<string>(source.ClothingTags, StringComparer.OrdinalIgnoreCase);
-            if (source.HairTags?.Count > 0)
-                clone.HairTags = new HashSet<string>(source.HairTags, StringComparer.OrdinalIgnoreCase);
+            if (source.Dependencies?.Length > 0)
+                clone.Dependencies = (string[])source.Dependencies.Clone();
+            if (source.ContentTypes?.Length > 0)
+                clone.ContentTypes = (string[])source.ContentTypes.Clone();
+            if (source.Categories?.Length > 0)
+                clone.Categories = (string[])source.Categories.Clone();
+            if (source.UserTags?.Length > 0)
+                clone.UserTags = (string[])source.UserTags.Clone();
+            if (source.MissingDependencies?.Length > 0)
+                clone.MissingDependencies = (string[])source.MissingDependencies.Clone();
+            if (source.ClothingTags?.Length > 0)
+                clone.ClothingTags = (string[])source.ClothingTags.Clone();
+            if (source.HairTags?.Length > 0)
+                clone.HairTags = (string[])source.HairTags.Clone();
             
             return clone;
         }
@@ -1690,12 +1691,12 @@ namespace VPM.Services
                                     dupMetadata.VariantRole = "External";
                                     dupMetadata.FilePath = filePath;
                                     dupMetadata.FileSize = fileInfo.Length;
-                                    dupMetadata.ExternalDestinationColorHex = destination.StatusColor ?? "#808080";
-                                    dupMetadata.Status = finalDestName;
-                                    dupMetadata.ExternalDestinationName = finalDestName;
+                                    dupMetadata.ExternalDestinationColorHex = StringPool.Intern(destination.StatusColor ?? "#808080");
+                                    dupMetadata.Status = StringPool.Intern(finalDestName);
+                                    dupMetadata.ExternalDestinationName = StringPool.Intern(finalDestName);
                                     dupMetadata.ExternalDestinationSubfolder = finalSubfolder;
-                                    dupMetadata.OriginalExternalDestinationName = originalDestName;
-                                    dupMetadata.OriginalExternalDestinationColorHex = originalDestColor;
+                                    dupMetadata.OriginalExternalDestinationName = StringPool.Intern(originalDestName);
+                                    dupMetadata.OriginalExternalDestinationColorHex = StringPool.Intern(originalDestColor);
 
                                     if (!dupMetadata.IsOptimized)
                                     {
@@ -1730,12 +1731,12 @@ namespace VPM.Services
                         metadata.VariantRole = "External";
                         metadata.FilePath = filePath;
                         metadata.FileSize = fileInfo.Length;
-                        metadata.ExternalDestinationColorHex = destination.StatusColor ?? "#808080";
-                        metadata.Status = finalDestName;
-                        metadata.ExternalDestinationName = finalDestName;
+                        metadata.ExternalDestinationColorHex = StringPool.Intern(destination.StatusColor ?? "#808080");
+                        metadata.Status = StringPool.Intern(finalDestName);
+                        metadata.ExternalDestinationName = StringPool.Intern(finalDestName);
                         metadata.ExternalDestinationSubfolder = finalSubfolder;
-                        metadata.OriginalExternalDestinationName = originalDestName;
-                        metadata.OriginalExternalDestinationColorHex = originalDestColor;
+                        metadata.OriginalExternalDestinationName = StringPool.Intern(originalDestName);
+                        metadata.OriginalExternalDestinationColorHex = StringPool.Intern(originalDestColor);
 
                         if (!metadata.IsOptimized)
                         {
@@ -1882,9 +1883,9 @@ namespace VPM.Services
             foreach (var kvp in PackageMetadata)
             {
                 var metadata = kvp.Value;
-                metadata.MissingDependencies = new List<string>();
+                var missingDeps = new List<string>();
                 
-                if (metadata.Dependencies == null || metadata.Dependencies.Count == 0)
+                if (metadata.Dependencies == null || metadata.Dependencies.Length == 0)
                     continue;
                 
                 foreach (var dep in metadata.Dependencies)
@@ -1896,10 +1897,11 @@ namespace VPM.Services
                     
                     if (!found)
                     {
-                        metadata.MissingDependencies.Add(dep);
+                        missingDeps.Add(dep);
                         totalMissing++;
                     }
                 }
+                metadata.MissingDependencies = missingDeps.ToArray();
             }
         }
         
@@ -1969,32 +1971,36 @@ namespace VPM.Services
             foreach (var kvp in PackageMetadata)
             {
                 var metadata = kvp.Value;
-                if (metadata.MissingDependencies == null || metadata.MissingDependencies.Count == 0)
+                if (metadata.MissingDependencies == null || metadata.MissingDependencies.Length == 0)
                     continue;
                 
                 // Remove exact match
-                metadata.MissingDependencies.Remove(packageName);
+                if (metadata.MissingDependencies.Contains(packageName))
+                {
+                    metadata.MissingDependencies = metadata.MissingDependencies.Where(d => d != packageName).ToArray();
+                }
                 
                 // Remove dependencies that this package satisfies
                 if (!string.IsNullOrEmpty(baseNamePrefix))
                 {
-                    metadata.MissingDependencies.RemoveAll(dep =>
+                    metadata.MissingDependencies = metadata.MissingDependencies.Where(dep =>
                     {
                         // PERFORMANCE FIX: Quick prefix check before expensive Parse
                         // Most dependencies won't match, so this short-circuits early
                         if (!dep.StartsWith(baseNamePrefix, StringComparison.OrdinalIgnoreCase) &&
                             !dep.StartsWith(baseName, StringComparison.OrdinalIgnoreCase))
-                            return false;
+                            return true; // Keep it
                         
                         var depInfo = DependencyVersionInfo.Parse(dep);
                         
                         // Must be the same base package (double-check after parse)
                         if (!string.Equals(depInfo.BaseName, baseName, StringComparison.OrdinalIgnoreCase))
-                            return false;
+                            return true; // Keep it
                         
                         // Check if downloaded version satisfies the dependency
-                        return depInfo.IsSatisfiedBy(downloadedVersion);
-                    });
+                        // If it satisfies, we remove it (return false)
+                        return !depInfo.IsSatisfiedBy(downloadedVersion);
+                    }).ToArray();
                 }
             }
         }
@@ -2015,7 +2021,7 @@ namespace VPM.Services
                 // Set dependency count (number of packages this one depends on)
                 if (metadata.Dependencies != null)
                 {
-                    metadata.DependencyCount = metadata.Dependencies.Count;
+                    metadata.DependencyCount = metadata.Dependencies.Length;
                 }
                 else
                 {
@@ -2469,7 +2475,7 @@ namespace VPM.Services
                 if (metaData.TryGetProperty("creatorName", out var cName))
                     metadata.CreatorName = StringPool.Intern(cName.GetString() ?? "");
                 if (metaData.TryGetProperty("description", out var desc))
-                    metadata.Description = desc.GetString() ?? ""; // Don't intern descriptions - they're unique
+                    metadata.Description = StringPool.Intern(desc.GetString() ?? "");
                 if (metaData.TryGetProperty("packageVersion", out var ver))
                     metadata.Version = ver.GetInt32();
                 if (metaData.TryGetProperty("licenseType", out var license))
@@ -2504,7 +2510,7 @@ namespace VPM.Services
                     metadata.UserTags = tags.EnumerateArray()
                         .Select(t => t.GetString())
                         .Where(t => !string.IsNullOrEmpty(t))
-                        .ToList();
+                        .ToArray();
                 }
                 
                 // NOTE: We no longer use contentList from meta.json
@@ -2583,24 +2589,26 @@ namespace VPM.Services
             
             // MEMORY FIX: Clear ContentList after processing.
             // Full per-file lists are loaded on-demand by the UI to avoid retaining huge lists for every package.
-            metadata.ContentList.Clear();
             metadata.ContentList = null;
             
             // Fallback category detection from filename if no categories found
-            if (metadata.Categories.Count == 0)
+            if (metadata.Categories.Length == 0)
             {
                 var lowerName = filename.ToLower();
+                var categories = new List<string>();
                 
-                if (lowerName.Contains("scene")) metadata.Categories.Add("Scenes");
-                else if (lowerName.Contains("look") || lowerName.Contains("appearance")) metadata.Categories.Add("Looks");
-                else if (lowerName.Contains("clothing")) metadata.Categories.Add("Clothing");
-                else if (lowerName.Contains("hair")) metadata.Categories.Add("Hair");
-                else if (lowerName.Contains("morph") || lowerName.Contains("morphpack")) metadata.Categories.Add("Morph Pack");
-                else if (lowerName.Contains("pose")) metadata.Categories.Add("Poses");
-                else metadata.Categories.Add("Unknown");
+                if (lowerName.Contains("scene")) categories.Add("Scenes");
+                else if (lowerName.Contains("look") || lowerName.Contains("appearance")) categories.Add("Looks");
+                else if (lowerName.Contains("clothing")) categories.Add("Clothing");
+                else if (lowerName.Contains("hair")) categories.Add("Hair");
+                else if (lowerName.Contains("morph") || lowerName.Contains("morphpack")) categories.Add("Morph Pack");
+                else if (lowerName.Contains("pose")) categories.Add("Poses");
+                else categories.Add("Unknown");
+                
+                metadata.Categories = categories.ToArray();
             }
         }
-        private List<string> ParseDependencies(JsonElement deps)
+        private string[] ParseDependencies(JsonElement deps)
         {
             // Use HashSet for O(1) duplicate detection instead of List with O(n) Contains checks
             var dependenciesSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2608,8 +2616,8 @@ namespace VPM.Services
             // Recursively parse all dependencies including subdependencies
             ParseDependenciesRecursive(deps, dependenciesSet);
 
-            // Convert back to List for compatibility with existing code
-            return new List<string>(dependenciesSet);
+            // Convert back to Array for compatibility with existing code
+            return dependenciesSet.ToArray();
         }
 
         /// <summary>

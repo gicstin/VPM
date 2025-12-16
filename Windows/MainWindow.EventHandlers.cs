@@ -3732,7 +3732,7 @@ namespace VPM
                 Name = packageName,
                 Status = metadata.Status,
                 Creator = metadata.CreatorName ?? "Unknown",
-                DependencyCount = metadata.Dependencies?.Count ?? 0,
+                DependencyCount = metadata.Dependencies?.Length ?? 0,
                 DependentsCount = 0, // Will be calculated on full refresh
                 FileSize = metadata.FileSize,
                 ModifiedDate = metadata.ModifiedDate,
@@ -4658,7 +4658,7 @@ namespace VPM
                             existingPackage.IsOptimized = metadata.IsOptimized;
                             existingPackage.IsDuplicate = metadata.IsDuplicate;
                             existingPackage.DuplicateLocationCount = metadata.DuplicateLocationCount;
-                            existingPackage.DependencyCount = metadata.Dependencies?.Count ?? 0;
+                            existingPackage.DependencyCount = metadata.Dependencies?.Length ?? 0;
                             existingPackage.DependentsCount = 0; // Will be calculated on full refresh
                         }
                         else
@@ -4669,7 +4669,7 @@ namespace VPM
                                 Name = metadata.PackageName,
                                 Status = "Loaded",
                                 Creator = metadata.CreatorName ?? "Unknown",
-                                DependencyCount = metadata.Dependencies?.Count ?? 0,
+                                DependencyCount = metadata.Dependencies?.Length ?? 0,
                                 DependentsCount = 0, // Will be calculated on full refresh
                                 FileSize = metadata.FileSize,
                                 ModifiedDate = metadata.ModifiedDate,

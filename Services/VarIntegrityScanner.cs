@@ -59,8 +59,8 @@ namespace VPM.Services
             // If meta.json was missing, these fields won't be populated:
             bool hasLicenseType = !string.IsNullOrEmpty(metadata.LicenseType);
             bool hasDescription = !string.IsNullOrEmpty(metadata.Description);
-            bool hasDependencies = metadata.Dependencies != null && metadata.Dependencies.Count > 0;
-            bool hasContentTypes = metadata.ContentTypes != null && metadata.ContentTypes.Count > 0;
+            bool hasDependencies = metadata.Dependencies != null && metadata.Dependencies.Length > 0;
+            bool hasContentTypes = metadata.ContentTypes != null && metadata.ContentTypes.Length > 0;
             
             // If none of these meta.json-only fields are set, meta.json is likely missing
             if (!hasLicenseType && !hasDescription && !hasDependencies && !hasContentTypes)

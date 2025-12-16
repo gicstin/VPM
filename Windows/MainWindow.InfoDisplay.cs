@@ -614,7 +614,7 @@ namespace VPM
                     licenseCounts[license] = licenseCounts.ContainsKey(license) ? licenseCounts[license] + 1 : 1;
 
                     // Sum totals
-                    totalDependencies += packageMetadata.Dependencies?.Count ?? 0;
+                    totalDependencies += packageMetadata.Dependencies?.Length ?? 0;
                     totalFileCount += packageMetadata.FileCount;
                 }
 
@@ -692,7 +692,7 @@ namespace VPM
         {
             _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var packageMetadata);
             
-            _dependenciesCount = packageMetadata?.Dependencies?.Count ?? 0;
+            _dependenciesCount = packageMetadata?.Dependencies?.Length ?? 0;
             
             // Use dependency graph for O(1) lookup instead of iterating all packages
             var packageFullName = $"{packageMetadata?.CreatorName}.{packageMetadata?.PackageName}.{packageMetadata?.Version}";

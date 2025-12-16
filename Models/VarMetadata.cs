@@ -9,15 +9,15 @@ namespace VPM.Models
     {
         // Backing fields for lazy-initialized collections
         // This saves ~200 bytes per instance when collections are empty
-        private List<string> _dependencies;
-        private List<string> _contentList;
-        private HashSet<string> _contentTypes;
-        private HashSet<string> _categories;
-        private List<string> _userTags;
-        private List<string> _allFiles;
-        private List<string> _missingDependencies;
-        private HashSet<string> _clothingTags;
-        private HashSet<string> _hairTags;
+        private string[] _dependencies;
+        private string[] _contentList;
+        private string[] _contentTypes;
+        private string[] _categories;
+        private string[] _userTags;
+        private string[] _allFiles;
+        private string[] _missingDependencies;
+        private string[] _clothingTags;
+        private string[] _hairTags;
         
         public string Filename { get; set; } = "";
         public string PackageName { get; set; } = "";
@@ -27,28 +27,27 @@ namespace VPM.Models
         public string LicenseType { get; set; } = "";
         
         // Lazy-initialized collections - only allocate when needed
-        public List<string> Dependencies 
+        public string[] Dependencies 
         { 
-            get => _dependencies ??= new List<string>();
+            get => _dependencies ??= Array.Empty<string>();
             set => _dependencies = value;
         }
         
-        public List<string> ContentList 
+        public string[] ContentList 
         { 
-            get => _contentList ??= new List<string>();
+            get => _contentList ??= Array.Empty<string>();
             set => _contentList = value;
         }
         
-        public HashSet<string> ContentTypes 
+        public string[] ContentTypes 
         { 
-            get => _contentTypes ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            get => _contentTypes ??= Array.Empty<string>();
             set => _contentTypes = value;
         }
         
-        public HashSet<string> Categories 
+        public string[] Categories 
         { 
-            // Initialize with capacity 2 since most packages have 1-2 categories
-            get => _categories ??= new HashSet<string>(2, StringComparer.OrdinalIgnoreCase);
+            get => _categories ??= Array.Empty<string>();
             set => _categories = value;
         }
         
@@ -56,9 +55,9 @@ namespace VPM.Models
         public DateTime? CreatedDate { get; set; }
         public DateTime? ModifiedDate { get; set; }
         
-        public List<string> UserTags 
+        public string[] UserTags 
         { 
-            get => _userTags ??= new List<string>();
+            get => _userTags ??= Array.Empty<string>();
             set => _userTags = value;
         }
         
@@ -105,21 +104,21 @@ namespace VPM.Models
         public int SkinsCount { get; set; } = 0;
         
         // Complete file index from archive - used for UI display and expansion
-        public List<string> AllFiles 
+        public string[] AllFiles 
         { 
-            get => _allFiles ??= new List<string>();
+            get => _allFiles ??= Array.Empty<string>();
             set => _allFiles = value;
         }
         
         // Missing dependencies tracking
-        public List<string> MissingDependencies 
+        public string[] MissingDependencies 
         { 
-            get => _missingDependencies ??= new List<string>();
+            get => _missingDependencies ??= Array.Empty<string>();
             set => _missingDependencies = value;
         }
         
-        public bool HasMissingDependencies => _missingDependencies?.Count > 0;
-        public int MissingDependencyCount => _missingDependencies?.Count ?? 0;
+        public bool HasMissingDependencies => _missingDependencies?.Length > 0;
+        public int MissingDependencyCount => _missingDependencies?.Length ?? 0;
 
         // Dependency and Dependents tracking
         public int DependencyCount { get; set; } = 0;  // Number of packages this one depends on
@@ -135,27 +134,27 @@ namespace VPM.Models
 
         // Content tags extracted from .vam files (clothing and hair)
         // Tags are comma-separated strings like "head,torso,dress,formal"
-        public HashSet<string> ClothingTags 
+        public string[] ClothingTags 
         { 
-            get => _clothingTags ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            get => _clothingTags ??= Array.Empty<string>();
             set => _clothingTags = value;
         }
         
-        public HashSet<string> HairTags 
+        public string[] HairTags 
         { 
-            get => _hairTags ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            get => _hairTags ??= Array.Empty<string>();
             set => _hairTags = value;
         }
         
         /// <summary>
         /// Returns true if this package has any clothing tags
         /// </summary>
-        public bool HasClothingTags => _clothingTags?.Count > 0;
+        public bool HasClothingTags => _clothingTags?.Length > 0;
         
         /// <summary>
         /// Returns true if this package has any hair tags
         /// </summary>
-        public bool HasHairTags => _hairTags?.Count > 0;
+        public bool HasHairTags => _hairTags?.Length > 0;
         
         /// <summary>
         /// Returns true if this package has any content tags (clothing or hair)
@@ -168,14 +167,7 @@ namespace VPM.Models
         /// </summary>
         public void TrimExcess()
         {
-            _dependencies?.TrimExcess();
-            _contentList?.TrimExcess();
-            _contentTypes?.TrimExcess();
-            _userTags?.TrimExcess();
-            _allFiles?.TrimExcess();
-            _missingDependencies?.TrimExcess();
-            _clothingTags?.TrimExcess();
-            _hairTags?.TrimExcess();
+            // Arrays are fixed size, no need to trim
         }
         
         /// <summary>
@@ -185,7 +177,6 @@ namespace VPM.Models
         public void ClearTransientData()
         {
             // ContentList is typically only needed during parsing
-            _contentList?.Clear();
             _contentList = null;
         }
     }

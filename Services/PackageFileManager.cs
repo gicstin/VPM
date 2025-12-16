@@ -450,17 +450,14 @@ namespace VPM.Services
                 if (_packageIndex.TryGetValue(packageBaseName, out var entry))
                 {
                     // Check if we have version info in the entry
-                    if (entry.VersionPaths != null && entry.VersionPaths.Count > 0)
-                    {
-                        // Find the smallest version >= minVersion
-                        var matchingVersion = entry.VersionPaths
-                            .Where(kvp => kvp.Key >= minVersion)
-                            .OrderBy(kvp => kvp.Key)
-                            .FirstOrDefault();
-                        
-                        if (!string.IsNullOrEmpty(matchingVersion.Value))
-                            return matchingVersion.Value;
-                    }
+                    // Use GetVersions() to avoid allocating Dictionary for single-version entries
+                    var matchingVersion = entry.GetVersions()
+                        .Where(kvp => kvp.Key >= minVersion)
+                        .OrderBy(kvp => kvp.Key)
+                        .FirstOrDefault();
+                    
+                    if (!string.IsNullOrEmpty(matchingVersion.Value))
+                        return matchingVersion.Value;
                     
                     // Fallback to latest if no version meets minimum
                     return entry.LatestPath ?? string.Empty;
@@ -470,16 +467,13 @@ namespace VPM.Services
                 var normalized = NormalizePackageBase(packageBaseName);
                 if (!string.IsNullOrEmpty(normalized) && _packageIndex.TryGetValue(normalized, out entry))
                 {
-                    if (entry.VersionPaths != null && entry.VersionPaths.Count > 0)
-                    {
-                        var matchingVersion = entry.VersionPaths
-                            .Where(kvp => kvp.Key >= minVersion)
-                            .OrderBy(kvp => kvp.Key)
-                            .FirstOrDefault();
-                        
-                        if (!string.IsNullOrEmpty(matchingVersion.Value))
-                            return matchingVersion.Value;
-                    }
+                    var matchingVersion = entry.GetVersions()
+                        .Where(kvp => kvp.Key >= minVersion)
+                        .OrderBy(kvp => kvp.Key)
+                        .FirstOrDefault();
+                    
+                    if (!string.IsNullOrEmpty(matchingVersion.Value))
+                        return matchingVersion.Value;
                     
                     return entry.LatestPath ?? string.Empty;
                 }
@@ -1771,7 +1765,7 @@ namespace VPM.Services
                     // Try exact match first
                     if (_packageIndex.TryGetValue(packageBaseKey, out var entry))
                     {
-                        if (entry.VersionPaths.TryGetValue(requestedVersion, out var filePath))
+                        if (entry.TryGetVersionPath(requestedVersion, out var filePath))
                         {
                             info.CurrentPath = filePath;
                             
@@ -1800,7 +1794,7 @@ namespace VPM.Services
                         .FirstOrDefault(kvp => kvp.Key.Equals(packageBaseKey, StringComparison.OrdinalIgnoreCase))
                         .Value;
                     
-                    if (caseInsensitiveEntry != null && caseInsensitiveEntry.VersionPaths.TryGetValue(requestedVersion, out var filePath2))
+                    if (caseInsensitiveEntry != null && caseInsensitiveEntry.TryGetVersionPath(requestedVersion, out var filePath2))
                     {
                         info.CurrentPath = filePath2;
                         
@@ -1991,15 +1985,23 @@ namespace VPM.Services
 
     internal sealed class PackageFileIndexEntry
     {
-        private readonly Dictionary<int, string> _versionPaths = new Dictionary<int, string>();
-        private readonly HashSet<string> _directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Optimized storage for single version (common case)
+        private int _singleVersion;
+        private string _singleVersionPath;
+        
+        // Optimized storage for single directory (common case)
+        private string _singleDirectory;
+        
+        // Fallback for multiple versions/directories
+        private Dictionary<int, string> _versionPaths;
+        private HashSet<string> _directories;
 
         public PackageFileIndexEntry(string packageBase)
         {
             if (string.IsNullOrWhiteSpace(packageBase))
                 throw new ArgumentException(nameof(packageBase));
 
-            PackageBase = packageBase;
+            PackageBase = StringPool.Intern(packageBase);
         }
 
         public string PackageBase { get; }
@@ -2010,24 +2012,115 @@ namespace VPM.Services
 
         public string LatestDirectory { get; private set; }
 
-        public IReadOnlyDictionary<int, string> VersionPaths => _versionPaths;
+        // Legacy property for compatibility - creates dictionary on demand if needed
+        // Prefer using TryGetVersionPath or GetVersions for better performance
+        public IReadOnlyDictionary<int, string> VersionPaths 
+        {
+            get
+            {
+                if (_versionPaths != null) return _versionPaths;
+                if (_singleVersionPath != null) return new Dictionary<int, string> { { _singleVersion, _singleVersionPath } };
+                return new Dictionary<int, string>();
+            }
+        }
 
-        public IReadOnlyCollection<string> Directories => _directories;
+        public IReadOnlyCollection<string> Directories
+        {
+            get
+            {
+                if (_directories != null) return _directories;
+                if (_singleDirectory != null) return new[] { _singleDirectory };
+                return Array.Empty<string>();
+            }
+        }
+
+        public bool TryGetVersionPath(int version, out string path)
+        {
+            if (_versionPaths != null)
+            {
+                return _versionPaths.TryGetValue(version, out path);
+            }
+            
+            if (_singleVersionPath != null && _singleVersion == version)
+            {
+                path = _singleVersionPath;
+                return true;
+            }
+            
+            path = null;
+            return false;
+        }
+
+        public IEnumerable<KeyValuePair<int, string>> GetVersions()
+        {
+            if (_versionPaths != null)
+            {
+                foreach (var kvp in _versionPaths) yield return kvp;
+            }
+            else if (_singleVersionPath != null)
+            {
+                yield return new KeyValuePair<int, string>(_singleVersion, _singleVersionPath);
+            }
+        }
 
         public void Update(int version, string filePath, string directory)
         {
-            if (string.IsNullOrWhiteSpace(filePath))
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+
+            // Intern strings to save memory
+            filePath = StringPool.InternPath(filePath);
+            directory = StringPool.InternPath(directory);
+
+            // Update Version Paths
+            if (_versionPaths != null)
             {
-                return;
+                _versionPaths[version] = filePath;
+            }
+            else if (_singleVersionPath == null)
+            {
+                _singleVersion = version;
+                _singleVersionPath = filePath;
+            }
+            else if (_singleVersion != version)
+            {
+                // Upgrade to Dictionary
+                _versionPaths = new Dictionary<int, string>
+                {
+                    { _singleVersion, _singleVersionPath },
+                    { version, filePath }
+                };
+                _singleVersionPath = null;
+            }
+            else
+            {
+                // Update existing single version
+                _singleVersionPath = filePath;
             }
 
-            _versionPaths[version] = filePath;
-
+            // Update Directories
             if (!string.IsNullOrWhiteSpace(directory))
             {
-                _directories.Add(directory);
+                if (_directories != null)
+                {
+                    _directories.Add(directory);
+                }
+                else if (_singleDirectory == null)
+                {
+                    _singleDirectory = directory;
+                }
+                else if (!string.Equals(_singleDirectory, directory, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Upgrade to HashSet
+                    _directories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        _singleDirectory,
+                        directory
+                    };
+                    _singleDirectory = null;
+                }
             }
 
+            // Update Latest
             if (LatestPath == null || version > LatestVersion)
             {
                 LatestVersion = version;

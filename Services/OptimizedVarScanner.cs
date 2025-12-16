@@ -149,7 +149,7 @@ namespace VPM.Services
                             {
                                 indexedEntries.Add(new VarFileEntry
                                 {
-                                    InternalPath = jpgEntry.Key,
+                                    InternalPath = StringPool.InternPath(jpgEntry.Key),
                                     Size = jpgEntry.Size,
                                     LastWriteTime = (DateTime)(jpgEntry.LastModifiedTime ?? DateTime.UtcNow)
                                 });
@@ -160,7 +160,7 @@ namespace VPM.Services
 
                         indexedEntries.Add(new VarFileEntry
                         {
-                            InternalPath = entry.Key,
+                            InternalPath = StringPool.InternPath(entry.Key),
                             Size = entry.Size,
                             LastWriteTime = (DateTime)(entry.LastModifiedTime ?? DateTime.UtcNow)
                         });

@@ -188,7 +188,7 @@ namespace VPM.Services
                     {
                         var virtualEntry = new VirtualArchiveEntry
                         {
-                            Path = entry.Key,
+                            Path = StringPool.InternPath(entry.Key),
                             CompressedSize = entry.CompressedSize,
                             UncompressedSize = entry.Size,
                             IsDirectory = entry.IsDirectory
