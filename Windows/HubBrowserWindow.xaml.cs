@@ -88,6 +88,18 @@ namespace VPM.Windows
         // Auto-search debounce
         private System.Windows.Threading.DispatcherTimer _searchDebounceTimer;
         private const int SearchDebounceDelayMs = 500;
+
+        // Suppress auto-search triggers while programmatically resetting filters
+        private bool _suppressAutoSearch = false;
+
+        private bool _isRestoringState = false;
+
+        private sealed class ActiveFilterChip
+        {
+            public string Kind { get; set; }
+            public string Value { get; set; }
+            public string DisplayText { get; set; }
+        }
         
         // Stack-based detail navigation
         private Stack<DetailStackEntry> _detailStack = new Stack<DetailStackEntry>();
@@ -181,6 +193,10 @@ namespace VPM.Windows
 
         private async void HubBrowserWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            LoadingPanel.Visibility = Visibility.Visible;
+            EmptyResultsPanel.Visibility = Visibility.Collapsed;
+            ErrorResultsPanel.Visibility = Visibility.Collapsed;
+
             // Hook up old version handling dropdown (sync, fast)
             if (OldVersionHandlingDropdown != null)
             {
@@ -201,19 +217,21 @@ namespace VPM.Windows
                 OldVersionHandlingDropdown.SelectionChanged += OldVersionHandlingDropdown_SelectionChanged;
             }
             
-            // Start all async operations in parallel for faster startup
+            // Start core async operations in parallel for faster startup
             var packagesTask = _hubService.LoadPackagesJsonAsync();
             var filterTask = LoadFilterOptionsAsync();
-            var searchTask = SearchAsync();
             
             // Wait for packages and filter options to load in parallel
             await Task.WhenAll(packagesTask, filterTask);
             
             // Load creator list after packages are loaded
             LoadCreatorListFromPackages();
-            
-            // Wait for search to complete
-            await searchTask;
+
+            // Restore saved Hub Browser state AFTER dynamic filters are populated
+            RestoreHubBrowserState();
+
+            // Run initial search using restored state
+            await SearchAsync();
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -226,7 +244,112 @@ namespace VPM.Windows
                 ShowPerformanceMonitor();
                 e.Handled = true;
             }
+
+            // Ctrl+F focuses search
+            if (!e.Handled && e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                SearchBox?.Focus();
+                SearchBox?.SelectAll();
+                e.Handled = true;
+            }
+
+            // Esc closes popups if open
+            if (!e.Handled && e.Key == Key.Escape)
+            {
+                if (CreatorFilterToggle != null && CreatorFilterToggle.IsChecked == true)
+                {
+                    CreatorFilterToggle.IsChecked = false;
+                    e.Handled = true;
+                }
+                else if (TagsFilterToggle != null && TagsFilterToggle.IsChecked == true)
+                {
+                    TagsFilterToggle.IsChecked = false;
+                    e.Handled = true;
+                }
+            }
             base.OnKeyDown(e);
+        }
+
+        private void RestoreHubBrowserState()
+        {
+            try
+            {
+                _isRestoringState = true;
+                _suppressAutoSearch = true;
+
+                var searchText = _settingsManager.GetSetting("HubBrowserSearchText", "");
+                var source = _settingsManager.GetSetting("HubBrowserSource", "All");
+                var category = _settingsManager.GetSetting("HubBrowserCategory", "All");
+                var payType = _settingsManager.GetSetting("HubBrowserPayType", "All");
+                var sort = _settingsManager.GetSetting("HubBrowserSort", "Last Update");
+                var sortSecondary = _settingsManager.GetSetting("HubBrowserSortSecondary", "None");
+                var creator = _settingsManager.GetSetting("HubBrowserCreator", "All");
+                var tags = _settingsManager.GetSetting("HubBrowserTags", new List<string>());
+
+                if (SearchBox != null)
+                {
+                    SearchBox.Text = searchText ?? "";
+                }
+
+                SelectComboBoxItemByContent(HostedOptionFilter, source);
+                SelectComboBoxItemByContent(CategoryFilter, category);
+                SelectComboBoxItemByContent(PayTypeFilter, payType);
+                SelectComboBoxItemByContent(SortFilter, sort);
+                SelectComboBoxItemByContent(SortSecondaryFilter, sortSecondary);
+
+                _selectedCreator = string.IsNullOrEmpty(creator) ? "All" : creator;
+                UpdateCreatorFilterUI();
+
+                _selectedTags = tags?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
+                UpdateTagsDisplay();
+                PopulateTagsListBox(TagsSearchBox?.Text?.ToLowerInvariant() ?? "");
+
+                UpdateActiveFiltersUI();
+            }
+            finally
+            {
+                _suppressAutoSearch = false;
+                _isRestoringState = false;
+            }
+        }
+
+        private void SaveHubBrowserState()
+        {
+            if (_isRestoringState)
+                return;
+
+            try
+            {
+                _settingsManager.UpdateSetting("HubBrowserSearchText", SearchBox?.Text?.Trim() ?? "");
+                _settingsManager.UpdateSetting("HubBrowserSource", (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserCategory", (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserPayType", (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserSort", (SortFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Last Update");
+                _settingsManager.UpdateSetting("HubBrowserSortSecondary", (SortSecondaryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "None");
+                _settingsManager.UpdateSetting("HubBrowserCreator", _selectedCreator ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserTags", new List<string>(_selectedTags ?? new List<string>()));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static void SelectComboBoxItemByContent(ComboBox comboBox, string content)
+        {
+            if (comboBox == null || comboBox.Items == null) return;
+            var desired = content ?? "";
+
+            for (int i = 0; i < comboBox.Items.Count; i++)
+            {
+                if (comboBox.Items[i] is ComboBoxItem item)
+                {
+                    if (string.Equals(item.Content?.ToString(), desired, StringComparison.OrdinalIgnoreCase))
+                    {
+                        comboBox.SelectedIndex = i;
+                        return;
+                    }
+                }
+            }
         }
         
         private void OldVersionHandlingDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -620,6 +743,8 @@ namespace VPM.Windows
                 using (var timer = _hubService.PerformanceMonitor.StartOperation("SearchAsync_Total"))
                 {
                     LoadingPanel.Visibility = Visibility.Visible;
+                    EmptyResultsPanel.Visibility = Visibility.Collapsed;
+                    ErrorResultsPanel.Visibility = Visibility.Collapsed;
 
                     var searchParams = BuildSearchParams();
                     var response = await _hubService.SearchResourcesAsync(searchParams, _searchCts.Token);
@@ -642,19 +767,30 @@ namespace VPM.Windows
 
                             ResourcesItemsControl.ItemsSource = response.Resources;
                             UpdatePaginationUI();
+                            ResourcesScrollViewer?.ScrollToTop();
+                            EmptyResultsPanel.Visibility = _totalResources == 0 ? Visibility.Visible : Visibility.Collapsed;
                             
                             // Learn Hub API creator names from results (for name mapping)
                             LearnCreatorNamesFromResults(response.Resources);
                             
                             StatusText.Text = $"Found {_totalResources} resources";
                         }
+
+                        UpdateActiveFiltersUI();
+                        SaveHubBrowserState();
                         
                         // Prefetch adjacent pages in background for faster navigation
                         _ = PrefetchAdjacentPagesAsync(searchParams);
                     }
                     else
                     {
-                        StatusText.Text = $"Error: {response?.Error ?? "Unknown error"}";
+                        var error = response?.Error ?? "Unknown error";
+                        StatusText.Text = $"Error: {error}";
+                        if (ErrorResultsText != null)
+                        {
+                            ErrorResultsText.Text = error;
+                        }
+                        ErrorResultsPanel.Visibility = Visibility.Visible;
                     }
                 }
             }
@@ -665,6 +801,11 @@ namespace VPM.Windows
             catch (Exception ex)
             {
                 StatusText.Text = $"Error: {ex.Message}";
+                if (ErrorResultsText != null)
+                {
+                    ErrorResultsText.Text = ex.Message;
+                }
+                ErrorResultsPanel.Visibility = Visibility.Visible;
             }
             finally
             {
@@ -733,6 +874,7 @@ namespace VPM.Windows
             var sortSecondary = (SortSecondaryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "None";
             var payType = (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Free";
             var category = (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+            var location = (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Hub And Dependencies";
             
             // Join multiple selected tags with comma
             var tags = _selectedTags.Count == 0 ? "All" : string.Join(",", _selectedTags);
@@ -742,7 +884,7 @@ namespace VPM.Windows
                 Page = _currentPage,
                 PerPage = 48,
                 Search = SearchBox.Text?.Trim(),
-                Location = "Hub And Dependencies",
+                Location = location,
                 Category = category,
                 Creator = _selectedCreator ?? "All",
                 PayType = payType,
@@ -913,6 +1055,65 @@ namespace VPM.Windows
             SearchBox.Focus();
         }
 
+        private async void RetrySearch_Click(object sender, RoutedEventArgs e)
+        {
+            _currentPage = 1;
+            await SearchAsync();
+        }
+
+        private async void ClearAllFilters_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _suppressAutoSearch = true;
+
+                SearchBox.Text = string.Empty;
+
+                _selectedCreator = "All";
+                UpdateCreatorFilterUI();
+
+                _selectedTags.Clear();
+                if (TagsListBox != null)
+                {
+                    TagsListBox.SelectedItems.Clear();
+                }
+                UpdateTagsDisplay();
+                if (TagsFilterToggle != null)
+                {
+                    TagsFilterToggle.IsChecked = false;
+                }
+
+                if (CategoryFilter != null)
+                {
+                    CategoryFilter.SelectedIndex = 0;
+                }
+                if (PayTypeFilter != null)
+                {
+                    PayTypeFilter.SelectedIndex = 0;
+                }
+                if (SortFilter != null)
+                {
+                    SortFilter.SelectedIndex = 0;
+                }
+                if (SortSecondaryFilter != null)
+                {
+                    SortSecondaryFilter.SelectedIndex = 0;
+                }
+                if (HostedOptionFilter != null)
+                {
+                    // XAML default is "All" (index 2)
+                    HostedOptionFilter.SelectedIndex = Math.Min(2, HostedOptionFilter.Items.Count - 1);
+                }
+            }
+            finally
+            {
+                _suppressAutoSearch = false;
+            }
+
+            _currentPage = 1;
+            await SearchAsync();
+        }
+
         private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -971,6 +1172,12 @@ namespace VPM.Windows
             // Reset and start the debounce timer
             _searchDebounceTimer.Stop();
             _searchDebounceTimer.Start();
+
+            if (!_suppressAutoSearch)
+            {
+                SaveHubBrowserState();
+                UpdateActiveFiltersUI();
+            }
         }
         
         private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
@@ -995,10 +1202,12 @@ namespace VPM.Windows
         private async void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (!IsLoaded) return;
+            if (_suppressAutoSearch) return;
             
             try
             {
                 _currentPage = 1;
+                SaveHubBrowserState();
                 await SearchAsync();
             }
             catch (Exception ex)
@@ -1010,8 +1219,10 @@ namespace VPM.Windows
         private async void CheckBox_Changed(object sender, RoutedEventArgs e)
         {
             if (!IsLoaded) return;
+            if (_suppressAutoSearch) return;
             
             _currentPage = 1;
+            SaveHubBrowserState();
             await SearchAsync();
         }
         
@@ -1321,6 +1532,9 @@ namespace VPM.Windows
             {
                 TagsDisplayText.Text = $"{_selectedTags.Count} tags";
             }
+
+            UpdateActiveFiltersUI();
+            SaveHubBrowserState();
         }
         
         private void ClearTagsFilter_Click(object sender, RoutedEventArgs e)
@@ -1410,6 +1624,8 @@ namespace VPM.Windows
             
             _selectedCreator = "All";
             UpdateCreatorFilterUI();
+            UpdateActiveFiltersUI();
+            SaveHubBrowserState();
             
             _currentPage = 1;
             await SearchAsync();
@@ -1424,6 +1640,123 @@ namespace VPM.Windows
             ClearCreatorButton.Visibility = _selectedCreator != "All" 
                 ? Visibility.Visible 
                 : Visibility.Collapsed;
+
+            UpdateActiveFiltersUI();
+            SaveHubBrowserState();
+        }
+
+        private void UpdateActiveFiltersUI()
+        {
+            try
+            {
+                if (ActiveFiltersBorder == null || ActiveFiltersItems == null)
+                    return;
+
+                var chips = new List<ActiveFilterChip>();
+
+                var q = SearchBox?.Text?.Trim();
+                if (!string.IsNullOrEmpty(q))
+                    chips.Add(new ActiveFilterChip { Kind = "search", Value = q, DisplayText = $"Search: {q}" });
+
+                var source = (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                if (!string.Equals(source, "All", StringComparison.OrdinalIgnoreCase))
+                    chips.Add(new ActiveFilterChip { Kind = "source", Value = source, DisplayText = $"Source: {source}" });
+
+                var category = (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                if (!string.Equals(category, "All", StringComparison.OrdinalIgnoreCase))
+                    chips.Add(new ActiveFilterChip { Kind = "category", Value = category, DisplayText = $"Category: {category}" });
+
+                var pay = (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                if (!string.Equals(pay, "All", StringComparison.OrdinalIgnoreCase))
+                    chips.Add(new ActiveFilterChip { Kind = "pay", Value = pay, DisplayText = $"Type: {pay}" });
+
+                if (!string.IsNullOrEmpty(_selectedCreator) && !string.Equals(_selectedCreator, "All", StringComparison.OrdinalIgnoreCase))
+                    chips.Add(new ActiveFilterChip { Kind = "creator", Value = _selectedCreator, DisplayText = $"Creator: {_selectedCreator}" });
+
+                if (_selectedTags != null && _selectedTags.Count > 0)
+                {
+                    foreach (var tag in _selectedTags)
+                    {
+                        if (!string.IsNullOrEmpty(tag))
+                            chips.Add(new ActiveFilterChip { Kind = "tag", Value = tag, DisplayText = $"Tag: {tag}" });
+                    }
+                }
+
+                ActiveFiltersItems.ItemsSource = chips;
+                ActiveFiltersBorder.Visibility = chips.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private async void ActiveFilterChip_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not ActiveFilterChip chip)
+                return;
+
+            try
+            {
+                _suppressAutoSearch = true;
+
+                switch (chip.Kind)
+                {
+                    case "search":
+                        if (SearchBox != null) SearchBox.Text = string.Empty;
+                        break;
+                    case "source":
+                        SelectComboBoxItemByContent(HostedOptionFilter, "All");
+                        break;
+                    case "category":
+                        SelectComboBoxItemByContent(CategoryFilter, "All");
+                        break;
+                    case "pay":
+                        SelectComboBoxItemByContent(PayTypeFilter, "All");
+                        break;
+                    case "creator":
+                        _selectedCreator = "All";
+                        UpdateCreatorFilterUI();
+                        break;
+                    case "tag":
+                        _selectedTags.RemoveAll(t => string.Equals(t, chip.Value, StringComparison.OrdinalIgnoreCase));
+                        if (TagsListBox != null)
+                        {
+                            _isTagsFilterUpdating = true;
+                            try
+                            {
+                                TagsListBox.SelectedItems.Clear();
+
+                                foreach (var tag in _selectedTags)
+                                {
+                                    foreach (var item in TagsListBox.Items)
+                                    {
+                                        if (item is ListBoxItem lbi && string.Equals(lbi.Content?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            lbi.IsSelected = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            finally
+                            {
+                                _isTagsFilterUpdating = false;
+                            }
+                        }
+                        UpdateTagsDisplay();
+                        PopulateTagsListBox(TagsSearchBox?.Text?.ToLowerInvariant() ?? "");
+                        break;
+                }
+            }
+            finally
+            {
+                _suppressAutoSearch = false;
+            }
+
+            _currentPage = 1;
+            UpdateActiveFiltersUI();
+            SaveHubBrowserState();
+            await SearchAsync();
         }
         
         #endregion

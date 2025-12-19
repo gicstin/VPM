@@ -6579,14 +6579,35 @@ namespace VPM
 
             addToPlaylistMenuItem.Items.Clear();
 
+            // Put Manage/Configure at the top to improve discoverability and avoid overly tall menus
+            if (manageItem != null)
+            {
+                addToPlaylistMenuItem.Items.Add(manageItem);
+            }
+            else
+            {
+                var newManageItem = new MenuItem { Header = "🕹️ Manage Playlists..." };
+                newManageItem.Click += ManagePlaylists_Click;
+                addToPlaylistMenuItem.Items.Add(newManageItem);
+            }
+
             var playlists = _settingsManager?.Settings?.Playlists?
                 .Where(p => p.IsEnabled && p.IsValid())
                 .OrderBy(p => p.SortOrder)
                 .ToList() ?? new List<Models.Playlist>();
 
-            for (int i = 0; i < playlists.Count; i++)
+            var maxPlaylistsToShow = 10;
+            var playlistsToShow = playlists.Take(maxPlaylistsToShow).ToList();
+            var remainingCount = Math.Max(0, playlists.Count - playlistsToShow.Count);
+
+            if (playlistsToShow.Count > 0)
             {
-                var playlist = playlists[i];
+                addToPlaylistMenuItem.Items.Add(new Separator());
+            }
+
+            for (int i = 0; i < playlistsToShow.Count; i++)
+            {
+                var playlist = playlistsToShow[i];
                 var playlistNumber = $"P{i + 1}";
                 var menuItem = new MenuItem
                 {
@@ -6598,20 +6619,31 @@ namespace VPM
                 addToPlaylistMenuItem.Items.Add(menuItem);
             }
 
-            if (playlists.Count > 0)
+            if (remainingCount > 0)
             {
                 addToPlaylistMenuItem.Items.Add(new Separator());
-            }
 
-            if (manageItem != null)
-            {
-                addToPlaylistMenuItem.Items.Add(manageItem);
-            }
-            else
-            {
-                var newManageItem = new MenuItem { Header = "🕹️ Manage Playlists..." };
-                newManageItem.Click += ManagePlaylists_Click;
-                addToPlaylistMenuItem.Items.Add(newManageItem);
+                var moreMenuItem = new MenuItem
+                {
+                    Header = $"More... ({remainingCount})"
+                };
+
+                // Put the remaining playlists into a submenu so the top-level menu doesn't get too tall
+                for (int i = playlistsToShow.Count; i < playlists.Count; i++)
+                {
+                    var playlist = playlists[i];
+                    var playlistNumber = $"P{i + 1}";
+                    var item = new MenuItem
+                    {
+                        Header = $"{playlistNumber} - {playlist.Name} ({playlist.PackageKeys.Count})",
+                        ToolTip = $"{playlist.PackageKeys.Count} packages",
+                        Tag = playlist
+                    };
+                    item.Click += AddPackageToPlaylist_Click;
+                    moreMenuItem.Items.Add(item);
+                }
+
+                addToPlaylistMenuItem.Items.Add(moreMenuItem);
             }
         }
 

@@ -108,6 +108,15 @@ namespace VPM.Models
         
         // Hub Browser Settings
         private string _oldVersionHandling = "No Change";
+
+        private string _hubBrowserSearchText = "";
+        private string _hubBrowserSource = "All";
+        private string _hubBrowserCategory = "All";
+        private string _hubBrowserPayType = "All";
+        private string _hubBrowserSort = "Last Update";
+        private string _hubBrowserSortSecondary = "None";
+        private string _hubBrowserCreator = "All";
+        private List<string> _hubBrowserTags = new List<string>();
         
         // Image Area Tab Settings
         private string _preferredImageAreaTab = "Images"; // "Images" or "Hub"
@@ -618,6 +627,54 @@ namespace VPM.Models
             get => _oldVersionHandling;
             set => SetProperty(ref _oldVersionHandling, value ?? "No Change");
         }
+
+        public string HubBrowserSearchText
+        {
+            get => _hubBrowserSearchText;
+            set => SetProperty(ref _hubBrowserSearchText, value ?? "");
+        }
+
+        public string HubBrowserSource
+        {
+            get => _hubBrowserSource;
+            set => SetProperty(ref _hubBrowserSource, value ?? "All");
+        }
+
+        public string HubBrowserCategory
+        {
+            get => _hubBrowserCategory;
+            set => SetProperty(ref _hubBrowserCategory, value ?? "All");
+        }
+
+        public string HubBrowserPayType
+        {
+            get => _hubBrowserPayType;
+            set => SetProperty(ref _hubBrowserPayType, value ?? "All");
+        }
+
+        public string HubBrowserSort
+        {
+            get => _hubBrowserSort;
+            set => SetProperty(ref _hubBrowserSort, value ?? "Last Update");
+        }
+
+        public string HubBrowserSortSecondary
+        {
+            get => _hubBrowserSortSecondary;
+            set => SetProperty(ref _hubBrowserSortSecondary, value ?? "None");
+        }
+
+        public string HubBrowserCreator
+        {
+            get => _hubBrowserCreator;
+            set => SetProperty(ref _hubBrowserCreator, value ?? "All");
+        }
+
+        public List<string> HubBrowserTags
+        {
+            get => _hubBrowserTags;
+            set => SetProperty(ref _hubBrowserTags, value ?? new List<string>());
+        }
         
         // Package Optimizer Settings Properties
         public bool ForceLatestDependencies
@@ -804,6 +861,14 @@ namespace VPM.Models
                 HideArchivedPackages = true,
                 MinifyJsonFiles = true,
                 CustomArchivePath = "",
+                HubBrowserSearchText = "",
+                HubBrowserSource = "All",
+                HubBrowserCategory = "All",
+                HubBrowserPayType = "All",
+                HubBrowserSort = "Last Update",
+                HubBrowserSortSecondary = "None",
+                HubBrowserCreator = "All",
+                HubBrowserTags = new List<string>(),
                 SettingsVersion = 2,
                 PackageFilterOrder = new List<string>(FilterConfiguration.PackageFilters),
                 SceneFilterOrder = new List<string>(FilterConfiguration.SceneFilters),

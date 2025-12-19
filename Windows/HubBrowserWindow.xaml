@@ -465,6 +465,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
@@ -511,7 +512,7 @@
                                 FontSize="16"
                                 Foreground="{StaticResource DarkTextSecondary}"
                                 IsHitTestVisible="False"
-                                Text="Search Here"
+                                Text="Search titles, creators, tags..."
                                 Visibility="Visible" />
                         </Grid>
                         <Button
@@ -813,8 +814,8 @@
                             x:Name="PayTypeFilter"
                             Width="75"
                             SelectionChanged="Filter_SelectionChanged">
-                            <ComboBoxItem Content="Free" IsSelected="True" />
-                            <ComboBoxItem Content="All" />
+                            <ComboBoxItem Content="All" IsSelected="True" />
+                            <ComboBoxItem Content="Free" />
                             <ComboBoxItem Content="Paid" />
                         </ComboBox>
                     </StackPanel>
@@ -998,9 +999,65 @@
 
                 </WrapPanel>
 
+                <!--  Active Filters Chips Row  -->
+                <Border
+                    x:Name="ActiveFiltersBorder"
+                    Grid.Row="2"
+                    Margin="0,0,0,4"
+                    Padding="8,6"
+                    Background="#262626"
+                    BorderBrush="{StaticResource DarkBorder}"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Visibility="Collapsed">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            Grid.Column="0"
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            Foreground="{StaticResource DarkTextSecondary}"
+                            Text="Active:" />
+
+                        <ItemsControl x:Name="ActiveFiltersItems" Grid.Column="1">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button
+                                        Margin="0,0,6,6"
+                                        Padding="10,4"
+                                        Click="ActiveFilterChip_Click"
+                                        Tag="{Binding}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding DisplayText}" />
+                                            <TextBlock Margin="6,0,0,0" Foreground="{StaticResource DarkTextSecondary}" Text="✕" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Button
+                            Grid.Column="2"
+                            Margin="8,0,0,0"
+                            Padding="12,4"
+                            Click="ClearAllFilters_Click"
+                            Content="Clear all" />
+                    </Grid>
+                </Border>
+
                 <!--  Main Content - Resource Grid  -->
                 <Border
-                    Grid.Row="2"
+                    Grid.Row="3"
                     Background="{StaticResource DarkCardBackground}"
                     BorderBrush="{StaticResource DarkBorder}"
                     BorderThickness="1"
@@ -1009,6 +1066,7 @@
                         <!--  Loading Indicator  -->
                         <StackPanel
                             x:Name="LoadingPanel"
+                            Panel.ZIndex="20"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
                             Visibility="Collapsed">
@@ -1023,6 +1081,92 @@
                                 Margin="0,8,0,0"
                                 IsIndeterminate="True" />
                         </StackPanel>
+
+                        <!--  Empty Results Panel  -->
+                        <Border
+                            x:Name="EmptyResultsPanel"
+                            Panel.ZIndex="10"
+                            Background="#CC1E1E1E"
+                            Visibility="Collapsed">
+                            <StackPanel
+                                Margin="20"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    FontSize="42"
+                                    Foreground="{StaticResource DarkTextSecondary}"
+                                    Text="🔎" />
+                                <TextBlock
+                                    Margin="0,12,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontSize="16"
+                                    Foreground="{StaticResource DarkText}"
+                                    Text="No results found"
+                                    TextAlignment="Center" />
+                                <TextBlock
+                                    Margin="0,6,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{StaticResource DarkTextSecondary}"
+                                    Text="Try adjusting filters or clearing search."
+                                    TextAlignment="Center" />
+                                <Button
+                                    Margin="0,14,0,0"
+                                    Padding="16,8"
+                                    Click="ClearAllFilters_Click"
+                                    Content="Clear Filters" />
+                            </StackPanel>
+                        </Border>
+
+                        <!--  Error Results Panel  -->
+                        <Border
+                            x:Name="ErrorResultsPanel"
+                            Panel.ZIndex="15"
+                            Background="#CC1E1E1E"
+                            Visibility="Collapsed">
+                            <StackPanel
+                                Margin="20"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    FontSize="42"
+                                    Foreground="{StaticResource DarkTextSecondary}"
+                                    Text="⚠" />
+                                <TextBlock
+                                    Margin="0,12,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontSize="16"
+                                    Foreground="{StaticResource DarkText}"
+                                    Text="Could not load results"
+                                    TextAlignment="Center" />
+                                <TextBlock
+                                    x:Name="ErrorResultsText"
+                                    Margin="0,6,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="{StaticResource DarkTextSecondary}"
+                                    Text=""
+                                    TextAlignment="Center"
+                                    TextWrapping="Wrap"
+                                    MaxWidth="520" />
+                                <StackPanel
+                                    Margin="0,14,0,0"
+                                    HorizontalAlignment="Center"
+                                    Orientation="Horizontal">
+                                    <Button
+                                        Padding="16,8"
+                                        Click="RetrySearch_Click"
+                                        Content="Retry" />
+                                    <Button
+                                        Margin="10,0,0,0"
+                                        Padding="16,8"
+                                        Click="ClearAllFilters_Click"
+                                        Content="Clear Filters" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <!--  Resources List  -->
                         <ScrollViewer
@@ -1116,6 +1260,32 @@
                                                         HorizontalAlignment="Left"
                                                         VerticalAlignment="Top"
                                                         Orientation="Horizontal">
+                                                        <Border
+                                                            Margin="0,0,4,0"
+                                                            Padding="4,2"
+                                                            CornerRadius="2">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Setter Property="Background" Value="#607D8B" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Category}" Value="Free">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                            <Setter Property="Background" Value="#2E7D32" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Category}" Value="Paid">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                            <Setter Property="Background" Value="#6A1B9A" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <TextBlock
+                                                                FontSize="10"
+                                                                Foreground="White"
+                                                                Text="{Binding Category}" />
+                                                        </Border>
+
                                                         <Border
                                                             Padding="4,2"
                                                             Background="#795548"
@@ -1270,7 +1440,7 @@
                 </Border>
 
                 <!--  Footer with Pagination  -->
-                <Grid Grid.Row="3" Margin="0,8,0,0">
+                <Grid Grid.Row="4" Margin="0,8,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
