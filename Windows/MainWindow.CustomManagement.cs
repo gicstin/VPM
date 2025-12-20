@@ -111,17 +111,14 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the custom atom items list
                     FilterCustomAtomItems(textBox.Text);
                     if (CustomAtomSearchClearButton != null)
                         CustomAtomSearchClearButton.Visibility = Visibility.Visible;
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all items when no filter
                     FilterCustomAtomItems("");
@@ -140,8 +137,7 @@ namespace VPM
         {
             if (CustomAtomSearchBox != null)
             {
-                CustomAtomSearchBox.Text = "🔍 Filter presets by name...";
-                CustomAtomSearchBox.Foreground = (System.Windows.Media.Brush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+                CustomAtomSearchBox.Text = "";
             }
             FilterCustomAtomItems("");
             if (CustomAtomSearchClearButton != null)

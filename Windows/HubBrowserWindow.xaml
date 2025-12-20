@@ -1039,7 +1039,10 @@
                                         Tag="{Binding}">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="{Binding DisplayText}" />
-                                            <TextBlock Margin="6,0,0,0" Foreground="{StaticResource DarkTextSecondary}" Text="✕" />
+                                            <TextBlock
+                                                Margin="6,0,0,0"
+                                                Foreground="{StaticResource DarkTextSecondary}"
+                                                Text="✕" />
                                         </StackPanel>
                                     </Button>
                                 </DataTemplate>
@@ -1066,9 +1069,9 @@
                         <!--  Loading Indicator  -->
                         <StackPanel
                             x:Name="LoadingPanel"
-                            Panel.ZIndex="20"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
+                            Panel.ZIndex="20"
                             Visibility="Collapsed">
                             <TextBlock
                                 HorizontalAlignment="Center"
@@ -1113,9 +1116,9 @@
                                     TextAlignment="Center" />
                                 <Button
                                     Margin="0,14,0,0"
-                                    Padding="16,8"
+                                    Padding="16,0"
                                     Click="ClearAllFilters_Click"
-                                    Content="Clear Filters" />
+                                    Content="Clear All Filters" />
                             </StackPanel>
                         </Border>
 
@@ -1143,14 +1146,14 @@
                                     TextAlignment="Center" />
                                 <TextBlock
                                     x:Name="ErrorResultsText"
+                                    MaxWidth="520"
                                     Margin="0,6,0,0"
                                     HorizontalAlignment="Center"
                                     FontSize="12"
                                     Foreground="{StaticResource DarkTextSecondary}"
                                     Text=""
                                     TextAlignment="Center"
-                                    TextWrapping="Wrap"
-                                    MaxWidth="520" />
+                                    TextWrapping="Wrap" />
                                 <StackPanel
                                     Margin="0,14,0,0"
                                     HorizontalAlignment="Center"

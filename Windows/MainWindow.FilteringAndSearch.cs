@@ -20,12 +20,16 @@ namespace VPM
     /// </summary>
     public partial class MainWindow
     {
+        private sealed class ActiveFilterToken
+        {
+            public string Kind { get; init; }
+            public string Label { get; init; }
+            public string Value { get; init; }
+        }
+
         private static bool IsTextBoxActiveFilter(TextBox textBox, Brush placeholderBrush)
         {
             if (textBox == null)
-                return false;
-
-            if (placeholderBrush != null && textBox.Foreground != null && textBox.Foreground.Equals(placeholderBrush))
                 return false;
 
             return !string.IsNullOrWhiteSpace(textBox.Text);
@@ -38,8 +42,6 @@ namespace VPM
 
             try
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-
                 if (StatusFilterList?.SelectedItems?.Count > 0)
                     return true;
                 if (CreatorsList?.SelectedItems?.Count > 0)
@@ -70,15 +72,15 @@ namespace VPM
                 if (EndDatePicker?.SelectedDate != null)
                     return true;
 
-                if (IsTextBoxActiveFilter(PackageSearchBox, grayBrush))
+                if (IsTextBoxActiveFilter(PackageSearchBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(CreatorsFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(CreatorsFilterBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(ContentTypesFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(ContentTypesFilterBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(LicenseTypeFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(LicenseTypeFilterBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(SubfoldersFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(SubfoldersFilterBox, null))
                     return true;
 
                 return false;
@@ -96,8 +98,6 @@ namespace VPM
 
             try
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-
                 if (SceneTypeFilterList?.SelectedItems?.Count > 0)
                     return true;
                 if (SceneCreatorFilterList?.SelectedItems?.Count > 0)
@@ -111,11 +111,11 @@ namespace VPM
                 if (SceneFileSizeFilterList?.SelectedItems?.Count > 0)
                     return true;
 
-                if (IsTextBoxActiveFilter(SceneSearchBox, grayBrush))
+                if (IsTextBoxActiveFilter(SceneSearchBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(SceneTypeFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(SceneTypeFilterBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(SceneCreatorFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(SceneCreatorFilterBox, null))
                     return true;
 
                 return false;
@@ -133,8 +133,6 @@ namespace VPM
 
             try
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-
                 if (PresetCategoryFilterList?.SelectedItems?.Count > 0)
                     return true;
                 if (PresetSubfolderFilterList?.SelectedItems?.Count > 0)
@@ -146,11 +144,11 @@ namespace VPM
                 if (PresetStatusFilterList?.SelectedItems?.Count > 0)
                     return true;
 
-                if (IsTextBoxActiveFilter(CustomAtomSearchBox, grayBrush))
+                if (IsTextBoxActiveFilter(CustomAtomSearchBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(PresetCategoryFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(PresetCategoryFilterBox, null))
                     return true;
-                if (IsTextBoxActiveFilter(PresetSubfolderFilterBox, grayBrush))
+                if (IsTextBoxActiveFilter(PresetSubfolderFilterBox, null))
                     return true;
 
                 return false;
@@ -176,10 +174,486 @@ namespace VPM
             if (!IsLoaded)
                 return;
 
-            if (ClearAllFiltersButton == null)
+            UpdateActiveFiltersPanel();
+        }
+
+        private void UpdateActiveFiltersPanel()
+        {
+            if (!IsLoaded)
                 return;
 
-            ClearAllFiltersButton.Visibility = HasAnyFiltersActive() ? Visibility.Visible : Visibility.Collapsed;
+            if (ActiveFiltersBorder == null || ActiveFiltersWrapPanel == null)
+                return;
+
+            try
+            {
+                ActiveFiltersWrapPanel.Children.Clear();
+
+                var tokens = GetActiveFilterTokens();
+                if (tokens.Count == 0)
+                {
+                    ActiveFiltersBorder.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                foreach (var token in tokens)
+                {
+                    ActiveFiltersWrapPanel.Children.Add(CreateActiveFilterChip(token));
+                }
+
+                ActiveFiltersBorder.Visibility = Visibility.Visible;
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private List<ActiveFilterToken> GetActiveFilterTokens()
+        {
+            var tokens = new List<ActiveFilterToken>();
+
+            try
+            {
+                if (!IsLoaded)
+                    return tokens;
+
+                switch (_currentContentMode)
+                {
+                    case "Scenes":
+                    {
+                        if (SceneTypeFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneTypeFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneType", Label = $"Type: {text}", Value = text });
+                            }
+                        }
+                        if (SceneCreatorFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneCreatorFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneCreator", Label = $"Creator: {text}", Value = text });
+                            }
+                        }
+                        if (SceneStatusFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneStatusFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneStatus", Label = $"Status: {text}", Value = text });
+                            }
+                        }
+                        if (SceneSourceFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneSourceFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneSource", Label = $"Source: {text}", Value = text });
+                            }
+                        }
+                        if (SceneDateFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneDateFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneDate", Label = $"Date: {text}", Value = text });
+                            }
+                        }
+                        if (SceneFileSizeFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SceneFileSizeFilterList.SelectedItems)
+                            {
+                                var text = GetListBoxItemText(item);
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "SceneFileSize", Label = $"Size: {text}", Value = text });
+                            }
+                        }
+
+                        if (IsTextBoxActiveFilter(SceneSearchBox, null))
+                        {
+                            var text = GetSearchText(SceneSearchBox);
+                            if (!string.IsNullOrEmpty(text))
+                                tokens.Add(new ActiveFilterToken { Kind = "SceneSearch", Label = $"Search: {text}", Value = text });
+                        }
+
+                        break;
+                    }
+                    case "Custom":
+                    {
+                        if (PresetCategoryFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PresetCategoryFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "PresetCategory", Label = $"Category: {text}", Value = text });
+                            }
+                        }
+                        if (PresetSubfolderFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PresetSubfolderFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "PresetSubfolder", Label = $"Subfolder: {text}", Value = text });
+                            }
+                        }
+                        if (PresetDateFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PresetDateFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "PresetDate", Label = $"Date: {text}", Value = text });
+                            }
+                        }
+                        if (PresetFileSizeFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PresetFileSizeFilterList.SelectedItems)
+                            {
+                                var text = GetListBoxItemText(item);
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "PresetFileSize", Label = $"Size: {text}", Value = text });
+                            }
+                        }
+                        if (PresetStatusFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PresetStatusFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "PresetStatus", Label = $"Status: {text}", Value = text });
+                            }
+                        }
+
+                        if (IsTextBoxActiveFilter(CustomAtomSearchBox, null))
+                        {
+                            var text = GetSearchText(CustomAtomSearchBox);
+                            if (!string.IsNullOrEmpty(text))
+                                tokens.Add(new ActiveFilterToken { Kind = "PresetSearch", Label = $"Search: {text}", Value = text });
+                        }
+
+                        break;
+                    }
+                    default:
+                    {
+                        if (StatusFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in StatusFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (string.Equals(text, "Duplicates", StringComparison.OrdinalIgnoreCase))
+                                    text = "Duplicate";
+
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "Status", Label = $"Status: {text}", Value = text });
+                            }
+                        }
+
+                        if (CreatorsList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in CreatorsList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "Creator", Label = $"Creator: {text}", Value = text });
+                            }
+                        }
+
+                        if (ContentTypesList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in ContentTypesList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "ContentType", Label = $"Type: {text}", Value = text });
+                            }
+                        }
+
+                        if (LicenseTypeList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in LicenseTypeList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "License", Label = $"License: {text}", Value = text });
+                            }
+                        }
+
+                        if (FileSizeFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in FileSizeFilterList.SelectedItems)
+                            {
+                                var text = GetListBoxItemText(item);
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "FileSize", Label = $"Size: {text}", Value = text });
+                            }
+                        }
+
+                        if (SubfoldersFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in SubfoldersFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "Subfolder", Label = $"Subfolder: {text}", Value = text });
+                            }
+                        }
+
+                        if (DamagedFilterList?.SelectedItem != null)
+                        {
+                            var selected = DamagedFilterList.SelectedItem.ToString();
+                            if (!string.IsNullOrEmpty(selected) && !selected.StartsWith("All Packages", StringComparison.OrdinalIgnoreCase))
+                            {
+                                tokens.Add(new ActiveFilterToken { Kind = "Damaged", Label = $"Damaged: {selected}", Value = selected });
+                            }
+                        }
+
+                        if (DestinationsFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in DestinationsFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "Destination", Label = $"Destination: {text}", Value = text });
+                            }
+                        }
+
+                        if (PlaylistsFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in PlaylistsFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "Playlist", Label = $"Playlist: {text}", Value = text });
+                            }
+                        }
+
+                        if (DateFilterList?.SelectedIndex > 0 || StartDatePicker?.SelectedDate != null || EndDatePicker?.SelectedDate != null)
+                        {
+                            var description = _filterManager?.DateFilter != null ? _filterManager.DateFilter.GetDescription() : "Date";
+                            if (!string.IsNullOrEmpty(description) && !string.Equals(description, "All Time", StringComparison.OrdinalIgnoreCase))
+                                tokens.Add(new ActiveFilterToken { Kind = "Date", Label = $"Date: {description}", Value = description });
+                        }
+
+                        if (IsTextBoxActiveFilter(PackageSearchBox, null))
+                        {
+                            var text = GetSearchText(PackageSearchBox);
+                            if (!string.IsNullOrEmpty(text))
+                                tokens.Add(new ActiveFilterToken { Kind = "Search", Label = $"Search: {text}", Value = text });
+                        }
+
+                        break;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            return tokens;
+        }
+
+        private UIElement CreateActiveFilterChip(ActiveFilterToken token)
+        {
+            var border = new Border
+            {
+                Margin = new Thickness(0, 0, 0, 0),
+                Padding = new Thickness(6, 2, 2, 2),
+                Background = (Brush)FindResource(SystemColors.WindowBrushKey),
+                BorderBrush = (Brush)FindResource(SystemColors.ActiveBorderBrushKey),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3),
+                ClipToBounds = false
+            };
+
+            var dock = new DockPanel { LastChildFill = false };
+
+            var text = new TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = (Brush)FindResource(SystemColors.ControlTextBrushKey),
+                Text = token.Label
+            };
+
+            var button = new Button
+            {
+                Content = "X",
+                Width = 22,
+                Height = 22,
+                Padding = new Thickness(0),
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Tag = token,
+                Style = (Style)FindResource("BlueHoverButtonStyle")
+            };
+            button.Click += ActiveFilterChipRemove_Click;
+
+            DockPanel.SetDock(button, Dock.Right);
+            dock.Children.Add(button);
+            dock.Children.Add(text);
+
+            border.Child = dock;
+            return border;
+        }
+
+        private void ActiveFilterChipRemove_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button)
+                return;
+
+            if (button.Tag is not ActiveFilterToken token)
+                return;
+
+            try
+            {
+                _suppressSelectionEvents = true;
+                RemoveActiveFilter(token);
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                _suppressSelectionEvents = false;
+            }
+
+            try
+            {
+                ApplyFilters();
+                UpdateClearAllFiltersButtonVisibility();
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void RemoveActiveFilter(ActiveFilterToken token)
+        {
+            if (token == null)
+                return;
+
+            switch (token.Kind)
+            {
+                case "Search":
+                    if (PackageSearchBox != null)
+                        PackageSearchBox.Text = "";
+                    break;
+                case "Date":
+                    if (DateFilterList != null)
+                        DateFilterList.SelectedIndex = 0;
+                    if (CustomDateRangePanel != null)
+                        CustomDateRangePanel.Visibility = Visibility.Collapsed;
+                    if (StartDatePicker != null)
+                        StartDatePicker.SelectedDate = null;
+                    if (EndDatePicker != null)
+                        EndDatePicker.SelectedDate = null;
+                    break;
+                case "Status":
+                    RemoveFromSelectedItems(StatusFilterList, token.Value, stripCount: true);
+                    break;
+                case "Creator":
+                    RemoveFromSelectedItems(CreatorsList, token.Value, stripCount: true);
+                    break;
+                case "ContentType":
+                    RemoveFromSelectedItems(ContentTypesList, token.Value, stripCount: true);
+                    break;
+                case "License":
+                    RemoveFromSelectedItems(LicenseTypeList, token.Value, stripCount: true);
+                    break;
+                case "FileSize":
+                    RemoveFromSelectedItems(FileSizeFilterList, token.Value, stripCount: false);
+                    break;
+                case "Subfolder":
+                    RemoveFromSelectedItems(SubfoldersFilterList, token.Value, stripCount: true);
+                    break;
+                case "Damaged":
+                    if (DamagedFilterList != null)
+                        DamagedFilterList.SelectedItem = null;
+                    break;
+                case "Destination":
+                    RemoveFromSelectedItems(DestinationsFilterList, token.Value, stripCount: true);
+                    break;
+                case "Playlist":
+                    RemoveFromSelectedItems(PlaylistsFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneSearch":
+                    if (SceneSearchBox != null)
+                        SceneSearchBox.Text = "";
+                    break;
+                case "SceneType":
+                    RemoveFromSelectedItems(SceneTypeFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneCreator":
+                    RemoveFromSelectedItems(SceneCreatorFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneStatus":
+                    RemoveFromSelectedItems(SceneStatusFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneSource":
+                    RemoveFromSelectedItems(SceneSourceFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneDate":
+                    RemoveFromSelectedItems(SceneDateFilterList, token.Value, stripCount: true);
+                    break;
+                case "SceneFileSize":
+                    RemoveFromSelectedItems(SceneFileSizeFilterList, token.Value, stripCount: false);
+                    break;
+                case "PresetSearch":
+                    if (CustomAtomSearchBox != null)
+                        CustomAtomSearchBox.Text = "";
+                    break;
+                case "PresetCategory":
+                    RemoveFromSelectedItems(PresetCategoryFilterList, token.Value, stripCount: true);
+                    break;
+                case "PresetSubfolder":
+                    RemoveFromSelectedItems(PresetSubfolderFilterList, token.Value, stripCount: true);
+                    break;
+                case "PresetDate":
+                    RemoveFromSelectedItems(PresetDateFilterList, token.Value, stripCount: true);
+                    break;
+                case "PresetFileSize":
+                    RemoveFromSelectedItems(PresetFileSizeFilterList, token.Value, stripCount: false);
+                    break;
+                case "PresetStatus":
+                    RemoveFromSelectedItems(PresetStatusFilterList, token.Value, stripCount: true);
+                    break;
+            }
+        }
+
+        private void RemoveFromSelectedItems(ListBox listBox, string value, bool stripCount)
+        {
+            if (listBox?.SelectedItems == null || listBox.SelectedItems.Count == 0)
+                return;
+
+            var toRemove = new List<object>();
+            foreach (var item in listBox.SelectedItems)
+            {
+                var text = GetListBoxItemText(item);
+                var compareText = stripCount ? ExtractFilterValue(text, stripCount: true) : text;
+                if (string.Equals(compareText, value, StringComparison.OrdinalIgnoreCase))
+                {
+                    toRemove.Add(item);
+                }
+            }
+
+            if (toRemove.Count == 0)
+                return;
+
+            foreach (var item in toRemove)
+            {
+                listBox.SelectedItems.Remove(item);
+            }
         }
 
         #region Filter Application
@@ -234,6 +708,8 @@ namespace VPM
                 
                 // Reapply sorting after filtering to maintain sort order
                 ReapplySorting();
+
+                UpdateActiveFiltersPanel();
             }
             catch (Exception)
             {
@@ -736,11 +1212,9 @@ namespace VPM
             
             try
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                
                 if (PackageSearchClearButton != null && PackageSearchBox != null && PackageDataGrid != null)
                 {
-                    bool hasText = !PackageSearchBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(PackageSearchBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(PackageSearchBox.Text);
                     bool hasSelection = PackageDataGrid.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     PackageSearchClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -782,7 +1256,7 @@ namespace VPM
                 
                 if (DepsSearchClearButton != null && DepsSearchBox != null && DependenciesDataGrid != null)
                 {
-                    bool hasText = !DepsSearchBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(DepsSearchBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(DepsSearchBox.Text);
                     bool hasSelection = DependenciesDataGrid.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     DepsSearchClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -803,7 +1277,7 @@ namespace VPM
                 
                 if (CreatorsClearButton != null && CreatorsFilterBox != null && CreatorsList != null)
                 {
-                    bool hasText = !CreatorsFilterBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(CreatorsFilterBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(CreatorsFilterBox.Text);
                     bool hasSelection = CreatorsList.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     CreatorsClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -824,7 +1298,7 @@ namespace VPM
                 
                 if (ContentTypesClearButton != null && ContentTypesFilterBox != null && ContentTypesList != null)
                 {
-                    bool hasText = !ContentTypesFilterBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(ContentTypesFilterBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(ContentTypesFilterBox.Text);
                     bool hasSelection = ContentTypesList.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     ContentTypesClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -845,7 +1319,7 @@ namespace VPM
                 
                 if (LicenseTypeClearButton != null && LicenseTypeFilterBox != null && LicenseTypeList != null)
                 {
-                    bool hasText = !LicenseTypeFilterBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(LicenseTypeFilterBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(LicenseTypeFilterBox.Text);
                     bool hasSelection = LicenseTypeList.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     LicenseTypeClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -866,7 +1340,7 @@ namespace VPM
                 
                 if (SubfoldersClearButton != null && SubfoldersFilterBox != null && SubfoldersFilterList != null)
                 {
-                    bool hasText = !SubfoldersFilterBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(SubfoldersFilterBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(SubfoldersFilterBox.Text);
                     bool hasSelection = SubfoldersFilterList.SelectedItems.Count > 0;
                     bool shouldShow = hasText || hasSelection;
                     SubfoldersClearButton.Visibility = shouldShow ? Visibility.Visible : Visibility.Collapsed;
@@ -887,25 +1361,19 @@ namespace VPM
 
             try
             {
-                // Initialize package search box
                 if (PackageSearchBox != null)
                 {
-                    PackageSearchBox.Text = "Search packages...";
-                    PackageSearchBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                    PackageSearchBox.Text = "";
                 }
 
-                // Initialize dependencies search box
                 if (DepsSearchBox != null)
                 {
-                    DepsSearchBox.Text = "Search dependencies...";
-                    DepsSearchBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                    DepsSearchBox.Text = "";
                 }
 
-                // Initialize creators filter box
                 if (CreatorsFilterBox != null)
                 {
-                    CreatorsFilterBox.Text = "😣 Filter creators...";
-                    CreatorsFilterBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+                    CreatorsFilterBox.Text = "";
                 }
 
             }
@@ -925,37 +1393,11 @@ namespace VPM
             try
             {
                 var text = searchBox.Text ?? "";
-                
-                // List of known placeholder texts to ignore
-                var placeholders = new[] 
-                { 
-                    "search...", 
-                    "📦 Filter packages, descriptions, tags...",
-                    "📝 Filter creators...",
-                    "😣 Filter creators...",
-                    "📝 Filter content types...",
-                    "📄 Filter license types..."
-                };
-                
-                // Check if the text is a placeholder
-                if (placeholders.Any(p => text.Equals(p, StringComparison.OrdinalIgnoreCase)))
-                {
-                    return ""; // Treat placeholder text as empty
-                }
-                
-                // Check if the text is placeholder text (gray color)
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                if (searchBox.Foreground.Equals(grayBrush))
-                {
-                    return ""; // Treat placeholder text as empty
-                }
-                
-                // Has content if text is not null or whitespace
-                return !string.IsNullOrWhiteSpace(text) ? text : "";
+                return !string.IsNullOrWhiteSpace(text) ? text.Trim() : "";
             }
             catch
             {
-                return !string.IsNullOrWhiteSpace(searchBox?.Text) ? searchBox.Text : "";
+                return !string.IsNullOrWhiteSpace(searchBox?.Text) ? searchBox.Text.Trim() : "";
             }
         }
 

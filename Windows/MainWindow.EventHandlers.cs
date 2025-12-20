@@ -344,10 +344,7 @@ namespace VPM
                         _packageSearchDebounceTimer.Stop();
                         try
                         {
-                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                            
-                            // If showing placeholder text OR text is empty, show all items
-                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            if (string.IsNullOrWhiteSpace(textBox.Text))
                             {
                                 FilterPackages(""); // Empty string to show all
                             }
@@ -432,10 +429,7 @@ namespace VPM
                         _depsSearchDebounceTimer.Stop();
                         try
                         {
-                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                            
-                            // If showing placeholder text OR text is empty, show all items
-                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            if (string.IsNullOrWhiteSpace(textBox.Text))
                             {
                                 FilterDependencies(""); // Empty string to show all
                             }
@@ -471,10 +465,7 @@ namespace VPM
                         _creatorsSearchDebounceTimer.Stop();
                         try
                         {
-                            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                            
-                            // If showing placeholder text OR text is empty, show all items
-                            if (textBox.Foreground.Equals(grayBrush) || string.IsNullOrWhiteSpace(textBox.Text))
+                            if (string.IsNullOrWhiteSpace(textBox.Text))
                             {
                                 FilterCreators(""); // Empty string to show all
                             }
@@ -499,95 +490,32 @@ namespace VPM
 
         private void PackageSearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                if (textBox.Foreground.Equals(grayBrush))
-                {
-                    // Temporarily unsubscribe to prevent triggering ApplyFilters when clearing placeholder
-                    PackageSearchBox.TextChanged -= PackageSearchBox_TextChanged;
-                    try
-                    {
-                        textBox.Text = "";
-                        textBox.Foreground = (SolidColorBrush)FindResource("TextBrush");
-                    }
-                    finally
-                    {
-                        PackageSearchBox.TextChanged += PackageSearchBox_TextChanged;
-                    }
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void PackageSearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                if (string.IsNullOrWhiteSpace(textBox.Text))
-                {
-                    textBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    textBox.Text = "📝 Filter packages, descriptions, tags...";
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void DepsSearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                if (textBox.Foreground.Equals(grayBrush))
-                {
-                    // Temporarily unsubscribe to prevent triggering filter
-                    DepsSearchBox.TextChanged -= DepsSearchBox_TextChanged;
-                    try
-                    {
-                        textBox.Text = "";
-                        textBox.Foreground = (SolidColorBrush)FindResource("TextBrush");
-                    }
-                    finally
-                    {
-                        DepsSearchBox.TextChanged += DepsSearchBox_TextChanged;
-                    }
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void DepsSearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                if (string.IsNullOrWhiteSpace(textBox.Text))
-                {
-                    textBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    textBox.Text = "📝 Filter dependencies...";
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void CreatorsSearchBox_GotFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                if (textBox.Foreground.Equals(grayBrush))
-                {
-                    textBox.Text = "";
-                    textBox.Foreground = (SolidColorBrush)FindResource("TextBrush");
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void CreatorsSearchBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            if (sender is TextBox textBox)
-            {
-                if (string.IsNullOrWhiteSpace(textBox.Text))
-                {
-                    textBox.Text = "Search creators...";
-                    textBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                }
-            }
+            // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
         }
 
         private void DependenciesDataGrid_GotFocus(object sender, RoutedEventArgs e)
@@ -1533,77 +1461,7 @@ namespace VPM
         {
             if (sender is TextBox textBox)
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                if (textBox.Foreground.Equals(grayBrush))
-                {
-                    // Temporarily unsubscribe from TextChanged to prevent triggering filters
-                    if (textBox.Name == "PackageSearchBox")
-                    {
-                        textBox.TextChanged -= PackageSearchBox_TextChanged;
-                    }
-                    else if (textBox.Name == "DepsSearchBox")
-                    {
-                        textBox.TextChanged -= DepsSearchBox_TextChanged;
-                    }
-                    else if (textBox.Name == "ContentTypesFilterBox")
-                    {
-                        textBox.TextChanged -= ContentTypesFilterBox_TextChanged;
-                    }
-                    else if (textBox.Name == "CreatorsFilterBox")
-                    {
-                        textBox.TextChanged -= CreatorsFilterBox_TextChanged;
-                    }
-                    else if (textBox.Name == "LicenseTypeFilterBox")
-                    {
-                        textBox.TextChanged -= LicenseTypeFilterBox_TextChanged;
-                    }
-                    else if (textBox.Name == "SubfoldersFilterBox")
-                    {
-                        textBox.TextChanged -= SubfoldersFilterBox_TextChanged;
-                    }
-                    else if (textBox.Name == "SceneSearchBox")
-                    {
-                        textBox.TextChanged -= SceneSearchBox_TextChanged;
-                    }
-                    
-                    try
-                    {
-                        textBox.Text = "";
-                        textBox.Foreground = (SolidColorBrush)FindResource("TextBrush");
-                    }
-                    finally
-                    {
-                        // Re-subscribe
-                        if (textBox.Name == "PackageSearchBox")
-                        {
-                            textBox.TextChanged += PackageSearchBox_TextChanged;
-                        }
-                        else if (textBox.Name == "DepsSearchBox")
-                        {
-                            textBox.TextChanged += DepsSearchBox_TextChanged;
-                        }
-                        else if (textBox.Name == "ContentTypesFilterBox")
-                        {
-                            textBox.TextChanged += ContentTypesFilterBox_TextChanged;
-                        }
-                        else if (textBox.Name == "CreatorsFilterBox")
-                        {
-                            textBox.TextChanged += CreatorsFilterBox_TextChanged;
-                        }
-                        else if (textBox.Name == "LicenseTypeFilterBox")
-                        {
-                            textBox.TextChanged += LicenseTypeFilterBox_TextChanged;
-                        }
-                        else if (textBox.Name == "SubfoldersFilterBox")
-                        {
-                            textBox.TextChanged += SubfoldersFilterBox_TextChanged;
-                        }
-                        else if (textBox.Name == "SceneSearchBox")
-                        {
-                            textBox.TextChanged += SceneSearchBox_TextChanged;
-                        }
-                    }
-                }
+                // No-op: watermark UI is handled in XAML, not by mutating TextBox.Text.
             }
         }
 
@@ -1613,23 +1471,6 @@ namespace VPM
             {
                 if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
-                    // Restore the correct placeholder based on textbox name
-                    string placeholderText = textBox.Name switch
-                    {
-                        "PackageSearchBox" => "📝 Filter packages, descriptions, tags...",
-                        "DepsSearchBox" => _showingDependents ? "📝 Filter dependents..." : "📝 Filter dependencies...",
-                        "ContentTypesFilterBox" => "📝 Filter content types...",
-                        "CreatorsFilterBox" => "😣 Filter creators...",
-                        "LicenseTypeFilterBox" => "📄 Filter license types...",
-                        "SubfoldersFilterBox" => "✗ Filter subfolders...",
-                        "SceneSearchBox" => "📝 Filter scenes by name, creator, type...",
-                        _ => "Search..."
-                    };
-                    
-                    // CRITICAL: Set Foreground to gray BEFORE setting Text to prevent TextChanged from triggering filter
-                    textBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    textBox.Text = placeholderText;
-                    
                     // Restore full filter lists when filter is cleared
                     if (textBox.Name == "ContentTypesFilterBox")
                     {
@@ -1663,15 +1504,12 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the content types list
                     FilterContentTypesList(textBox.Text);
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all content types when no filter
                     FilterContentTypesList("");
@@ -1685,15 +1523,12 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Apply creators filter
                     FilterCreators(textBox.Text);
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all creators when no filter
                     FilterCreatorsList("");
@@ -1707,15 +1542,12 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the license types list
                     FilterLicenseTypesList(textBox.Text);
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all license types when no filter
                     FilterLicenseTypesList("");
@@ -1729,15 +1561,12 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the subfolders list
                     FilterSubfoldersList(textBox.Text);
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all subfolders when no filter
                     FilterSubfoldersList("");
@@ -1787,31 +1616,12 @@ namespace VPM
                 {
                     targetTextBox = PackageSearchBox;
                     // Context-aware: clear text OR clear main table selection
-                    var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    bool hasText = !PackageSearchBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(PackageSearchBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(PackageSearchBox.Text);
                     
                     if (hasText)
                     {
-                        // Temporarily unsubscribe from TextChanged to prevent full refresh
-                        PackageSearchBox.TextChanged -= PackageSearchBox_TextChanged;
-                        try
-                        {
-                            // Clear text
-                            targetTextBox.Text = "";
-                            FilterTextBox_LostFocus(targetTextBox, new RoutedEventArgs());
-                            
-                            // Just refresh the CollectionView filter, don't reload entire table
-                            var view = CollectionViewSource.GetDefaultView(PackageDataGrid.ItemsSource);
-                            view?.Refresh();
-                            
-                            UpdatePackageSearchClearButton();
-                        }
-                        finally
-                        {
-                            // Re-subscribe to TextChanged
-                            PackageSearchBox.TextChanged += PackageSearchBox_TextChanged;
-                        }
-                        return; // Exit early - no need to call ApplyFilters()
+                        PackageSearchBox.Text = "";
+                        FilterPackages("");
                     }
                     else if (PackageDataGrid.SelectedItems.Count > 0)
                     {
@@ -1848,15 +1658,11 @@ namespace VPM
                 {
                     targetTextBox = DepsSearchBox;
                     // Context-aware: clear text OR clear dependencies table selection
-                    var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-                    bool hasText = !DepsSearchBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(DepsSearchBox.Text);
+                    bool hasText = !string.IsNullOrWhiteSpace(DepsSearchBox.Text);
                     
                     if (hasText)
                     {
-                        // Clear text if there's text
-                        targetTextBox.Text = "";
-                        FilterTextBox_LostFocus(targetTextBox, new RoutedEventArgs());
-                        // Apply dependencies filter after clearing text
+                        DepsSearchBox.Text = "";
                         FilterDependencies("");
                     }
                     else if (DependenciesDataGrid.SelectedItems.Count > 0)
@@ -1871,9 +1677,8 @@ namespace VPM
                 
                 if (targetTextBox != null && button.Name != "PackageSearchClearButton" && button.Name != "DepsSearchClearButton")
                 {
-                    // Clear the text and restore placeholder (except for package search which is handled above)
+                    // Clear the text
                     targetTextBox.Text = "";
-                    FilterTextBox_LostFocus(targetTextBox, new RoutedEventArgs());
                     
                     // Update clear button visibility and apply filters after clearing
                     UpdateClearButtonVisibility();
@@ -2016,9 +1821,12 @@ namespace VPM
                 PresetFileSizeFilterList?.SelectedItems?.Clear();
                 PresetStatusFilterList?.SelectedItems?.Clear();
 
-                FilterTextBox_LostFocus(CustomAtomSearchBox, new RoutedEventArgs());
-                FilterTextBox_LostFocus(PresetCategoryFilterBox, new RoutedEventArgs());
-                FilterTextBox_LostFocus(PresetSubfolderFilterBox, new RoutedEventArgs());
+                if (CustomAtomSearchBox != null)
+                    CustomAtomSearchBox.Text = "";
+                if (PresetCategoryFilterBox != null)
+                    PresetCategoryFilterBox.Text = "";
+                if (PresetSubfolderFilterBox != null)
+                    PresetSubfolderFilterBox.Text = "";
 
                 ApplyPresetFilters();
             }
@@ -2036,12 +1844,12 @@ namespace VPM
 
         private void ClearPackageSearch_Click(object sender, RoutedEventArgs e)
         {
-            ClearSearchBox(PackageSearchBox, "Search packages...", FilterPackages);
+            ClearSearchBox(PackageSearchBox, "", FilterPackages);
         }
 
         private void ClearDepsSearch_Click(object sender, RoutedEventArgs e)
         {
-            ClearSearchBox(DepsSearchBox, "Search dependencies...", FilterDependencies);
+            ClearSearchBox(DepsSearchBox, "", FilterDependencies);
         }
 
         private void DependenciesTab_Click(object sender, RoutedEventArgs e)
@@ -2165,29 +1973,15 @@ namespace VPM
 
         private void UpdateTabVisuals()
         {
-            var grayBrush = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
-            
-            DepsSearchBox.TextChanged -= DepsSearchBox_TextChanged;
-            try
+            if (_showingDependents)
             {
-                if (_showingDependents)
-                {
-                    DepsSearchBox.Text = "📝 Filter dependents...";
-                    DependenciesTab.Tag = null;
-                    DependentsTab.Tag = "Active";
-                }
-                else
-                {
-                    DepsSearchBox.Text = "📝 Filter dependencies...";
-                    DependenciesTab.Tag = "Active";
-                    DependentsTab.Tag = null;
-                }
-                
-                DepsSearchBox.Foreground = grayBrush;
+                DependenciesTab.Tag = null;
+                DependentsTab.Tag = "Active";
             }
-            finally
+            else
             {
-                DepsSearchBox.TextChanged += DepsSearchBox_TextChanged;
+                DependenciesTab.Tag = "Active";
+                DependentsTab.Tag = null;
             }
         }
 
@@ -2204,8 +1998,7 @@ namespace VPM
         /// </summary>
         private void ClearSearchBox(TextBox searchBox, string placeholder, Action<string> filterAction)
         {
-            searchBox.Text = placeholder;
-            searchBox.Foreground = (SolidColorBrush)FindResource(SystemColors.GrayTextBrushKey);
+            searchBox.Text = "";
             filterAction("");
             UpdateClearButtonVisibility();
         }

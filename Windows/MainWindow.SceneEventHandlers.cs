@@ -120,14 +120,17 @@ namespace VPM
                 if (CustomAtomDataGrid != null)
                     CustomAtomDataGrid.Visibility = Visibility.Collapsed;
                 
-                PackageSearchBox.Visibility = Visibility.Visible;
-                PackageSearchBox.Text = "📦 Filter packages, descriptions, tags...";
-                PackageSearchBox.Foreground = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+                if (PackageSearchBoxContainer != null)
+                    PackageSearchBoxContainer.Visibility = Visibility.Visible;
+                PackageSearchBox.Text = "";
                 PackageSearchClearButton.Visibility = Visibility.Collapsed;
-                SceneSearchBox.Visibility = Visibility.Collapsed;
+
+                if (SceneSearchBoxContainer != null)
+                    SceneSearchBoxContainer.Visibility = Visibility.Collapsed;
                 SceneSearchClearButton.Visibility = Visibility.Collapsed;
-                if (CustomAtomSearchBox != null)
-                    CustomAtomSearchBox.Visibility = Visibility.Collapsed;
+
+                if (CustomAtomSearchBoxContainer != null)
+                    CustomAtomSearchBoxContainer.Visibility = Visibility.Collapsed;
                 if (CustomAtomSearchClearButton != null)
                     CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
                 
@@ -174,16 +177,16 @@ namespace VPM
                     CustomAtomDataGrid.Visibility = Visibility.Visible;
                 
                 // Show custom atom search box, hide others
-                PackageSearchBox.Visibility = Visibility.Collapsed;
+                if (PackageSearchBoxContainer != null)
+                    PackageSearchBoxContainer.Visibility = Visibility.Collapsed;
                 PackageSearchClearButton.Visibility = Visibility.Collapsed;
-                SceneSearchBox.Visibility = Visibility.Collapsed;
+                if (SceneSearchBoxContainer != null)
+                    SceneSearchBoxContainer.Visibility = Visibility.Collapsed;
                 SceneSearchClearButton.Visibility = Visibility.Collapsed;
+                if (CustomAtomSearchBoxContainer != null)
+                    CustomAtomSearchBoxContainer.Visibility = Visibility.Visible;
                 if (CustomAtomSearchBox != null)
-                {
-                    CustomAtomSearchBox.Visibility = Visibility.Visible;
-                    CustomAtomSearchBox.Text = "🔍 Filter presets & scenes by name...";
-                    CustomAtomSearchBox.Foreground = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-                }
+                    CustomAtomSearchBox.Text = "";
                 if (CustomAtomSearchClearButton != null)
                     CustomAtomSearchClearButton.Visibility = Visibility.Collapsed;
                 
@@ -669,16 +672,13 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the scenes list
                     FilterScenes(textBox.Text);
                     SceneSearchClearButton.Visibility = Visibility.Visible;
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all scenes when no filter
                     FilterScenes("");
@@ -692,8 +692,7 @@ namespace VPM
         /// </summary>
         private void ClearSceneFilterButton_Click(object sender, RoutedEventArgs e)
         {
-            SceneSearchBox.Text = "📝 Filter scenes by name, creator, type...";
-            SceneSearchBox.Foreground = (System.Windows.Media.Brush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
+            SceneSearchBox.Text = "";
             FilterScenes("");
             SceneSearchClearButton.Visibility = Visibility.Collapsed;
         }
@@ -705,8 +704,7 @@ namespace VPM
         {
             if (SceneSearchBox == null || SceneSearchClearButton == null) return;
             
-            var grayBrush = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-            bool hasText = !SceneSearchBox.Foreground.Equals(grayBrush) && !string.IsNullOrWhiteSpace(SceneSearchBox.Text);
+            bool hasText = !string.IsNullOrWhiteSpace(SceneSearchBox.Text);
             
             SceneSearchClearButton.Visibility = hasText ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -1170,17 +1168,14 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Filter the preset category list
                     FilterPresetCategoryList(textBox.Text);
                     if (PresetCategoryClearButton != null)
                         PresetCategoryClearButton.Visibility = Visibility.Visible;
                 }
-                else if (isPlaceholder || string.IsNullOrWhiteSpace(textBox.Text))
+                else if (string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     // Show all categories when no filter
                     FilterPresetCategoryList("");
@@ -1280,10 +1275,7 @@ namespace VPM
         {
             if (sender is TextBox textBox && this.IsLoaded)
             {
-                var grayBrush = (System.Windows.Media.SolidColorBrush)FindResource(System.Windows.SystemColors.GrayTextBrushKey);
-                bool isPlaceholder = textBox.Foreground.Equals(grayBrush);
-                
-                if (!isPlaceholder && !string.IsNullOrWhiteSpace(textBox.Text))
+                if (!string.IsNullOrWhiteSpace(textBox.Text))
                 {
                     FilterPresetSubfolderList(textBox.Text);
                 }

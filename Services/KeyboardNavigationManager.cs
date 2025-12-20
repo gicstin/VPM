@@ -506,28 +506,6 @@ namespace VPM.Services
             
             // Clear the text
             textBox.Text = "";
-            
-            // Restore placeholder text based on the textbox
-            if (textBox == _packageSearchBox)
-            {
-                textBox.Text = "📦 Filter packages, descriptions, tags...";
-                textBox.Foreground = SystemColors.GrayTextBrush;
-            }
-            else if (textBox == _depsSearchBox)
-            {
-                textBox.Text = "📝 Filter dependencies...";
-                textBox.Foreground = SystemColors.GrayTextBrush;
-            }
-            else if (textBox == _contentTypesFilterBox)
-            {
-                textBox.Text = "📝 Filter content types...";
-                textBox.Foreground = SystemColors.GrayTextBrush;
-            }
-            else if (textBox == _creatorsFilterBox)
-            {
-                textBox.Text = "😣 Filter creators...";
-                textBox.Foreground = SystemColors.GrayTextBrush;
-            }
         }
         
         /// <summary>
