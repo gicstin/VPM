@@ -39,6 +39,10 @@ namespace VPM.Models
         private bool _showPackageInfo = true;
         private bool _showDependencies = true;
         private bool _groupImagesByPackage = true;
+
+        private bool _showFiltersPane = true;
+        private bool _showDependenciesPane = true;
+        private bool _showImagesPane = true;
         
         // Filter Settings
         private List<string> _selectedStatusFilters = new List<string>();
@@ -280,6 +284,24 @@ namespace VPM.Models
         {
             get => _groupImagesByPackage;
             set => SetProperty(ref _groupImagesByPackage, value);
+        }
+
+        public bool ShowFiltersPane
+        {
+            get => _showFiltersPane;
+            set => SetProperty(ref _showFiltersPane, value);
+        }
+
+        public bool ShowDependenciesPane
+        {
+            get => _showDependenciesPane;
+            set => SetProperty(ref _showDependenciesPane, value);
+        }
+
+        public bool ShowImagesPane
+        {
+            get => _showImagesPane;
+            set => SetProperty(ref _showImagesPane, value);
         }
 
         /// <summary>

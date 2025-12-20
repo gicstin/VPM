@@ -25,6 +25,158 @@ namespace VPM
     /// </summary>
     public partial class MainWindow
     {
+        private const double PaneGrabHandleWidth = 12;
+        private const double PaneSplitterVisibleWidth = 8;
+
+        private void ApplyPaneVisibility(AppSettings settings)
+        {
+            if (settings == null)
+                return;
+
+            // Filters (left)
+            bool showFilters = settings.ShowFiltersPane;
+            if (LeftPanelColumn != null)
+            {
+                LeftPanelColumn.MinWidth = showFilters ? 150 : 0;
+                LeftPanelColumn.Width = showFilters
+                    ? new GridLength(Math.Max(0.1, settings.LeftPanelWidth), GridUnitType.Star)
+                    : new GridLength(PaneGrabHandleWidth);
+            }
+            if (LeftSplitterColumn != null)
+                LeftSplitterColumn.Width = showFilters ? new GridLength(PaneSplitterVisibleWidth) : new GridLength(PaneGrabHandleWidth);
+            if (LeftPaneSplitter != null)
+                LeftPaneSplitter.Visibility = Visibility.Visible;
+            if (ShowFiltersPaneMenuItem != null)
+            {
+                ShowFiltersPaneMenuItem.Header = showFilters ? "Hide _Filters" : "Show _Filters";
+            }
+
+            // Dependencies (right)
+            bool showDeps = settings.ShowDependenciesPane;
+            if (RightPanelColumn != null)
+            {
+                RightPanelColumn.MinWidth = showDeps ? 200 : 0;
+                RightPanelColumn.Width = showDeps
+                    ? new GridLength(Math.Max(0.1, settings.RightPanelWidth), GridUnitType.Star)
+                    : new GridLength(PaneGrabHandleWidth);
+            }
+            if (CenterRightSplitterColumn != null)
+                CenterRightSplitterColumn.Width = showDeps ? new GridLength(PaneSplitterVisibleWidth) : new GridLength(PaneGrabHandleWidth);
+            if (DepsPaneSplitter != null)
+                DepsPaneSplitter.Visibility = Visibility.Visible;
+            if (ShowDependenciesPaneMenuItem != null)
+            {
+                ShowDependenciesPaneMenuItem.Header = showDeps ? "Hide _Dependencies" : "Show _Dependencies";
+            }
+
+            // Images (far right)
+            bool showImages = settings.ShowImagesPane;
+            if (ImagesPanelColumn != null)
+            {
+                ImagesPanelColumn.MinWidth = showImages ? 150 : 0;
+                ImagesPanelColumn.Width = showImages
+                    ? new GridLength(Math.Max(0.1, settings.ImagesPanelWidth), GridUnitType.Star)
+                    : new GridLength(PaneGrabHandleWidth);
+            }
+            if (RightImagesSplitterColumn != null)
+                RightImagesSplitterColumn.Width = showImages ? new GridLength(PaneSplitterVisibleWidth) : new GridLength(PaneGrabHandleWidth);
+            if (ImagesPaneSplitter != null)
+                ImagesPaneSplitter.Visibility = Visibility.Visible;
+
+            if (ShowImagesPaneMenuItem != null)
+            {
+                ShowImagesPaneMenuItem.Header = showImages ? "Hide _Images" : "Show _Images";
+            }
+        }
+
+        private void ToggleFiltersPaneMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = _settingsManager?.Settings;
+            if (settings == null)
+                return;
+
+            // capture current width before hiding
+            if (settings.ShowFiltersPane && LeftPanelColumn?.Width.IsStar == true)
+            {
+                settings.LeftPanelWidth = LeftPanelColumn.Width.Value;
+            }
+
+            settings.ShowFiltersPane = !settings.ShowFiltersPane;
+            ApplyPaneVisibility(settings);
+        }
+
+        private void ToggleDependenciesPaneMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = _settingsManager?.Settings;
+            if (settings == null)
+                return;
+
+            if (settings.ShowDependenciesPane && RightPanelColumn?.Width.IsStar == true)
+            {
+                settings.RightPanelWidth = RightPanelColumn.Width.Value;
+            }
+
+            settings.ShowDependenciesPane = !settings.ShowDependenciesPane;
+            ApplyPaneVisibility(settings);
+        }
+
+        private void ToggleImagesPaneMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var settings = _settingsManager?.Settings;
+            if (settings == null)
+                return;
+
+            if (settings.ShowImagesPane && ImagesPanelColumn?.Width.IsStar == true)
+            {
+                settings.ImagesPanelWidth = ImagesPanelColumn.Width.Value;
+            }
+
+            settings.ShowImagesPane = !settings.ShowImagesPane;
+            ApplyPaneVisibility(settings);
+        }
+
+        private void LeftPaneSplitter_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ToggleFiltersPaneMenuItem_Click(sender, e);
+        }
+
+        private void LeftPaneSplitter_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount != 2)
+                return;
+
+            e.Handled = true;
+            ToggleFiltersPaneMenuItem_Click(sender, e);
+        }
+
+        private void DepsPaneSplitter_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ToggleDependenciesPaneMenuItem_Click(sender, e);
+        }
+
+        private void DepsPaneSplitter_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount != 2)
+                return;
+
+            e.Handled = true;
+            ToggleDependenciesPaneMenuItem_Click(sender, e);
+        }
+
+        private void ImagesPaneSplitter_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ToggleImagesPaneMenuItem_Click(sender, e);
+        }
+
+        private void ImagesPaneSplitter_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount != 2)
+                return;
+
+            e.Handled = true;
+            ToggleImagesPaneMenuItem_Click(sender, e);
+        }
+
         #region Console P/Invoke
         
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -2158,6 +2310,9 @@ namespace VPM
             
             // Apply other UI settings
             ApplySettingsToUI();
+
+            // Apply pane visibility last so widths/splitters are consistent
+            ApplyPaneVisibility(settings);
         }
 
         private void OnWindowClosing(object sender, System.ComponentModel.CancelEventArgs e)

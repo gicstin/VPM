@@ -298,6 +298,20 @@
                     <!--  Display Settings Section  -->
                     <Separator />
                     <MenuItem Header="🎨 _Display Settings">
+                        <MenuItem Header="🧩 _Panels">
+                            <MenuItem
+                                x:Name="ShowFiltersPaneMenuItem"
+                                Click="ToggleFiltersPaneMenuItem_Click"
+                                Header="Show _Filters" />
+                            <MenuItem
+                                x:Name="ShowDependenciesPaneMenuItem"
+                                Click="ToggleDependenciesPaneMenuItem_Click"
+                                Header="Show _Dependencies" />
+                            <MenuItem
+                                x:Name="ShowImagesPaneMenuItem"
+                                Click="ToggleImagesPaneMenuItem_Click"
+                                Header="Show _Images" />
+                        </MenuItem>
                         <MenuItem Header="🎨 _Theme">
                             <MenuItem
                                 x:Name="DarkThemeMenuItem"
@@ -383,19 +397,19 @@
                     x:Name="LeftPanelColumn"
                     Width="0.75*"
                     MinWidth="150" />
-                <ColumnDefinition Width="5" />
+                <ColumnDefinition x:Name="LeftSplitterColumn" Width="8" />
                 <!--  Main Table: Largest panel  -->
                 <ColumnDefinition
                     x:Name="CenterPanelColumn"
                     Width="1.52*"
                     MinWidth="300" />
-                <ColumnDefinition Width="5" />
+                <ColumnDefinition x:Name="CenterRightSplitterColumn" Width="8" />
                 <!--  Dependencies Panel  -->
                 <ColumnDefinition
                     x:Name="RightPanelColumn"
                     Width="1.3*"
                     MinWidth="200" />
-                <ColumnDefinition Width="5" />
+                <ColumnDefinition x:Name="RightImagesSplitterColumn" Width="8" />
                 <!--  Images Panel  -->
                 <ColumnDefinition
                     x:Name="ImagesPanelColumn"
@@ -2356,9 +2370,13 @@
 
             <!--  Splitter  -->
             <GridSplitter
+                x:Name="LeftPaneSplitter"
                 Grid.Column="1"
-                Width="1"
+                Width="8"
                 HorizontalAlignment="Stretch"
+                PreviewMouseLeftButtonDown="LeftPaneSplitter_PreviewMouseLeftButtonDown"
+                MouseDoubleClick="LeftPaneSplitter_MouseDoubleClick"
+                ToolTip="Drag to resize. Double-click to collapse/expand."
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" />
 
             <!--  Center Panel - Packages/Scenes  -->
@@ -3911,9 +3929,13 @@
 
             <!--  Splitter  -->
             <GridSplitter
+                x:Name="DepsPaneSplitter"
                 Grid.Column="3"
-                Width="1"
+                Width="8"
                 HorizontalAlignment="Stretch"
+                PreviewMouseLeftButtonDown="DepsPaneSplitter_PreviewMouseLeftButtonDown"
+                MouseDoubleClick="DepsPaneSplitter_MouseDoubleClick"
+                ToolTip="Drag to resize. Double-click to collapse/expand."
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" />
 
             <!--  Right Panel - Dependencies & Info  -->
@@ -4658,12 +4680,16 @@
 
             <!--  Splitter  -->
             <GridSplitter
+                x:Name="ImagesPaneSplitter"
                 Grid.Column="5"
-                Width="1"
+                Width="8"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch"
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                 Cursor="SizeWE"
+                PreviewMouseLeftButtonDown="ImagesPaneSplitter_PreviewMouseLeftButtonDown"
+                MouseDoubleClick="ImagesPaneSplitter_MouseDoubleClick"
+                ToolTip="Drag to resize. Double-click to collapse/expand."
                 ResizeBehavior="PreviousAndNext"
                 ShowsPreview="True" />
 
@@ -4734,13 +4760,14 @@
                                 <ColumnDefinition Width="*" MinWidth="60" />
                                 <ColumnDefinition Width="34" />
                                 <ColumnDefinition Width="*" MinWidth="60" />
+                                <ColumnDefinition Width="34" />
                             </Grid.ColumnDefinitions>
 
                             <!--  Normal buttons container  -->
                             <Grid
                                 x:Name="NormalButtonsContainer"
                                 Grid.Column="0"
-                                Grid.ColumnSpan="5"
+                                Grid.ColumnSpan="6"
                                 HorizontalAlignment="Stretch"
                                 Visibility="Visible">
                                 <Grid.ColumnDefinitions>
