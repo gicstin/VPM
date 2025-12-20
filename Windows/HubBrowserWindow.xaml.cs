@@ -28,6 +28,10 @@ namespace VPM.Windows
     /// </summary>
     public partial class HubBrowserWindow : Window
     {
+        private const double GoldenRatio = 1.618033988749895;
+        private const double GoldenRatioEpsilon = 2.0;
+        private double _lastGoldenOverviewWidth;
+        private double _lastGoldenDetailWidth;
         // Windows API for dark title bar
         [DllImport("dwmapi.dll")]
         private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
@@ -35,16 +39,12 @@ namespace VPM.Windows
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
         private readonly HubService _hubService;
+        private readonly HubBrowserViewModel _vm;
         private readonly string _destinationFolder;
         private readonly string _vamFolder;  // Root VaM folder for searching packages
         private readonly Dictionary<string, string> _localPackagePaths;  // Package name -> file path
         private readonly PackageManager _packageManager;  // For accessing dependency graph and missing deps
         private SettingsManager _settingsManager;  // For persisting old version handling setting
-        
-        private CancellationTokenSource _searchCts;
-        private int _currentPage = 1;
-        private int _totalPages = 1;
-        private int _totalResources = 0;
         
         // Side panel state
         private bool _isPanelExpanded = false;
@@ -64,14 +64,6 @@ namespace VPM.Windows
         private const double DefaultOverviewPanelWidth = 500;
         private double _lastOverviewPanelWidth = DefaultOverviewPanelWidth;  // Remember user-set width
         
-        // Creator filter state
-        private List<string> _allCreators = new List<string>();
-        private string _selectedCreator = "All";
-        private bool _isCreatorFilterUpdating = false;
-        
-        // Maps normalized creator names (no spaces, lowercase) to Hub API names (with spaces)
-        private Dictionary<string, string> _creatorNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        
         // Tags filter state
         private List<string> _allTags = new List<string>();
         private List<string> _selectedTags = new List<string>();
@@ -85,12 +77,6 @@ namespace VPM.Windows
         private int _completedDownloadsInBatch = 0;
         private string _currentDownloadingPackage = "";
         
-        // Auto-search debounce
-        private System.Windows.Threading.DispatcherTimer _searchDebounceTimer;
-        private const int SearchDebounceDelayMs = 500;
-
-        // Suppress auto-search triggers while programmatically resetting filters
-        private bool _suppressAutoSearch = false;
 
         private bool _isRestoringState = false;
 
@@ -99,6 +85,189 @@ namespace VPM.Windows
             public string Kind { get; set; }
             public string Value { get; set; }
             public string DisplayText { get; set; }
+        }
+
+        private async Task LoadDownloadedPackageAndDependenciesAsync(string downloadedVarPath)
+        {
+            if (string.IsNullOrEmpty(downloadedVarPath) || !File.Exists(downloadedVarPath))
+                return;
+
+            // "Load" in this app context means: ensure the VAR is in AddonPackages.
+            // Hub downloads can target AllPackages depending on settings, so we normalize to AddonPackages.
+            var addonPackagesFolder = Path.Combine(_vamFolder ?? Path.GetDirectoryName(_destinationFolder) ?? _destinationFolder, "AddonPackages");
+            Directory.CreateDirectory(addonPackagesFolder);
+
+            var movedMainPath = EnsureVarInAddonPackages(downloadedVarPath, addonPackagesFolder);
+            if (string.IsNullOrEmpty(movedMainPath) || !File.Exists(movedMainPath))
+                return;
+
+            // Best-effort: parse metadata from the package we just ensured is in AddonPackages.
+            VarMetadata metadata = null;
+            try
+            {
+                metadata = _packageManager?.ParseVarMetadataComplete(movedMainPath);
+            }
+            catch (Exception)
+            {
+            }
+
+            // If we can’t parse metadata, we still at least "load" the main package.
+            var dependencyBases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (metadata?.Dependencies != null)
+            {
+                foreach (var dep in metadata.Dependencies)
+                {
+                    var depName = dep;
+                    if (depName.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                        depName = Path.GetFileNameWithoutExtension(depName);
+
+                    var baseName = ToDependencyBaseName(depName);
+                    if (!string.IsNullOrEmpty(baseName))
+                        dependencyBases.Add(baseName);
+                }
+            }
+
+            // For each dependency base name, if we have a local copy anywhere, ensure it’s in AddonPackages.
+            foreach (var depBase in dependencyBases)
+            {
+                var depPath = FindBestLocalVarPath(depBase);
+                if (string.IsNullOrEmpty(depPath) || !File.Exists(depPath))
+                    continue;
+
+                EnsureVarInAddonPackages(depPath, addonPackagesFolder);
+            }
+
+            // Refresh local lookups + missing deps and file paths
+            try
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        BuildLocalPackageLookups();
+                        UpdateDownloadQueueUI();
+                        UpdateDownloadAllButton();
+                    }
+                    catch (Exception)
+                    {
+                    }
+                });
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private static string ToDependencyBaseName(string dependencyName)
+        {
+            if (string.IsNullOrWhiteSpace(dependencyName))
+                return string.Empty;
+
+            // Normalize "Creator.Package.latest" -> "Creator.Package"
+            if (dependencyName.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+            {
+                return dependencyName.Substring(0, dependencyName.Length - 7);
+            }
+
+            // Normalize "Creator.Package.123" -> "Creator.Package"
+            var lastDotIndex = dependencyName.LastIndexOf('.');
+            if (lastDotIndex > 0)
+            {
+                var potentialVersion = dependencyName.Substring(lastDotIndex + 1);
+                if (int.TryParse(potentialVersion, out _))
+                {
+                    return dependencyName.Substring(0, lastDotIndex);
+                }
+            }
+
+            // Already a base name
+            return dependencyName;
+        }
+
+        private string FindBestLocalVarPath(string dependencyBaseName)
+        {
+            if (string.IsNullOrWhiteSpace(dependencyBaseName))
+                return null;
+
+            // Try exact base match from our already-built local index of paths
+            // (keys in _localPackagePaths are package names without .var)
+            string bestPath = null;
+            int bestVersion = -1;
+
+            foreach (var kvp in _localPackagePaths)
+            {
+                var pkgName = kvp.Key;
+                var path = kvp.Value;
+                if (string.IsNullOrEmpty(pkgName) || string.IsNullOrEmpty(path))
+                    continue;
+
+                var baseName = GetBasePackageName(pkgName);
+                if (!string.Equals(baseName, dependencyBaseName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var v = ExtractVersionNumber(pkgName);
+                if (v > bestVersion)
+                {
+                    bestVersion = v;
+                    bestPath = path;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(bestPath))
+                return bestPath;
+
+            return null;
+        }
+
+        private static string EnsureVarInAddonPackages(string varPath, string addonPackagesFolder)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(varPath) || !File.Exists(varPath) || string.IsNullOrEmpty(addonPackagesFolder))
+                    return null;
+
+                Directory.CreateDirectory(addonPackagesFolder);
+
+                var fileName = Path.GetFileName(varPath);
+                if (string.IsNullOrEmpty(fileName))
+                    return null;
+
+                var destPath = Path.Combine(addonPackagesFolder, fileName);
+                var normalizedSrc = Path.GetFullPath(varPath);
+                var normalizedDest = Path.GetFullPath(destPath);
+
+                if (string.Equals(normalizedSrc, normalizedDest, StringComparison.OrdinalIgnoreCase))
+                    return destPath;
+
+                // If destination already exists, keep it (prefer already-loaded copy).
+                if (File.Exists(destPath))
+                    return destPath;
+
+                File.Move(varPath, destPath);
+                return destPath;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        private void LoadAfterDownloadCheck_Changed(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_settingsManager == null)
+                    return;
+
+                if (!IsLoaded)
+                    return;
+
+                _loadPackageAndDependenciesAfterDownload = LoadAfterDownloadCheck?.IsChecked == true;
+                _settingsManager.UpdateSetting("HubBrowserLoadAfterDownload", _loadPackageAndDependenciesAfterDownload);
+            }
+            catch (Exception)
+            {
+            }
         }
         
         // Stack-based detail navigation
@@ -110,10 +279,87 @@ namespace VPM.Windows
         
         // Old version handling option
         private string _oldVersionHandling = "No Change";
+
+        private bool _loadPackageAndDependenciesAfterDownload = false;
         
         // Pre-computed lookups for fast library status checking
         private HashSet<string> _localPackageNames;  // All package names (without .var)
         private Dictionary<string, int> _localPackageVersions;  // Package group -> highest local version
+
+        private void BuildLocalPackageLookups()
+        {
+            try
+            {
+                _localPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _localPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var kvp in _localPackagePaths)
+                {
+                    var packageName = kvp.Key;
+                    if (string.IsNullOrWhiteSpace(packageName))
+                        continue;
+
+                    _localPackageNames.Add(packageName);
+
+                    var baseName = GetBasePackageName(packageName);
+                    var version = ExtractVersionNumber(packageName);
+                    if (string.IsNullOrEmpty(baseName) || version <= 0)
+                        continue;
+
+                    if (_localPackageVersions.TryGetValue(baseName, out var existing))
+                    {
+                        if (version > existing)
+                            _localPackageVersions[baseName] = version;
+                    }
+                    else
+                    {
+                        _localPackageVersions[baseName] = version;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Keep existing lookups if something goes wrong
+            }
+        }
+
+        private string FindLocalPackage(string packageName)
+        {
+            if (string.IsNullOrWhiteSpace(packageName))
+                return null;
+
+            // Exact match first
+            if (_localPackagePaths.TryGetValue(packageName, out var path) && !string.IsNullOrEmpty(path) && File.Exists(path))
+                return path;
+
+            // Try by base name: pick highest local version
+            var baseName = GetBasePackageName(packageName);
+            if (string.IsNullOrEmpty(baseName))
+                return null;
+
+            string bestPath = null;
+            int bestVersion = -1;
+
+            foreach (var kvp in _localPackagePaths)
+            {
+                var name = kvp.Key;
+                var p = kvp.Value;
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(p) || !File.Exists(p))
+                    continue;
+
+                if (!string.Equals(GetBasePackageName(name), baseName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var v = ExtractVersionNumber(name);
+                if (v > bestVersion)
+                {
+                    bestVersion = v;
+                    bestPath = p;
+                }
+            }
+
+            return bestPath;
+        }
 
         public HubBrowserWindow(string destinationFolder, Dictionary<string, string> localPackagePaths = null, PackageManager packageManager = null, SettingsManager settingsManager = null)
         {
@@ -124,6 +370,9 @@ namespace VPM.Windows
             _localPackagePaths = localPackagePaths ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             _packageManager = packageManager;
             _settingsManager = settingsManager ?? new SettingsManager();
+
+            _vm = new HubBrowserViewModel(_hubService, _settingsManager, _localPackagePaths);
+            DataContext = _vm;
             
             // Pre-compute lookups for fast library status checking
             BuildLocalPackageLookups();
@@ -137,12 +386,6 @@ namespace VPM.Windows
             
             _currentFiles = new ObservableCollection<HubFileViewModel>();
             _currentDependencies = new ObservableCollection<HubFileViewModel>();
-
-            _hubService.StatusChanged += (s, status) => 
-            {
-                // Use BeginInvoke to prevent UI blocking
-                Dispatcher.BeginInvoke(() => StatusText.Text = status);
-            };
             
             // Subscribe to download queue events
             _hubService.DownloadQueued += HubService_DownloadQueued;
@@ -155,13 +398,6 @@ namespace VPM.Windows
             
             // Initialize download queue list binding
             DownloadQueueList.ItemsSource = _downloadQueue;
-            
-            // Creator filter will be populated after packages.json loads
-            
-            // Initialize auto-search debounce timer
-            _searchDebounceTimer = new System.Windows.Threading.DispatcherTimer();
-            _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(SearchDebounceDelayMs);
-            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
             
             // Note: OldVersionHandlingDropdown event handler is set in XAML code-behind after InitializeComponent
         }
@@ -193,10 +429,6 @@ namespace VPM.Windows
 
         private async void HubBrowserWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            LoadingPanel.Visibility = Visibility.Visible;
-            EmptyResultsPanel.Visibility = Visibility.Collapsed;
-            ErrorResultsPanel.Visibility = Visibility.Collapsed;
-
             // Hook up old version handling dropdown (sync, fast)
             if (OldVersionHandlingDropdown != null)
             {
@@ -216,22 +448,41 @@ namespace VPM.Windows
                 // Subscribe to event AFTER setting initial value
                 OldVersionHandlingDropdown.SelectionChanged += OldVersionHandlingDropdown_SelectionChanged;
             }
-            
-            // Start core async operations in parallel for faster startup
-            var packagesTask = _hubService.LoadPackagesJsonAsync();
-            var filterTask = LoadFilterOptionsAsync();
-            
-            // Wait for packages and filter options to load in parallel
-            await Task.WhenAll(packagesTask, filterTask);
-            
-            // Load creator list after packages are loaded
-            LoadCreatorListFromPackages();
 
-            // Restore saved Hub Browser state AFTER dynamic filters are populated
-            RestoreHubBrowserState();
+            // Restore Load-after-download option
+            try
+            {
+                _loadPackageAndDependenciesAfterDownload = _settingsManager.GetSetting("HubBrowserLoadAfterDownload", true);
+                if (LoadAfterDownloadCheck != null)
+                {
+                    LoadAfterDownloadCheck.IsChecked = _loadPackageAndDependenciesAfterDownload;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            
+            await _vm.InitializeAsync();
 
-            // Run initial search using restored state
-            await SearchAsync();
+            // Restore Overview panel preference
+            try
+            {
+                var overviewVisible = _settingsManager.GetSetting("HubBrowserOverviewPanelVisible", false);
+                var overviewWidth = _settingsManager.GetSetting("HubBrowserOverviewPanelWidth", DefaultOverviewPanelWidth);
+                if (overviewWidth is double w && w > 0)
+                    _lastOverviewPanelWidth = w;
+                if (overviewVisible)
+                    _isOverviewPanelVisible = true;
+            }
+            catch (Exception)
+            {
+            }
+
+            // Apply overview visibility after initial search so layout changes feel intentional
+            if (_isOverviewPanelVisible && !string.IsNullOrEmpty(_currentResourceId))
+            {
+                _ = ExpandOverviewPanelAsync();
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -256,60 +507,11 @@ namespace VPM.Windows
             // Esc closes popups if open
             if (!e.Handled && e.Key == Key.Escape)
             {
-                if (CreatorFilterToggle != null && CreatorFilterToggle.IsChecked == true)
-                {
-                    CreatorFilterToggle.IsChecked = false;
-                    e.Handled = true;
-                }
-                else if (TagsFilterToggle != null && TagsFilterToggle.IsChecked == true)
+                if (TagsFilterToggle != null && TagsFilterToggle.IsChecked == true)
                 {
                     TagsFilterToggle.IsChecked = false;
                     e.Handled = true;
                 }
-            }
-            base.OnKeyDown(e);
-        }
-
-        private void RestoreHubBrowserState()
-        {
-            try
-            {
-                _isRestoringState = true;
-                _suppressAutoSearch = true;
-
-                var searchText = _settingsManager.GetSetting("HubBrowserSearchText", "");
-                var source = _settingsManager.GetSetting("HubBrowserSource", "All");
-                var category = _settingsManager.GetSetting("HubBrowserCategory", "All");
-                var payType = _settingsManager.GetSetting("HubBrowserPayType", "All");
-                var sort = _settingsManager.GetSetting("HubBrowserSort", "Last Update");
-                var sortSecondary = _settingsManager.GetSetting("HubBrowserSortSecondary", "None");
-                var creator = _settingsManager.GetSetting("HubBrowserCreator", "All");
-                var tags = _settingsManager.GetSetting("HubBrowserTags", new List<string>());
-
-                if (SearchBox != null)
-                {
-                    SearchBox.Text = searchText ?? "";
-                }
-
-                SelectComboBoxItemByContent(HostedOptionFilter, source);
-                SelectComboBoxItemByContent(CategoryFilter, category);
-                SelectComboBoxItemByContent(PayTypeFilter, payType);
-                SelectComboBoxItemByContent(SortFilter, sort);
-                SelectComboBoxItemByContent(SortSecondaryFilter, sortSecondary);
-
-                _selectedCreator = string.IsNullOrEmpty(creator) ? "All" : creator;
-                UpdateCreatorFilterUI();
-
-                _selectedTags = tags?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
-                UpdateTagsDisplay();
-                PopulateTagsListBox(TagsSearchBox?.Text?.ToLowerInvariant() ?? "");
-
-                UpdateActiveFiltersUI();
-            }
-            finally
-            {
-                _suppressAutoSearch = false;
-                _isRestoringState = false;
             }
         }
 
@@ -320,13 +522,13 @@ namespace VPM.Windows
 
             try
             {
-                _settingsManager.UpdateSetting("HubBrowserSearchText", SearchBox?.Text?.Trim() ?? "");
-                _settingsManager.UpdateSetting("HubBrowserSource", (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
-                _settingsManager.UpdateSetting("HubBrowserCategory", (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
-                _settingsManager.UpdateSetting("HubBrowserPayType", (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All");
-                _settingsManager.UpdateSetting("HubBrowserSort", (SortFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Last Update");
-                _settingsManager.UpdateSetting("HubBrowserSortSecondary", (SortSecondaryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "None");
-                _settingsManager.UpdateSetting("HubBrowserCreator", _selectedCreator ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserSearchText", _vm?.SearchText?.Trim() ?? "");
+                _settingsManager.UpdateSetting("HubBrowserSource", _vm?.Scope ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserCategory", _vm?.Category ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserPayType", _vm?.PayType ?? "All");
+                _settingsManager.UpdateSetting("HubBrowserSort", _vm?.Sort ?? "Last Update");
+                _settingsManager.UpdateSetting("HubBrowserSortSecondary", _vm?.SortSecondary ?? "None");
+                _settingsManager.UpdateSetting("HubBrowserCreator", _vm?.Creator ?? "All");
                 _settingsManager.UpdateSetting("HubBrowserTags", new List<string>(_selectedTags ?? new List<string>()));
             }
             catch (Exception)
@@ -334,25 +536,7 @@ namespace VPM.Windows
             }
         }
 
-        private static void SelectComboBoxItemByContent(ComboBox comboBox, string content)
-        {
-            if (comboBox == null || comboBox.Items == null) return;
-            var desired = content ?? "";
-
-            for (int i = 0; i < comboBox.Items.Count; i++)
-            {
-                if (comboBox.Items[i] is ComboBoxItem item)
-                {
-                    if (string.Equals(item.Content?.ToString(), desired, StringComparison.OrdinalIgnoreCase))
-                    {
-                        comboBox.SelectedIndex = i;
-                        return;
-                    }
-                }
-            }
-        }
-        
-        private void OldVersionHandlingDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void OldVersionHandlingDropdown_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (OldVersionHandlingDropdown.SelectedItem is ComboBoxItem item)
             {
@@ -365,7 +549,7 @@ namespace VPM.Windows
 
         private void HubBrowserWindow_Closed(object sender, EventArgs e)
         {
-            _searchCts?.Cancel();
+            try { _vm?.Dispose(); } catch (Exception) { }
             _hubService?.Dispose();
             
             // Dispose WebView2 - wrap in try-catch as it can throw if browser process has terminated
@@ -547,54 +731,22 @@ namespace VPM.Windows
         
         private void FilterByCategory(string categoryName)
         {
-            // Find the category in the CategoryFilter ComboBox and select it
-            for (int i = 0; i < CategoryFilter.Items.Count; i++)
-            {
-                var item = CategoryFilter.Items[i] as ComboBoxItem;
-                if (item != null && item.Content?.ToString()?.Equals(categoryName, StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    CategoryFilter.SelectedIndex = i;
-                    // Trigger search with new filter
-                    _ = SearchAsync();
-                    return;
-                }
-            }
+            if (_vm == null)
+                return;
+
+            _vm.Category = categoryName;
+            _vm.CurrentPage = 1;
+            _vm.SearchCommand.Execute(null);
         }
         
         private void FilterByCreator(string creatorName)
         {
-            // Set the selected creator first (this is what SearchAsync uses)
-            _selectedCreator = creatorName;
-            
-            // Find the creator in the list box and select it
-            for (int i = 0; i < CreatorListBox.Items.Count; i++)
-            {
-                var item = CreatorListBox.Items[i]?.ToString();
-                if (item != null && item.Equals(creatorName, StringComparison.OrdinalIgnoreCase))
-                {
-                    CreatorListBox.SelectedIndex = i;
-                    // Update the display text
-                    SelectedCreatorText.Text = creatorName;
-                    ClearCreatorButton.Visibility = Visibility.Visible;
-                    // Trigger search with new filter
-                    _ = SearchAsync();
-                    return;
-                }
-            }
-            
-            // If creator not in list, add it temporarily and select
-            // Must modify the ItemsSource collection directly, not Items
-            if (CreatorListBox.ItemsSource is List<string> creators)
-            {
-                if (!creators.Contains(creatorName, StringComparer.OrdinalIgnoreCase))
-                {
-                    creators.Add(creatorName);
-                }
-                CreatorListBox.SelectedItem = creatorName;
-            }
-            SelectedCreatorText.Text = creatorName;
-            ClearCreatorButton.Visibility = Visibility.Visible;
-            _ = SearchAsync();
+            if (_vm == null)
+                return;
+
+            _vm.Creator = creatorName;
+            _vm.CurrentPage = 1;
+            _vm.SearchCommand.Execute(null);
         }
         
         private void DetailTag_Click(object sender, RoutedEventArgs e)
@@ -609,8 +761,11 @@ namespace VPM.Windows
                     UpdateTagsDisplay();
 
                     // Start a new search from page 1
-                    _currentPage = 1;
-                    _ = SearchAsync();
+                    if (_vm != null)
+                    {
+                        _vm.CurrentPage = 1;
+                        _vm.SearchCommand.Execute(null);
+                    }
                 }
                 catch (Exception)
                 {
@@ -629,10 +784,12 @@ namespace VPM.Windows
             if (_isOverviewPanelVisible)
             {
                 CollapseOverviewPanel();
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception) { }
             }
             else if (!string.IsNullOrEmpty(_currentResourceId))
             {
                 _ = ExpandOverviewPanelAsync();
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception) { }
             }
         }
         
@@ -641,28 +798,43 @@ namespace VPM.Windows
             if (string.IsNullOrEmpty(_currentResourceId))
                 return;
             
-            // Show the panel with remembered width
+            // Show the panel with remembered width (will be clamped/adjusted by golden ratio sizing)
             OverviewPanelColumn.Width = new GridLength(_lastOverviewPanelWidth);
             OverviewPanelColumn.MinWidth = 300;
             OverviewSplitter.Visibility = Visibility.Visible;
             _isOverviewPanelVisible = true;
-            
-            // Navigate to overview
+
+            ApplyGoldenRatioSizing(force: true);
+
+            // Navigate to the default tab if needed
+            TabOverview.IsChecked = true;
             await NavigateToHubPage("TabOverview");
+            try
+            {
+                _settingsManager.UpdateSetting("HubBrowserOverviewPanelWidth", _lastOverviewPanelWidth);
+            }
+            catch (Exception)
+            {
+            }
         }
-        
+            
         private void CollapseOverviewPanel()
         {
             // Save current width before collapsing
             if (OverviewPanelColumn.Width.Value > 0)
             {
                 _lastOverviewPanelWidth = OverviewPanelColumn.Width.Value;
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelWidth", _lastOverviewPanelWidth); } catch (Exception) { }
             }
             
             OverviewPanelColumn.Width = new GridLength(0);
             OverviewPanelColumn.MinWidth = 0;
             OverviewSplitter.Visibility = Visibility.Collapsed;
             _isOverviewPanelVisible = false;
+
+            ApplyGoldenRatioSizing(force: true);
+
+            try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception) { }
         }
         
         /// <summary>
@@ -679,16 +851,16 @@ namespace VPM.Windows
         #endregion
         
         #region Adaptive Grid
-        
+
         private const double MinCardWidth = 200;
         private const double MaxCardWidth = 280;
         private const double CardMargin = 8; // 4px margin on each side
-        
-        private void ResourcesItemsControl_SizeChanged(object sender, SizeChangedEventArgs e)
+
+        private void ResourcesListBox_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             UpdateGridColumns(e.NewSize.Width);
         }
-        
+
         private void UpdateGridColumns(double availableWidth)
         {
             if (availableWidth <= 0)
@@ -703,14 +875,10 @@ namespace VPM.Windows
             int columns = Math.Max(minColumns, Math.Min(maxColumns, 6)); // Cap at 6 columns
             
             // Find the UniformGrid and update columns
-            if (ResourcesItemsControl.ItemsPanel?.LoadContent() is UniformGrid templateGrid)
+            var panel = FindVisualChild<UniformGrid>(ResourcesListBox);
+            if (panel != null)
             {
-                // We need to find the actual panel, not the template
-                var panel = FindVisualChild<UniformGrid>(ResourcesItemsControl);
-                if (panel != null)
-                {
-                    panel.Columns = columns;
-                }
+                panel.Columns = columns;
             }
         }
         
@@ -731,401 +899,28 @@ namespace VPM.Windows
         
         #endregion
 
-        #region Search & Filtering
-
-        private async Task SearchAsync()
-        {
-            _searchCts?.Cancel();
-            _searchCts = new CancellationTokenSource();
-
-            try
-            {
-                using (var timer = _hubService.PerformanceMonitor.StartOperation("SearchAsync_Total"))
-                {
-                    LoadingPanel.Visibility = Visibility.Visible;
-                    EmptyResultsPanel.Visibility = Visibility.Collapsed;
-                    ErrorResultsPanel.Visibility = Visibility.Collapsed;
-
-                    var searchParams = BuildSearchParams();
-                    var response = await _hubService.SearchResourcesAsync(searchParams, _searchCts.Token);
-
-                    if (response?.IsSuccess == true)
-                    {
-                        using (var uiTimer = _hubService.PerformanceMonitor.StartOperation("SearchAsync_UIUpdate"))
-                        {
-                            _totalResources = response.Pagination?.TotalFound ?? 0;
-                            _totalPages = response.Pagination?.TotalPages ?? 1;
-
-                            // Mark resources that are in library or have updates
-                            using (var libTimer = _hubService.PerformanceMonitor.StartOperation("SearchAsync_CheckLibraryStatus"))
-                            {
-                                foreach (var resource in response.Resources ?? Enumerable.Empty<HubResource>())
-                                {
-                                    CheckLibraryStatus(resource);
-                                }
-                            }
-
-                            ResourcesItemsControl.ItemsSource = response.Resources;
-                            UpdatePaginationUI();
-                            ResourcesScrollViewer?.ScrollToTop();
-                            EmptyResultsPanel.Visibility = _totalResources == 0 ? Visibility.Visible : Visibility.Collapsed;
-                            
-                            // Learn Hub API creator names from results (for name mapping)
-                            LearnCreatorNamesFromResults(response.Resources);
-                            
-                            StatusText.Text = $"Found {_totalResources} resources";
-                        }
-
-                        UpdateActiveFiltersUI();
-                        SaveHubBrowserState();
-                        
-                        // Prefetch adjacent pages in background for faster navigation
-                        _ = PrefetchAdjacentPagesAsync(searchParams);
-                    }
-                    else
-                    {
-                        var error = response?.Error ?? "Unknown error";
-                        StatusText.Text = $"Error: {error}";
-                        if (ErrorResultsText != null)
-                        {
-                            ErrorResultsText.Text = error;
-                        }
-                        ErrorResultsPanel.Visibility = Visibility.Visible;
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Search was cancelled
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = $"Error: {ex.Message}";
-                if (ErrorResultsText != null)
-                {
-                    ErrorResultsText.Text = ex.Message;
-                }
-                ErrorResultsPanel.Visibility = Visibility.Visible;
-            }
-            finally
-            {
-                LoadingPanel.Visibility = Visibility.Collapsed;
-            }
-        }
-        
-        /// <summary>
-        /// Prefetch adjacent pages in background to make pagination feel instant
-        /// </summary>
-        private async Task PrefetchAdjacentPagesAsync(HubSearchParams currentParams)
-        {
-            try
-            {
-                var prefetchTasks = new List<Task>();
-                
-                // Prefetch next page if not at end
-                if (_currentPage < _totalPages)
-                {
-                    var nextParams = CloneSearchParams(currentParams);
-                    nextParams.Page = _currentPage + 1;
-                    prefetchTasks.Add(_hubService.SearchResourcesAsync(nextParams));
-                }
-                
-                // Prefetch previous page if not at start
-                if (_currentPage > 1)
-                {
-                    var prevParams = CloneSearchParams(currentParams);
-                    prevParams.Page = _currentPage - 1;
-                    prefetchTasks.Add(_hubService.SearchResourcesAsync(prevParams));
-                }
-                
-                // Fire and forget - results will be cached
-                if (prefetchTasks.Count > 0)
-                {
-                    await Task.WhenAll(prefetchTasks);
-                }
-            }
-            catch (Exception)
-            {
-                // Handle exception
-            }
-        }
-        
-        private static HubSearchParams CloneSearchParams(HubSearchParams p)
-        {
-            return new HubSearchParams
-            {
-                Page = p.Page,
-                PerPage = p.PerPage,
-                Location = p.Location,
-                Search = p.Search,
-                PayType = p.PayType,
-                Category = p.Category,
-                Creator = p.Creator,
-                Tags = p.Tags,
-                Sort = p.Sort,
-                SortSecondary = p.SortSecondary,
-                OnlyDownloadable = p.OnlyDownloadable
-            };
-        }
-
-        private HubSearchParams BuildSearchParams()
-        {
-            var sort = (SortFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Last Update";
-            var sortSecondary = (SortSecondaryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "None";
-            var payType = (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Free";
-            var category = (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
-            var location = (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Hub And Dependencies";
-            
-            // Join multiple selected tags with comma
-            var tags = _selectedTags.Count == 0 ? "All" : string.Join(",", _selectedTags);
-            
-            return new HubSearchParams
-            {
-                Page = _currentPage,
-                PerPage = 48,
-                Search = SearchBox.Text?.Trim(),
-                Location = location,
-                Category = category,
-                Creator = _selectedCreator ?? "All",
-                PayType = payType,
-                Tags = tags,
-                Sort = sort,
-                SortSecondary = sortSecondary,
-                OnlyDownloadable = OnlyDownloadableCheck.IsChecked == true
-            };
-        }
-
-        /// <summary>
-        /// Build pre-computed lookups for fast library status checking.
-        /// Called once at startup to avoid repeated dictionary iterations.
-        /// </summary>
-        private void BuildLocalPackageLookups()
-        {
-            _localPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _localPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            
-            foreach (var pkg in _localPackagePaths.Keys)
-            {
-                var name = pkg.Replace(".var", "");
-                _localPackageNames.Add(name);
-                
-                // Extract group name and version
-                var groupName = GetPackageGroupName(name);
-                var lastDot = name.LastIndexOf('.');
-                if (lastDot > 0)
-                {
-                    var versionPart = name.Substring(lastDot + 1);
-                    if (int.TryParse(versionPart, out var version))
-                    {
-                        if (!_localPackageVersions.TryGetValue(groupName, out var existing) || version > existing)
-                        {
-                            _localPackageVersions[groupName] = version;
-                        }
-                    }
-                }
-            }
-        }
-        
-        private void CheckLibraryStatus(HubResource resource)
-        {
-            if (resource.HubFiles == null || !resource.HubFiles.Any())
-                return;
-
-            foreach (var file in resource.HubFiles)
-            {
-                var packageName = file.PackageName;
-                if (string.IsNullOrEmpty(packageName))
-                    continue;
-
-                var cleanName = packageName.Replace(".var", "");
-                
-                // Fast check using pre-computed HashSet
-                if (_localPackageNames.Contains(cleanName))
-                {
-                    resource.InLibrary = true;
-                }
-                else
-                {
-                    // Check for any version of this package (for .latest)
-                    var groupName = GetPackageGroupName(cleanName);
-                    if (_localPackageVersions.ContainsKey(groupName))
-                    {
-                        resource.InLibrary = true;
-                    }
-                }
-
-                // Check for updates using pre-computed version lookup
-                var pkgGroupName = GetPackageGroupName(cleanName);
-                if (_localPackageVersions.TryGetValue(pkgGroupName, out var localVersion) && 
-                    localVersion > 0 && 
-                    _hubService.HasUpdate(pkgGroupName, localVersion))
-                {
-                    resource.UpdateAvailable = true;
-                    resource.UpdateMessage = "Update available";
-                }
-            }
-        }
-
-        private string GetPackageGroupName(string packageName)
-        {
-            var name = packageName;
-            
-            // Remove .var extension
-            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
-            
-            // Remove .latest suffix
-            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 7);
-            
-            // Remove version number (digits at the end)
-            var lastDot = name.LastIndexOf('.');
-            if (lastDot > 0)
-            {
-                var afterDot = name.Substring(lastDot + 1);
-                if (int.TryParse(afterDot, out _))
-                {
-                    return name.Substring(0, lastDot);
-                }
-            }
-            return name;
-        }
-
-        private int GetHighestLocalVersion(string groupName)
-        {
-            // Use pre-computed lookup (O(1) instead of O(n))
-            return _localPackageVersions.TryGetValue(groupName, out var version) ? version : 0;
-        }
-        
-        /// <summary>
-        /// Find a local package by name. Trusts _localPackagePaths without File.Exists checks
-        /// since it was populated from actual files on disk at startup.
-        /// Supports finding any version of a package (for .latest dependencies).
-        /// </summary>
-        /// <param name="packageName">Package name to find</param>
-        /// <returns>Full path to the package file if found, null otherwise</returns>
-        private string FindLocalPackage(string packageName)
-        {
-            if (string.IsNullOrEmpty(packageName))
-                return null;
-            
-            var cleanName = packageName.Replace(".var", "");
-            
-            // First, try exact match in our known packages (trust the dictionary - files were verified at startup)
-            if (_localPackagePaths.TryGetValue(cleanName, out var exactPath))
-                return exactPath;
-            
-            // Try with .var extension
-            if (_localPackagePaths.TryGetValue(cleanName + ".var", out exactPath))
-                return exactPath;
-            
-            // For .latest or version-flexible matching, find any version of this package
-            var basePackage = GetBasePackageName(cleanName);
-            var basePackagePrefix = basePackage + ".";
-            
-            // Find matching packages - must be basePackage.{version} where version is numeric
-            // Optimized: single pass through dictionary
-            string bestPath = null;
-            int bestVersion = -1;
-            
-            foreach (var kvp in _localPackagePaths)
-            {
-                var name = kvp.Key.Replace(".var", "");
-                if (!name.StartsWith(basePackagePrefix, StringComparison.OrdinalIgnoreCase))
-                    continue;
-                    
-                var suffix = name.Substring(basePackagePrefix.Length);
-                if (int.TryParse(suffix, out var version) && version > bestVersion)
-                {
-                    bestVersion = version;
-                    bestPath = kvp.Value;
-                }
-            }
-            
-            return bestPath;
-        }
-
-        #endregion
-
         #region UI Event Handlers
-
-        private void ClearSearchButton_Click(object sender, RoutedEventArgs e)
-        {
-            SearchBox.Text = string.Empty;
-            SearchBox.Focus();
-        }
-
-        private async void RetrySearch_Click(object sender, RoutedEventArgs e)
-        {
-            _currentPage = 1;
-            await SearchAsync();
-        }
-
-        private async void ClearAllFilters_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                _suppressAutoSearch = true;
-
-                SearchBox.Text = string.Empty;
-
-                _selectedCreator = "All";
-                UpdateCreatorFilterUI();
-
-                _selectedTags.Clear();
-                if (TagsListBox != null)
-                {
-                    TagsListBox.SelectedItems.Clear();
-                }
-                UpdateTagsDisplay();
-                if (TagsFilterToggle != null)
-                {
-                    TagsFilterToggle.IsChecked = false;
-                }
-
-                if (CategoryFilter != null)
-                {
-                    CategoryFilter.SelectedIndex = 0;
-                }
-                if (PayTypeFilter != null)
-                {
-                    PayTypeFilter.SelectedIndex = 0;
-                }
-                if (SortFilter != null)
-                {
-                    SortFilter.SelectedIndex = 0;
-                }
-                if (SortSecondaryFilter != null)
-                {
-                    SortSecondaryFilter.SelectedIndex = 0;
-                }
-                if (HostedOptionFilter != null)
-                {
-                    // XAML default is "All" (index 2)
-                    HostedOptionFilter.SelectedIndex = Math.Min(2, HostedOptionFilter.Items.Count - 1);
-                }
-            }
-            finally
-            {
-                _suppressAutoSearch = false;
-            }
-
-            _currentPage = 1;
-            await SearchAsync();
-        }
 
         private async void SearchBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
-                // Stop debounce timer if user presses Enter
-                _searchDebounceTimer.Stop();
-                _currentPage = 1;
-                await SearchAsync();
+                if (_vm != null)
+                {
+                    _vm.SearchCommand.Execute(null);
+                }
+                e.Handled = true;
             }
             else if (e.Key == Key.Escape)
             {
-                SearchBox.Text = string.Empty;
+                if (_vm != null)
+                {
+                    _vm.SearchText = string.Empty;
+                }
+                else
+                {
+                    SearchBox.Text = string.Empty;
+                }
                 e.Handled = true;
             }
         }
@@ -1134,49 +929,40 @@ namespace VPM.Windows
         {
             if (e.Key == Key.Enter)
             {
-                if (int.TryParse(PageNumberBox.Text, out int newPage))
-                {
-                    if (newPage < 1) newPage = 1;
-                    if (newPage > _totalPages) newPage = _totalPages;
-                    
-                    if (newPage != _currentPage)
-                    {
-                        _currentPage = newPage;
-                        await SearchAsync();
-                    }
-                    else
-                    {
-                        PageNumberBox.Text = _currentPage.ToString();
-                    }
-                }
-                else
-                {
-                    PageNumberBox.Text = _currentPage.ToString();
-                }
-                
-                // Remove focus
+                await CommitPageNumberAsync();
                 Keyboard.ClearFocus();
             }
         }
-        
-        private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+
+        private async void PageNumberBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            // Toggle clear button visibility
-            if (ClearSearchButton != null)
+            // Commit page changes when the user clicks away (common expectation)
+            await CommitPageNumberAsync();
+        }
+
+        private async Task CommitPageNumberAsync()
+        {
+            if (PageNumberBox == null)
+                return;
+
+            if (!int.TryParse(PageNumberBox.Text, out int newPage))
             {
-                ClearSearchButton.Visibility = string.IsNullOrEmpty(SearchBox.Text) 
-                    ? Visibility.Collapsed 
-                    : Visibility.Visible;
+                PageNumberBox.Text = _vm?.CurrentPage.ToString() ?? "1";
+                return;
             }
 
-            // Reset and start the debounce timer
-            _searchDebounceTimer.Stop();
-            _searchDebounceTimer.Start();
+            if (newPage < 1) newPage = 1;
+            var vmTotal = _vm?.TotalPages ?? 1;
+            if (newPage > vmTotal) newPage = vmTotal;
 
-            if (!_suppressAutoSearch)
+            if (_vm != null && newPage != _vm.CurrentPage)
             {
-                SaveHubBrowserState();
-                UpdateActiveFiltersUI();
+                _vm.CurrentPage = newPage;
+                _vm.SearchCommand.Execute(null);
+            }
+            else
+            {
+                PageNumberBox.Text = _vm?.CurrentPage.ToString() ?? PageNumberBox.Text;
             }
         }
         
@@ -1192,261 +978,7 @@ namespace VPM.Windows
                 : Visibility.Collapsed;
         }
         
-        private async void SearchDebounceTimer_Tick(object sender, EventArgs e)
-        {
-            _searchDebounceTimer.Stop();
-            _currentPage = 1;
-            await SearchAsync();
-        }
-
-        private async void Filter_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!IsLoaded) return;
-            if (_suppressAutoSearch) return;
-            
-            try
-            {
-                _currentPage = 1;
-                SaveHubBrowserState();
-                await SearchAsync();
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = $"Error: {ex.Message}";
-            }
-        }
-        
-        private async void CheckBox_Changed(object sender, RoutedEventArgs e)
-        {
-            if (!IsLoaded) return;
-            if (_suppressAutoSearch) return;
-            
-            _currentPage = 1;
-            SaveHubBrowserState();
-            await SearchAsync();
-        }
-        
-        #region Creator Filter
-        
-        /// <summary>
-        /// Load creator list from packages.json (instant, complete list)
-        /// </summary>
-        private void LoadCreatorListFromPackages()
-        {
-            var creators = _hubService.GetAllCreators();
-            
-            _allCreators = new List<string> { "All" };
-            _allCreators.AddRange(creators);
-            
-            CreatorCountText.Text = $"{creators.Count} creators";
-        }
-        
-        /// <summary>
-        /// Load dynamic filter options from Hub API
-        /// </summary>
-        private async Task LoadFilterOptionsAsync()
-        {
-            try
-            {
-                StatusText.Text = "Loading filter options...";
-                var options = await _hubService.GetFilterOptionsAsync();
-                
-                if (options != null)
-                {
-                    // Update Category filter
-                    if (options.Types != null && options.Types.Count > 0)
-                    {
-                        CategoryFilter.Items.Clear();
-                        CategoryFilter.Items.Add(new ComboBoxItem { Content = "All", IsSelected = true });
-                        foreach (var type in options.Types)
-                        {
-                            CategoryFilter.Items.Add(new ComboBoxItem { Content = type });
-                        }
-                    }
-                    
-                    // Update Sort filter
-                    if (options.SortOptions != null && options.SortOptions.Count > 0)
-                    {
-                        SortFilter.Items.Clear();
-                        bool isFirst = true;
-                        foreach (var sort in options.SortOptions)
-                        {
-                            var item = new ComboBoxItem { Content = sort };
-                            if (isFirst)
-                            {
-                                item.IsSelected = true;
-                                isFirst = false;
-                            }
-                            SortFilter.Items.Add(item);
-                        }
-                    }
-                    
-                    // Update Secondary Sort filter
-                    if (options.SortOptions != null && options.SortOptions.Count > 0)
-                    {
-                        SortSecondaryFilter.Items.Clear();
-                        SortSecondaryFilter.Items.Add(new ComboBoxItem { Content = "None", IsSelected = true });
-                        foreach (var sort in options.SortOptions)
-                        {
-                            SortSecondaryFilter.Items.Add(new ComboBoxItem { Content = sort });
-                        }
-                    }
-                    
-                    // Update Tags filter
-                    if (options.Tags != null && options.Tags.Count > 0)
-                    {
-                        _allTags = options.Tags.Keys.OrderBy(t => t).ToList();
-                        PopulateTagsListBox("");
-                    }
-                    
-                    StatusText.Text = "Ready";
-                }
-                else
-                {
-                    StatusText.Text = "Failed to load filter options";
-                }
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = $"Error loading filter options: {ex.Message}";
-            }
-        }
-        
-        /// <summary>
-        /// Learn Hub API creator names from search results and cache the mapping
-        /// </summary>
-        private void LearnCreatorNamesFromResults(IEnumerable<HubResource> resources)
-        {
-            if (resources == null) return;
-            
-            foreach (var resource in resources)
-            {
-                if (!string.IsNullOrEmpty(resource.Creator))
-                {
-                    // Normalize: remove spaces and lowercase for matching
-                    var normalized = resource.Creator.Replace(" ", "").ToLowerInvariant();
-                    
-                    // Store the Hub API name (with proper spacing)
-                    if (!_creatorNameMap.ContainsKey(normalized))
-                    {
-                        _creatorNameMap[normalized] = resource.Creator;
-                    }
-                }
-            }
-        }
-        
-        /// <summary>
-        /// Get the Hub API creator name for a given creator (resolves name mapping)
-        /// Uses partial search to find the correct Hub API name with spaces
-        /// </summary>
-        private async Task<string> ResolveCreatorNameAsync(string creator)
-        {
-            if (creator == "All") return "All";
-            
-            // Normalize the selected creator name
-            var normalized = creator.Replace(" ", "").ToLowerInvariant();
-            
-            // Check if we already know the Hub API name
-            if (_creatorNameMap.TryGetValue(normalized, out var hubName))
-            {
-                return hubName;
-            }
-            
-            // Search using first 3-4 characters to find packages by this creator
-            // This works because "Aci" will match "Acid Bubbles" packages
-            try
-            {
-                // Use first few characters for search (handles CamelCase like "AcidBubble")
-                var searchPrefix = GetSearchPrefix(creator);
-                
-                var searchParams = new HubSearchParams
-                {
-                    Page = 1,
-                    PerPage = 48,
-                    Search = searchPrefix,
-                    PayType = "Free",
-                    OnlyDownloadable = true
-                };
-                
-                var response = await _hubService.SearchResourcesAsync(searchParams);
-                
-                if (response?.IsSuccess == true && response.Resources != null)
-                {
-                    // Find the creator whose normalized name matches ours
-                    foreach (var resource in response.Resources)
-                    {
-                        if (!string.IsNullOrEmpty(resource.Creator))
-                        {
-                            var resourceNormalized = resource.Creator.Replace(" ", "").ToLowerInvariant();
-                            if (resourceNormalized == normalized)
-                            {
-                                // Found it! Cache and return
-                                _creatorNameMap[normalized] = resource.Creator;
-                                return resource.Creator;
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception)
-            {
-                // Handle exception
-            }
-            
-            // Fallback to original name
-            return creator;
-        }
-        
-        /// <summary>
-        /// Get a search prefix from a creator name (first word or first few chars)
-        /// "AcidBubble" -> "Acid", "MacGruber" -> "MacG"
-        /// </summary>
-        private string GetSearchPrefix(string creator)
-        {
-            if (string.IsNullOrEmpty(creator)) return "";
-            
-            // Try to split on CamelCase boundaries
-            var result = new StringBuilder();
-            bool foundUpper = false;
-            
-            foreach (char c in creator)
-            {
-                if (result.Length > 0 && char.IsUpper(c))
-                {
-                    // Found second capital letter, we have first word
-                    foundUpper = true;
-                    break;
-                }
-                result.Append(c);
-            }
-            
-            // If we found a CamelCase split and have at least 3 chars, use it
-            if (foundUpper && result.Length >= 3)
-            {
-                return result.ToString();
-            }
-            
-            // Otherwise use first 4 characters minimum
-            return creator.Substring(0, Math.Min(4, creator.Length));
-        }
-        
-        private void CreatorFilterToggle_Checked(object sender, RoutedEventArgs e)
-        {
-            // Clear search and show all when opening
-            CreatorSearchBox.Text = "";
-            FilterCreatorList("");
-            
-            // Focus the search box
-            Dispatcher.BeginInvoke(new Action(() => 
-            {
-                CreatorSearchBox.Focus();
-            }), System.Windows.Threading.DispatcherPriority.Input);
-        }
-        
-        private void CreatorFilterToggle_Unchecked(object sender, RoutedEventArgs e)
-        {
-            // Nothing special needed when closing
-        }
+        #region Tags Filter
         
         private void TagsFilterToggle_Checked(object sender, RoutedEventArgs e)
         {
@@ -1512,10 +1044,12 @@ namespace VPM.Windows
             }
             
             UpdateTagsDisplay();
-            
-            // Trigger search
-            _currentPage = 1;
-            _ = SearchAsync();
+
+            if (_vm != null)
+            {
+                _vm.CurrentPage = 1;
+                _vm.SearchCommand.Execute(null);
+            }
         }
         
         private void UpdateTagsDisplay()
@@ -1533,6 +1067,13 @@ namespace VPM.Windows
                 TagsDisplayText.Text = $"{_selectedTags.Count} tags";
             }
 
+            if (ClearTagsFilterButton != null)
+            {
+                ClearTagsFilterButton.Visibility = _selectedTags.Count > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+
             UpdateActiveFiltersUI();
             SaveHubBrowserState();
         }
@@ -1542,109 +1083,14 @@ namespace VPM.Windows
             _selectedTags.Clear();
             TagsListBox.SelectedItems.Clear();
             UpdateTagsDisplay();
-            TagsFilterToggle.IsChecked = false;
-            
-            // Trigger search
-            _currentPage = 1;
-            _ = SearchAsync();
-        }
-        
-        private void CreatorSearchBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            var searchText = CreatorSearchBox.Text?.Trim() ?? "";
-            FilterCreatorList(searchText);
-            
-            // Update placeholder visibility
-            CreatorSearchPlaceholder.Visibility = string.IsNullOrEmpty(CreatorSearchBox.Text) 
-                ? Visibility.Visible 
-                : Visibility.Collapsed;
-        }
-        
-        private void FilterCreatorList(string searchText)
-        {
-            if (_isCreatorFilterUpdating) return;
-            
-            _isCreatorFilterUpdating = true;
-            try
+
+            if (_vm != null)
             {
-                IEnumerable<string> filtered;
-                
-                if (string.IsNullOrEmpty(searchText))
-                {
-                    filtered = _allCreators;
-                }
-                else
-                {
-                    filtered = _allCreators.Where(c => 
-                        c.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
-                }
-                
-                // Limit to 100 items for performance
-                var items = filtered.Take(100).ToList();
-                
-                CreatorListBox.ItemsSource = null;
-                CreatorListBox.ItemsSource = items;
-                
-                // Update count
-                var totalMatching = filtered.Count();
-                CreatorCountText.Text = totalMatching > 100 
-                    ? $"Showing 100 of {totalMatching} creators" 
-                    : $"{totalMatching} creators";
-            }
-            finally
-            {
-                _isCreatorFilterUpdating = false;
+                _vm.CurrentPage = 1;
+                _vm.SearchCommand.Execute(null);
             }
         }
         
-        private async void CreatorListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (!IsLoaded || _isCreatorFilterUpdating) return;
-            
-            var selected = CreatorListBox.SelectedItem?.ToString();
-            if (string.IsNullOrEmpty(selected)) return;
-            
-            // Close the popup
-            CreatorFilterToggle.IsChecked = false;
-            
-            // Resolve the Hub API name (handles "AcidBubble" -> "Acid Bubbles" mapping)
-            var resolvedName = await ResolveCreatorNameAsync(selected);
-            _selectedCreator = resolvedName;
-            
-            // Update UI with resolved name
-            UpdateCreatorFilterUI();
-            
-            _currentPage = 1;
-            await SearchAsync();
-        }
-        
-        private async void ClearCreatorFilter_Click(object sender, RoutedEventArgs e)
-        {
-            e.Handled = true; // Prevent toggle from opening
-            
-            _selectedCreator = "All";
-            UpdateCreatorFilterUI();
-            UpdateActiveFiltersUI();
-            SaveHubBrowserState();
-            
-            _currentPage = 1;
-            await SearchAsync();
-        }
-        
-        private void UpdateCreatorFilterUI()
-        {
-            // Update the displayed text
-            SelectedCreatorText.Text = _selectedCreator;
-            
-            // Update clear button visibility
-            ClearCreatorButton.Visibility = _selectedCreator != "All" 
-                ? Visibility.Visible 
-                : Visibility.Collapsed;
-
-            UpdateActiveFiltersUI();
-            SaveHubBrowserState();
-        }
-
         private void UpdateActiveFiltersUI()
         {
             try
@@ -1654,24 +1100,25 @@ namespace VPM.Windows
 
                 var chips = new List<ActiveFilterChip>();
 
-                var q = SearchBox?.Text?.Trim();
+                var q = _vm?.SearchText?.Trim();
                 if (!string.IsNullOrEmpty(q))
                     chips.Add(new ActiveFilterChip { Kind = "search", Value = q, DisplayText = $"Search: {q}" });
 
-                var source = (HostedOptionFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                var source = _vm?.Scope ?? "All";
                 if (!string.Equals(source, "All", StringComparison.OrdinalIgnoreCase))
                     chips.Add(new ActiveFilterChip { Kind = "source", Value = source, DisplayText = $"Source: {source}" });
 
-                var category = (CategoryFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                var category = _vm?.Category ?? "All";
                 if (!string.Equals(category, "All", StringComparison.OrdinalIgnoreCase))
                     chips.Add(new ActiveFilterChip { Kind = "category", Value = category, DisplayText = $"Category: {category}" });
 
-                var pay = (PayTypeFilter.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "All";
+                var pay = _vm?.PayType ?? "All";
                 if (!string.Equals(pay, "All", StringComparison.OrdinalIgnoreCase))
                     chips.Add(new ActiveFilterChip { Kind = "pay", Value = pay, DisplayText = $"Type: {pay}" });
 
-                if (!string.IsNullOrEmpty(_selectedCreator) && !string.Equals(_selectedCreator, "All", StringComparison.OrdinalIgnoreCase))
-                    chips.Add(new ActiveFilterChip { Kind = "creator", Value = _selectedCreator, DisplayText = $"Creator: {_selectedCreator}" });
+                var creator = _vm?.Creator ?? "All";
+                if (!string.IsNullOrEmpty(creator) && !string.Equals(creator, "All", StringComparison.OrdinalIgnoreCase))
+                    chips.Add(new ActiveFilterChip { Kind = "creator", Value = creator, DisplayText = $"Creator: {creator}" });
 
                 if (_selectedTags != null && _selectedTags.Count > 0)
                 {
@@ -1697,25 +1144,22 @@ namespace VPM.Windows
 
             try
             {
-                _suppressAutoSearch = true;
-
                 switch (chip.Kind)
                 {
                     case "search":
-                        if (SearchBox != null) SearchBox.Text = string.Empty;
+                        if (_vm != null) _vm.SearchText = string.Empty;
                         break;
                     case "source":
-                        SelectComboBoxItemByContent(HostedOptionFilter, "All");
+                        if (_vm != null) _vm.Scope = "All";
                         break;
                     case "category":
-                        SelectComboBoxItemByContent(CategoryFilter, "All");
+                        if (_vm != null) _vm.Category = "All";
                         break;
                     case "pay":
-                        SelectComboBoxItemByContent(PayTypeFilter, "All");
+                        if (_vm != null) _vm.PayType = "All";
                         break;
                     case "creator":
-                        _selectedCreator = "All";
-                        UpdateCreatorFilterUI();
+                        if (_vm != null) _vm.Creator = "All";
                         break;
                     case "tag":
                         _selectedTags.RemoveAll(t => string.Equals(t, chip.Value, StringComparison.OrdinalIgnoreCase));
@@ -1750,56 +1194,53 @@ namespace VPM.Windows
             }
             finally
             {
-                _suppressAutoSearch = false;
             }
 
-            _currentPage = 1;
             UpdateActiveFiltersUI();
             SaveHubBrowserState();
-            await SearchAsync();
+            if (_vm != null)
+            {
+                _vm.CurrentPage = 1;
+                _vm.SearchCommand.Execute(null);
+            }
         }
         
         #endregion
 
-        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+        private void ResourcesListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            await _hubService.LoadPackagesJsonAsync(forceRefresh: true);
-            LoadCreatorListFromPackages();
-            await SearchAsync();
+            // Selection alone should not auto-open details; activation is Enter or double-click.
         }
 
-        private async void FirstPage_Click(object sender, RoutedEventArgs e)
+        private void ResourcesListBox_KeyDown(object sender, KeyEventArgs e)
         {
-            if (_currentPage > 1)
+            if (e.Key == Key.Enter)
             {
-                _currentPage = 1;
-                await SearchAsync();
+                if (ResourcesListBox.SelectedItem is HubResource resource)
+                {
+                    ShowResourceDetail(resource);
+                    e.Handled = true;
+                }
             }
         }
 
-        private async void PrevPage_Click(object sender, RoutedEventArgs e)
+        private void ResourcesListBox_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (_currentPage > 1)
-            {
-                _currentPage--;
-                await SearchAsync();
-            }
-        }
-
-        private async void NextPage_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentPage < _totalPages)
-            {
-                _currentPage++;
-                await SearchAsync();
-            }
-        }
-
-        private void ResourceCard_Click(object sender, MouseButtonEventArgs e)
-        {
-            if (sender is FrameworkElement element && element.DataContext is HubResource resource)
+            // Restore single-click activation while keeping keyboard and double-click support.
+            // If the user clicked on an item, SelectedItem will already be updated.
+            if (ResourcesListBox?.SelectedItem is HubResource resource)
             {
                 ShowResourceDetail(resource);
+                e.Handled = true;
+            }
+        }
+
+        private void ResourcesListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (ResourcesListBox.SelectedItem is HubResource resource)
+            {
+                ShowResourceDetail(resource);
+                e.Handled = true;
             }
         }
 
@@ -1818,13 +1259,16 @@ namespace VPM.Windows
 
         private void UpdatePaginationUI()
         {
-            PageNumberBox.Text = _currentPage.ToString();
-            TotalPagesText.Text = _totalPages.ToString();
-            TotalCountText.Text = $"Total: {_totalResources}";
-            
-            FirstPageButton.IsEnabled = _currentPage > 1;
-            PrevPageButton.IsEnabled = _currentPage > 1;
-            NextPageButton.IsEnabled = _currentPage < _totalPages;
+            var current = _vm?.CurrentPage ?? 1;
+            var totalPages = _vm?.TotalPages ?? 1;
+            var total = _vm?.TotalResources ?? 0;
+
+            PageNumberBox.Text = current.ToString();
+            TotalPagesText.Text = totalPages.ToString();
+            TotalCountText.Text = $"Total: {total}";
+
+            PrevPageButton.IsEnabled = current > 1;
+            NextPageButton.IsEnabled = current < totalPages;
         }
 
         #endregion
@@ -1934,18 +1378,17 @@ namespace VPM.Windows
                     PushToDetailStack(detail, resource,
                         new ObservableCollection<HubFileViewModel>(_currentFiles),
                         new ObservableCollection<HubFileViewModel>(_currentDependencies));
-                    
-                    // Open Overview panel if not already visible, or just navigate to new content
-                    TabOverview.IsChecked = true;
-                    if (_isOverviewPanelVisible)
+
+                    // Show + navigate the Overview panel when selecting a resource
+                    if (!_isOverviewPanelVisible)
                     {
-                        // Just navigate to new resource, keep current width
-                        await NavigateToHubPage("TabOverview");
+                        try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception) { }
+                        _ = ExpandOverviewPanelAsync();
                     }
                     else
                     {
-                        // First time opening, use default or last width
-                        await ExpandOverviewPanelAsync();
+                        TabOverview.IsChecked = true;
+                        await NavigateToHubPage("TabOverview");
                     }
                     
                     StatusText.Text = "Ready";
@@ -2499,6 +1942,8 @@ namespace VPM.Windows
                 TogglePanelButton.Content = "▶";
                 TogglePanelButton.ToolTip = "Hide details panel";
                 _isPanelExpanded = true;
+
+                ApplyGoldenRatioSizing(force: true);
             }
         }
 
@@ -2511,6 +1956,79 @@ namespace VPM.Windows
                 TogglePanelButton.Content = "◀";
                 TogglePanelButton.ToolTip = "Show details panel";
                 _isPanelExpanded = false;
+
+                ApplyGoldenRatioSizing(force: true);
+            }
+        }
+
+        private void HubBrowserWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyGoldenRatioSizing(force: false);
+        }
+
+        private void ApplyGoldenRatioSizing(bool force)
+        {
+            // Goal: when a side panel is visible, the remaining center width should be ~GoldenRatio × sideWidth.
+            // When both side panels are visible, both should be equal widths.
+
+            if (Content is not Grid rootGrid)
+                return;
+
+            // Only apply when at least one panel is visible.
+            var overviewVisible = _isOverviewPanelVisible && OverviewPanelColumn != null && OverviewPanelColumn.Width.Value > 0;
+            var detailVisible = _isPanelExpanded && DetailPanelColumn != null && DetailPanelColumn.Width.Value > 0;
+            var visiblePanels = (overviewVisible ? 1 : 0) + (detailVisible ? 1 : 0);
+            if (visiblePanels == 0)
+                return;
+
+            // If the user has manually resized splitters, don't fight it.
+            if (!force)
+            {
+                var matchesLastGoldenOverview = !overviewVisible || Math.Abs(OverviewPanelColumn.Width.Value - _lastGoldenOverviewWidth) <= GoldenRatioEpsilon;
+                var matchesLastGoldenDetail = !detailVisible || Math.Abs(DetailPanelColumn.Width.Value - _lastGoldenDetailWidth) <= GoldenRatioEpsilon;
+                if (!matchesLastGoldenOverview || !matchesLastGoldenDetail)
+                    return;
+            }
+
+            var totalWidth = rootGrid.ActualWidth;
+            if (totalWidth <= 0)
+                return;
+
+            // Subtract splitter widths (they consume real pixels)
+            var splitterWidth = 0.0;
+            if (OverviewSplitter != null && OverviewSplitter.Visibility == Visibility.Visible)
+                splitterWidth += Math.Max(OverviewSplitter.ActualWidth, 5);
+            if (DetailPanelSplitter != null && DetailPanelSplitter.Visibility == Visibility.Visible)
+                splitterWidth += Math.Max(DetailPanelSplitter.ActualWidth, 5);
+
+            var available = totalWidth - splitterWidth;
+            if (available <= 0)
+                return;
+
+            // When both panels are visible: available = side + center + side = (2 + GoldenRatio) * side
+            // When one panel is visible: available = side + center = (1 + GoldenRatio) * side
+            var denom = (visiblePanels + GoldenRatio);
+            var side = available / denom;
+
+            // Respect minimums.
+            if (overviewVisible)
+                side = Math.Max(side, OverviewPanelColumn.MinWidth);
+
+            // Clamp so a panel doesn't exceed remembered width by default, unless force is requested.
+            // This keeps very large windows from creating huge side panels.
+            if (!force)
+                side = Math.Min(side, Math.Max(_lastOverviewPanelWidth, 300));
+
+            if (overviewVisible)
+            {
+                OverviewPanelColumn.Width = new GridLength(side);
+                _lastGoldenOverviewWidth = side;
+            }
+
+            if (detailVisible)
+            {
+                DetailPanelColumn.Width = new GridLength(side);
+                _lastGoldenDetailWidth = side;
             }
         }
 
@@ -2604,6 +2122,12 @@ namespace VPM.Windows
         {
             if (sender is Button button && button.Tag is HubFileViewModel file)
             {
+                if (file.IsInstalled && !file.IsDownloading)
+                {
+                    OpenInstalledFile(file);
+                    return;
+                }
+
                 // If downloading, cancel the download
                 if (file.IsDownloading)
                 {
@@ -2611,49 +2135,52 @@ namespace VPM.Windows
                     return;
                 }
                 
-                // If has update available, download the update
-                if (file.HasUpdate && file.CanDownload)
-                {
-                    QueueFileForDownload(file);
+                // Download or update.
+                // (Opening Explorer is handled by OpenFile_Click to keep actions explicit.)
+                if (!file.CanDownload)
                     return;
-                }
-                
-                // If already installed (no update), open in Explorer
-                if (file.IsInstalled && !file.HasUpdate)
-                {
-                    if (!string.IsNullOrEmpty(file.LocalPath) && File.Exists(file.LocalPath))
-                    {
-                        try
-                        {
-                            Process.Start("explorer.exe", $"/select,\"{file.LocalPath}\"");
-                        }
-                        catch (Exception)
-                        {
-                            // Handle exception
-                        }
-                    }
-                    else
-                    {
-                        // Try to find the file in destination folder
-                        var possiblePath = Path.Combine(_destinationFolder, file.Filename);
-                        if (File.Exists(possiblePath))
-                        {
-                            Process.Start("explorer.exe", $"/select,\"{possiblePath}\"");
-                        }
-                        else
-                        {
-                            // Just open the destination folder
-                            Process.Start("explorer.exe", _destinationFolder);
-                        }
-                    }
-                    return;
-                }
                 
                 // Skip if not downloadable (N/A items)
                 if (!file.CanDownload || string.IsNullOrEmpty(file.DownloadUrl))
                     return;
                 
                 QueueFileForDownload(file);
+            }
+        }
+
+        private void OpenFile_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.Tag is not HubFileViewModel file)
+                return;
+
+            OpenInstalledFile(file);
+        }
+
+        private void OpenInstalledFile(HubFileViewModel file)
+        {
+            if (file == null || !file.IsInstalled)
+                return;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(file.LocalPath) && File.Exists(file.LocalPath))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{file.LocalPath}\"");
+                    return;
+                }
+
+                var possiblePath = Path.Combine(_destinationFolder, file.Filename);
+                if (File.Exists(possiblePath))
+                {
+                    Process.Start("explorer.exe", $"/select,\"{possiblePath}\"");
+                }
+                else
+                {
+                    Process.Start("explorer.exe", _destinationFolder);
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 
@@ -2740,10 +2267,10 @@ namespace VPM.Windows
             var percent = (_completedDownloadsInBatch * 100) / _totalDownloadsInBatch;
             DownloadAllProgressBar.Value = percent;
             
-            DownloadProgressText.Text = $"Downloading {_completedDownloadsInBatch + 1}/{_totalDownloadsInBatch}";
-            DownloadProgressDetail.Text = string.IsNullOrEmpty(_currentDownloadingPackage) 
-                ? "Starting..." 
-                : _currentDownloadingPackage;
+            DownloadProgressText.Text = $"Completed {_completedDownloadsInBatch}/{_totalDownloadsInBatch}";
+            DownloadProgressDetail.Text = string.IsNullOrEmpty(_currentDownloadingPackage)
+                ? "Waiting for downloads to start..."
+                : $"Current: {_currentDownloadingPackage}";
         }
         
         private void OnBatchDownloadComplete()
@@ -2925,6 +2452,21 @@ namespace VPM.Windows
                                 {
                                     _currentResource.InLibrary = true;
                                     _currentResource.UpdateAvailable = false;
+                                }
+
+                                // Optional: Load the downloaded package + its dependencies into AddonPackages
+                                if (_loadPackageAndDependenciesAfterDownload)
+                                {
+                                    _ = Task.Run(async () =>
+                                    {
+                                        try
+                                        {
+                                            await LoadDownloadedPackageAndDependenciesAsync(downloadedPath);
+                                        }
+                                        catch (Exception)
+                                        {
+                                        }
+                                    });
                                 }
                                 
                                 _downloadingFiles.Remove(packageName);

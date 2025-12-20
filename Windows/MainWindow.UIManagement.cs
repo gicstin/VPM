@@ -1210,10 +1210,12 @@ namespace VPM
 
                     if (filterToken.IsCancellationRequested) return;
                     
-                    // If no sorting is active, sort by package name for consistent ordering
+                    // If no CollectionView sorting is active (typical for VirtualPackageList),
+                    // sort keys using the persisted SortingManager state.
+                    // This ensures startup respects the last session sort.
                     if (savedSortDescriptions.Count == 0)
                     {
-                        allKeys = allKeys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+                        SortPackageKeys(allKeys);
                     }
                     
                     // Update UI
@@ -1578,9 +1580,23 @@ namespace VPM
         private void SortPackageKeys(List<string> keys)
         {
             var sortState = _sortingManager?.GetSortingState("Packages");
-            if (sortState?.CurrentSortOption is PackageSortOption sortOption)
+            PackageSortOption sortOption;
+            bool isAscending;
+
+            if (sortState?.CurrentSortOption is PackageSortOption opt)
             {
-                bool isAscending = sortState.IsAscending;
+                sortOption = opt;
+                isAscending = sortState.IsAscending;
+            }
+            else if (TryGetPersistedPackageSortState(out sortOption, out isAscending))
+            {
+                _sortingManager?.UpdateSortingState("Packages", sortOption, isAscending);
+            }
+            else
+            {
+                keys.Sort(StringComparer.OrdinalIgnoreCase);
+                return;
+            }
                 
                 keys.Sort((keyA, keyB) => 
                 {
@@ -1653,10 +1669,34 @@ namespace VPM
                     
                     return isAscending ? result : -result;
                 });
-            }
-            else
+        }
+
+        private bool TryGetPersistedPackageSortState(out PackageSortOption sortOption, out bool isAscending)
+        {
+            sortOption = default;
+            isAscending = true;
+
+            try
             {
-                keys.Sort(StringComparer.OrdinalIgnoreCase);
+                var persisted = _settingsManager?.Settings?.SortingStates;
+                if (persisted == null)
+                    return false;
+
+                if (!persisted.TryGetValue("Packages", out var state) || state == null)
+                    return false;
+
+                if (!string.Equals(state.SortOptionType, nameof(PackageSortOption), StringComparison.Ordinal))
+                    return false;
+
+                if (!Enum.TryParse(state.SortOptionValue, out sortOption))
+                    return false;
+
+                isAscending = state.IsAscending;
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
