@@ -158,7 +158,7 @@ namespace VPM.Services
 
         private PackageFileManager _packageFileManager;
 
-        public PackageManager(string cacheFolder, ConcurrentDictionary<string, List<ImageLocation>> previewImageIndex, PackageFileManager packageFileManager = null)
+        public PackageManager(string cacheFolder, ConcurrentDictionary<string, List<ImageLocation>> previewImageIndex = null, PackageFileManager packageFileManager = null)
         {
             _cacheFolder = cacheFolder;
             _binaryCache = new BinaryMetadataCache();
@@ -167,8 +167,9 @@ namespace VPM.Services
             _packageFileManager = packageFileManager;
 
             // Parse standard VAR filenames: Creator.Package.Name.Version.var
-            // Creator cannot contain dots; package name may contain dots; version is numeric.
-            _varPattern = new Regex(@"^([^.]+)\.(.+?)\.(\d+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            // Creator cannot contain dots; package name may contain dots; version commonly starts with digits but
+            // may include suffixes like "1_1", "1a", "1_1b" etc.
+            _varPattern = new Regex(@"^([^.]+)\.(.+?)\.([A-Za-z0-9_]+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
             
             // Don't load binary cache here - it will be loaded asynchronously
             // to avoid blocking the UI thread during startup
@@ -496,7 +497,7 @@ namespace VPM.Services
             if (fileOnly.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
             {
                 var parts = fileOnly[..^4].Split('.');
-                if (parts.Length >= 3 && int.TryParse(parts[^1], out _))
+                if (parts.Length >= 3 && TryParseLeadingInt(parts[^1], out _))
                 {
                     return (parts[0], string.Join(".", parts[1..^1]), parts[^1]);
                 }
@@ -624,7 +625,7 @@ namespace VPM.Services
                         cachedMetadata.PackageName = StringPool.Intern(cachedPkgName);
                     }
                     
-                    if (!string.IsNullOrEmpty(cachedVersion) && int.TryParse(cachedVersion, out var cachedVersionInt))
+                    if (!string.IsNullOrEmpty(cachedVersion) && TryParseLeadingInt(cachedVersion, out var cachedVersionInt))
                     {
                         cachedMetadata.Version = cachedVersionInt;
                     }
@@ -734,7 +735,7 @@ namespace VPM.Services
                     metadata.PackageName = StringPool.Intern(pkgName ?? filename);
                 
                 // Always use filename version as it's the VAM standard (overrides meta.json packageVersion)
-                if (!string.IsNullOrEmpty(version) && int.TryParse(version, out var versionInt))
+                if (!string.IsNullOrEmpty(version) && TryParseLeadingInt(version, out var versionInt))
                 {
                     metadata.Version = versionInt;
                 }
@@ -814,7 +815,7 @@ namespace VPM.Services
                 var (creator, pkgName, version) = ParseFilename(filename);
                 metadata.CreatorName = StringPool.Intern(creator ?? "Unknown");
                 metadata.PackageName = StringPool.Intern(pkgName ?? filename);
-                if (int.TryParse(version, out var versionInt))
+                if (TryParseLeadingInt(version, out var versionInt))
                     metadata.Version = versionInt;
                 metadata.Categories = new[] { "Unknown" };
                 
@@ -1549,49 +1550,20 @@ namespace VPM.Services
                         if (!fileInfo.Exists)
                             continue;
 
-                        var fileName = Path.GetFileNameWithoutExtension(filePath);
                         var match = _varPattern.Match(Path.GetFileName(filePath));
                         if (!match.Success)
                         {
                             continue;
                         }
 
-                        // Parse flexible filename format: creator.packagename.version[.anything]
-                        // Examples: 0perfectlookalike.AmandS1_0c.1_1, 0perfectlookalike.AbellD1_1b.1
-                        var fileNameWithoutExt = match.Groups[1].Value;
-                        var parts = fileNameWithoutExt.Split('.');
-                        
-                        if (parts.Length < 3)
-                        {
+                        // Parse VAR filename using regex groups:
+                        //   group1 = creator, group2 = package name, group3 = version (may include suffix like "1_1" or "1a")
+                        var creator = match.Groups[1].Value;
+                        var packageName = match.Groups[2].Value;
+                        var versionText = match.Groups[3].Value;
+                        if (!TryParseLeadingInt(versionText, out var version))
                             continue;
-                        }
-                        
-                        var creator = parts[0];
-                        var version = 0;
-                        string packageName = "";
-                        
-                        // Last part should be version (or version with suffix like "1_1")
-                        var lastPart = parts[parts.Length - 1];
-                        if (int.TryParse(lastPart.Split('_')[0], out var v))
-                        {
-                            version = v;
-                            // Everything between creator and version is packageName
-                            packageName = string.Join(".", parts.Skip(1).Take(parts.Length - 2));
-                        }
-                        else
-                        {
-                            // Fallback: assume last part is packageName, second-to-last is version
-                            if (int.TryParse(parts[parts.Length - 2].Split('_')[0], out v))
-                            {
-                                version = v;
-                                packageName = string.Join(".", parts.Skip(1).Take(parts.Length - 2));
-                            }
-                            else
-                            {
-                                continue;
-                            }
-                        }
-                        
+
                         var packageKey = $"{creator}.{packageName}.{version}";
 
                         // Calculate subfolder path within the destination
@@ -1855,10 +1827,10 @@ namespace VPM.Services
         {
             // Build a set of all known package names for fast lookup
             // Include both exact names and base names (for .latest/.min resolution)
-            var knownPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var knownPackageBases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var knownPackages = new HashSet<string>();
+            var knownPackageBases = new HashSet<string>();
             // Track versions per base name for minimum version checking
-            var packageVersions = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            var packageVersions = new Dictionary<string, List<int>>();
             
             foreach (var kvp in PackageMetadata)
             {
@@ -2567,6 +2539,26 @@ namespace VPM.Services
             {
                 // Invalid JSON in meta.json, continue with filename fallback
             }
+        }
+
+        private static bool TryParseLeadingInt(string text, out int value)
+        {
+            value = 0;
+            if (string.IsNullOrEmpty(text))
+                return false;
+
+            // Strip any underscore suffix first (common in VAR filenames)
+            var firstSegment = text.Split('_')[0];
+
+            // Extract leading digits (supports formats like "1a", "12b")
+            var i = 0;
+            while (i < firstSegment.Length && char.IsDigit(firstSegment[i]))
+                i++;
+
+            if (i == 0)
+                return false;
+
+            return int.TryParse(firstSegment.Substring(0, i), out value);
         }
 
         private void ApplyCategoryDetectionAndFallbacks(VarMetadata metadata, string filename)

@@ -6309,6 +6309,15 @@ namespace VPM
                         ?? new Dictionary<string, MoveToDestination>(StringComparer.OrdinalIgnoreCase);
                     
                     UpdateExternalPackagesFromDestinationSettings(oldDestinations, newDestinations);
+
+                    // If the change affects scanning (e.g., new path or new destination), rescan so
+                    // existing .var files in external folders are detected immediately.
+                    if (HasExternalScanRelevantChanges(oldDestinations, newDestinations) &&
+                        !string.IsNullOrEmpty(_selectedFolder) &&
+                        Directory.Exists(_selectedFolder))
+                    {
+                        RefreshPackages();
+                    }
                 }
             }
             catch (Exception ex)
@@ -6317,6 +6326,36 @@ namespace VPM
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 System.Diagnostics.Debug.WriteLine($"ConfigureMoveToDestinations error: {ex}");
             }
+        }
+
+        private static bool HasExternalScanRelevantChanges(
+            Dictionary<string, MoveToDestination> oldDestinations,
+            Dictionary<string, MoveToDestination> newDestinations)
+        {
+            oldDestinations ??= new Dictionary<string, MoveToDestination>(StringComparer.OrdinalIgnoreCase);
+            newDestinations ??= new Dictionary<string, MoveToDestination>(StringComparer.OrdinalIgnoreCase);
+
+            if (oldDestinations.Count != newDestinations.Count)
+                return true;
+
+            // Scanning depends on destination Path + validity; name/color/visibility changes do not require a rescan.
+            foreach (var (name, newDest) in newDestinations)
+            {
+                if (!oldDestinations.TryGetValue(name, out var oldDest))
+                    return true;
+
+                var oldPath = oldDest?.Path ?? "";
+                var newPath = newDest?.Path ?? "";
+                if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                var oldValid = oldDest?.IsValid() == true;
+                var newValid = newDest?.IsValid() == true;
+                if (oldValid != newValid)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
