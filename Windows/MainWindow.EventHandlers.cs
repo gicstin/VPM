@@ -5007,6 +5007,42 @@ namespace VPM
         {
             HubBrowser_Click(sender, e);
         }
+
+        private async void VpbPatchButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_selectedFolder))
+            {
+                CustomMessageBox.Show("Please select a VAM root folder first.",
+                    "No Folder Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                SetStatus("Checking VPB patch status...");
+
+                using var patcher = new VpbPatcherService();
+                var check = await patcher.CheckAsync(_selectedFolder, "main");
+
+                var detailsWindow = new Windows.VpbPatchDetailsWindow(_selectedFolder, check.GitRef, check)
+                {
+                    Owner = this
+                };
+
+                detailsWindow.ShowDialog();
+
+                SetStatus("VPB patch window closed");
+            }
+            catch (Exception ex)
+            {
+                SetStatus($"VPB patch failed: {ex.Message}");
+                CustomMessageBox.Show(
+                    $"VPB patch failed:\n\n{ex.Message}",
+                    "VPB Patch Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
         
         /// <summary>
         /// Launches VirtAMate in Desktop mode

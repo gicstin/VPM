@@ -361,6 +361,13 @@
 
                     <!--  About  -->
                     <Separator />
+                    <MenuItem Click="VpbPatchButton_Click" Header="_Patch VPB">
+                        <MenuItem.Icon>
+                            <TextBlock FontSize="12" Text=" 🧩" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+
+                    <Separator />
                     <MenuItem Click="About_Click" Header="ℹ️ _About VPM" />
 
                     <!--  Exit at Bottom  -->
@@ -518,7 +525,7 @@
                                             Content="{TemplateBinding SelectionBoxItem}"
                                             ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                             ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
-                                            IsHitTestVisible="false"
+                                            IsHitTestVisible="False"
                                             Visibility="Collapsed" />
                                         <Popup
                                             Name="Popup"
@@ -2374,10 +2381,10 @@
                 Grid.Column="1"
                 Width="8"
                 HorizontalAlignment="Stretch"
-                PreviewMouseLeftButtonDown="LeftPaneSplitter_PreviewMouseLeftButtonDown"
+                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                 MouseDoubleClick="LeftPaneSplitter_MouseDoubleClick"
-                ToolTip="Drag to resize. Double-click to collapse/expand."
-                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" />
+                PreviewMouseLeftButtonDown="LeftPaneSplitter_PreviewMouseLeftButtonDown"
+                ToolTip="Drag to resize. Double-click to collapse/expand." />
 
             <!--  Center Panel - Packages/Scenes  -->
             <Border
@@ -2780,7 +2787,6 @@
                             FontSize="12"
                             GridLinesVisibility="Horizontal"
                             HeadersVisibility="None"
-                            IsManipulationEnabled="False"
                             IsReadOnly="True"
                             ItemsSource="{Binding Source={StaticResource PackagesView}}"
                             PreviewMouseDown="PackageDataGrid_PreviewMouseDown"
@@ -3509,7 +3515,7 @@
                         Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                         BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                         BorderThickness="0"
-                        CornerRadius="0"
+                        CornerRadius="3"
                         Visibility="Visible">
                         <Border.Style>
                             <Style TargetType="Border">
@@ -3582,7 +3588,6 @@
                                                             <!--  Button Content  -->
                                                             <Border
                                                                 Grid.Column="1"
-                                                                Padding="{TemplateBinding Padding}"
                                                                 Background="{TemplateBinding Background}"
                                                                 BorderBrush="{TemplateBinding BorderBrush}"
                                                                 BorderThickness="{TemplateBinding BorderThickness}"
@@ -3933,10 +3938,10 @@
                 Grid.Column="3"
                 Width="8"
                 HorizontalAlignment="Stretch"
-                PreviewMouseLeftButtonDown="DepsPaneSplitter_PreviewMouseLeftButtonDown"
+                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                 MouseDoubleClick="DepsPaneSplitter_MouseDoubleClick"
-                ToolTip="Drag to resize. Double-click to collapse/expand."
-                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" />
+                PreviewMouseLeftButtonDown="DepsPaneSplitter_PreviewMouseLeftButtonDown"
+                ToolTip="Drag to resize. Double-click to collapse/expand." />
 
             <!--  Right Panel - Dependencies & Info  -->
             <Border
@@ -4687,11 +4692,11 @@
                 VerticalAlignment="Stretch"
                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                 Cursor="SizeWE"
-                PreviewMouseLeftButtonDown="ImagesPaneSplitter_PreviewMouseLeftButtonDown"
                 MouseDoubleClick="ImagesPaneSplitter_MouseDoubleClick"
-                ToolTip="Drag to resize. Double-click to collapse/expand."
+                PreviewMouseLeftButtonDown="ImagesPaneSplitter_PreviewMouseLeftButtonDown"
                 ResizeBehavior="PreviousAndNext"
-                ShowsPreview="True" />
+                ShowsPreview="True"
+                ToolTip="Drag to resize. Double-click to collapse/expand." />
 
             <!--  Right Panel - Images with Preview  -->
             <Border

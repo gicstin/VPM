@@ -2,6 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using Microsoft.Win32;
 
 namespace VPM.Services
 {
@@ -41,6 +42,32 @@ namespace VPM.Services
             {
                 // Dark mode not available on this system
             }
+        }
+
+        public static bool IsDarkModeEnabled()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
+                var value = key?.GetValue("AppsUseLightTheme");
+                if (value is int intValue)
+                    return intValue == 0;
+                if (value is byte byteValue)
+                    return byteValue == 0;
+            }
+            catch
+            {
+            }
+
+            return false;
+        }
+
+        public static void ApplyIfDark(Window window)
+        {
+            if (!IsDarkModeEnabled())
+                return;
+
+            Apply(window);
         }
 
         /// <summary>
