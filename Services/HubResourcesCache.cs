@@ -91,8 +91,9 @@ namespace VPM.Services
                     Directory.CreateDirectory(_cacheDirectory);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubResourcesCache] Failed to create cache directory: {ex}");
             }
             
             _packageIdToResourceId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -242,9 +243,10 @@ namespace VPM.Services
                 sw.Stop();
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _cacheMisses++;
+                Debug.WriteLine($"[HubResourcesCache] Failed to load cache from disk: {ex}");
                 return false;
             }
         }
@@ -280,10 +282,11 @@ namespace VPM.Services
                 var lastModTicks = reader.ReadInt64();
                 _lastModified = lastModTicks > 0 ? new DateTime(lastModTicks) : DateTime.MinValue;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _etag = null;
                 _lastModified = DateTime.MinValue;
+                Debug.WriteLine($"[HubResourcesCache] Failed to load metadata from disk: {ex}");
             }
         }
         
@@ -304,12 +307,20 @@ namespace VPM.Services
                 }
                 
                 // Atomic replace
-                if (File.Exists(_metadataFilePath))
-                    File.Delete(_metadataFilePath);
-                File.Move(tempPath, _metadataFilePath);
+                try
+                {
+                    if (File.Exists(_metadataFilePath))
+                        File.Delete(_metadataFilePath);
+                    File.Move(tempPath, _metadataFilePath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubResourcesCache] Failed to finalize metadata cache file write: {ex}");
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubResourcesCache] Failed to save metadata to disk: {ex}");
             }
         }
         
@@ -357,9 +368,16 @@ namespace VPM.Services
                 }
                 
                 // Atomic replace
-                if (File.Exists(_cacheFilePath))
-                    File.Delete(_cacheFilePath);
-                File.Move(tempPath, _cacheFilePath);
+                try
+                {
+                    if (File.Exists(_cacheFilePath))
+                        File.Delete(_cacheFilePath);
+                    File.Move(tempPath, _cacheFilePath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubResourcesCache] Failed to finalize cache file write: {ex}");
+                }
                 
                 // Save metadata
                 SaveMetadata();
@@ -367,17 +385,21 @@ namespace VPM.Services
                 sw.Stop();
                 return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Clean up temp file
+                var tempPath = _cacheFilePath + ".tmp";
                 try
                 {
-                    var tempPath = _cacheFilePath + ".tmp";
                     if (File.Exists(tempPath))
                         File.Delete(tempPath);
                 }
-                catch { }
+                catch (Exception ex2)
+                {
+                    Debug.WriteLine($"[HubResourcesCache] Failed to delete temp file '{tempPath}': {ex2}");
+                }
                 
+                Debug.WriteLine($"[HubResourcesCache] Failed to save cache to disk: {ex}");
                 return false;
             }
         }
@@ -519,8 +541,9 @@ namespace VPM.Services
             {
                 return false;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubResourcesCache] Failed to fetch from Hub: {ex}");
                 return false;
             }
         }
@@ -688,9 +711,9 @@ namespace VPM.Services
                         bitmap.Freeze();
                         return bitmap;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Image decode failed
+                        Debug.WriteLine($"[HubResourcesCache] Failed to decode cached image: {ex}");
                         return null;
                     }
                 }
@@ -885,8 +908,9 @@ namespace VPM.Services
                     _cacheLock.ExitWriteLock();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubResourcesCache] Failed to load image cache from disk: {ex}");
                 return false;
             }
         }
@@ -917,9 +941,10 @@ namespace VPM.Services
                     _imageCacheTimestamps[url] = new DateTime(ticks);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _imageCacheTimestamps = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+                Debug.WriteLine($"[HubResourcesCache] Failed to load image metadata from disk: {ex}");
             }
         }
         
@@ -958,12 +983,20 @@ namespace VPM.Services
                 }
                 
                 // Atomic replace
-                if (File.Exists(_imagesCacheMetadataFilePath))
-                    File.Delete(_imagesCacheMetadataFilePath);
-                File.Move(tempPath, _imagesCacheMetadataFilePath);
+                try
+                {
+                    if (File.Exists(_imagesCacheMetadataFilePath))
+                        File.Delete(_imagesCacheMetadataFilePath);
+                    File.Move(tempPath, _imagesCacheMetadataFilePath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubResourcesCache] Failed to finalize image metadata cache file write: {ex}");
+                }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubResourcesCache] Failed to save image metadata to disk: {ex}");
             }
         }
         
@@ -1031,7 +1064,10 @@ namespace VPM.Services
                     if (File.Exists(tempPath))
                         File.Delete(tempPath);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubResourcesCache] Failed to delete temp file '{_imagesCacheFilePath}.tmp': {ex}");
+                }
                 
                 return false;
             }
@@ -1065,7 +1101,7 @@ namespace VPM.Services
                 if (File.Exists(_imagesCacheMetadataFilePath))
                     File.Delete(_imagesCacheMetadataFilePath);
             }
-            catch { }
+            catch (Exception ex) { Debug.WriteLine($"[HubResourcesCache] Failed to clear image cache files: {ex}"); }
         }
         
         #endregion
@@ -1089,7 +1125,7 @@ namespace VPM.Services
                     if (File.Exists(_imagesCacheFilePath))
                         imageCacheSize = new FileInfo(_imagesCacheFilePath).Length;
                 }
-                catch { }
+                catch (Exception ex) { Debug.WriteLine($"[HubResourcesCache] Failed to compute cache statistics: {ex}"); }
                 
                 return new HubResourcesCacheStats
                 {
@@ -1187,10 +1223,10 @@ namespace VPM.Services
                     var tempFiles = Directory.GetFiles(_cacheDirectory, "HubResources*.tmp");
                     foreach (var file in tempFiles)
                     {
-                        try { File.Delete(file); } catch { }
+                        try { File.Delete(file); } catch (Exception ex) { Debug.WriteLine($"[HubResourcesCache] Failed to delete temp file '{file}': {ex}"); }
                     }
                 }
-                catch { }
+                catch (Exception ex) { Debug.WriteLine($"[HubResourcesCache] Failed to cleanup temp files: {ex}"); }
                 
                 return true;
             }

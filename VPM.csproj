@@ -50,15 +50,19 @@
     <Compile Remove="_links\**" />
     <Compile Remove="VPM.Tests\**" />
     <Compile Remove="VPM.Old\**" />
+    <Compile Remove="_vb\**" />
     <EmbeddedResource Remove="_links\**" />
     <EmbeddedResource Remove="VPM.Tests\**" />
     <EmbeddedResource Remove="VPM.Old\**" />
+     <EmbeddedResource Remove="_vb\**" />
     <None Remove="_links\**" />
     <None Remove="VPM.Tests\**" />
     <None Remove="VPM.Old\**" />
+    <None Remove="_vb\**" />
     <Page Remove="_links\**" />
     <Page Remove="VPM.Tests\**" />
     <Page Remove="VPM.Old\**" />
+    <Page Remove="_vb\**" />
   </ItemGroup>
   <ItemGroup>
     <None Remove="build_output.txt" />

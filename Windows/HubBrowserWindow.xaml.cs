@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -107,8 +107,9 @@ namespace VPM.Windows
             {
                 metadata = _packageManager?.ParseVarMetadataComplete(movedMainPath);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to parse metadata for '{movedMainPath}': {ex}");
             }
 
             // If we can’t parse metadata, we still at least "load" the main package.
@@ -148,13 +149,15 @@ namespace VPM.Windows
                         UpdateDownloadQueueUI();
                         UpdateDownloadAllButton();
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        Debug.WriteLine($"[HubBrowserWindow] Failed to refresh local package lookups after dependency load: {ex}");
                     }
                 });
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Dispatcher refresh failed after dependency load: {ex}");
             }
         }
 
@@ -246,8 +249,9 @@ namespace VPM.Windows
                 File.Move(varPath, destPath);
                 return destPath;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to move file to AddonPackages: {ex}");
                 return null;
             }
         }
@@ -265,8 +269,9 @@ namespace VPM.Windows
                 _loadPackageAndDependenciesAfterDownload = LoadAfterDownloadCheck?.IsChecked == true;
                 _settingsManager.UpdateSetting("HubBrowserLoadAfterDownload", _loadPackageAndDependenciesAfterDownload);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to update LoadAfterDownload setting: {ex}");
             }
         }
         
@@ -317,8 +322,9 @@ namespace VPM.Windows
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to build local package lookups: {ex}");
                 // Keep existing lookups if something goes wrong
             }
         }
@@ -421,9 +427,9 @@ namespace VPM.Windows
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Silently fail if dark title bar is not supported
+                Debug.WriteLine($"[HubBrowserWindow] Failed to apply dark title bar: {ex}");
             }
         }
 
@@ -458,8 +464,33 @@ namespace VPM.Windows
                     LoadAfterDownloadCheck.IsChecked = _loadPackageAndDependenciesAfterDownload;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to restore LoadAfterDownload setting: {ex}");
+            }
+
+            // Restore Tags filter selection before the initial search runs
+            try
+            {
+                _isRestoringState = true;
+                var savedTags = _settingsManager.GetSetting("HubBrowserTags", new List<string>()) ?? new List<string>();
+                _selectedTags = new List<string>(savedTags.Where(t => !string.IsNullOrWhiteSpace(t)));
+                UpdateTagsDisplay();
+
+                if (_vm != null)
+                {
+                    _vm.Tags = (_selectedTags != null && _selectedTags.Count > 0)
+                        ? string.Join(",", _selectedTags)
+                        : "All";
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to restore Tags filter selection: {ex}");
+            }
+            finally
+            {
+                _isRestoringState = false;
             }
             
             await _vm.InitializeAsync();
@@ -474,8 +505,9 @@ namespace VPM.Windows
                 if (overviewVisible)
                     _isOverviewPanelVisible = true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to restore Overview panel preference: {ex}");
             }
 
             // Apply overview visibility after initial search so layout changes feel intentional
@@ -525,14 +557,16 @@ namespace VPM.Windows
                 _settingsManager.UpdateSetting("HubBrowserSearchText", _vm?.SearchText?.Trim() ?? "");
                 _settingsManager.UpdateSetting("HubBrowserSource", _vm?.Scope ?? "All");
                 _settingsManager.UpdateSetting("HubBrowserCategory", _vm?.Category ?? "All");
-                _settingsManager.UpdateSetting("HubBrowserPayType", _vm?.PayType ?? "All");
+                if (_settingsManager?.Settings != null)
+                    _settingsManager.Settings.HubBrowserPayType = _vm?.PayType ?? "All";
                 _settingsManager.UpdateSetting("HubBrowserSort", _vm?.Sort ?? "Last Update");
                 _settingsManager.UpdateSetting("HubBrowserSortSecondary", _vm?.SortSecondary ?? "None");
                 _settingsManager.UpdateSetting("HubBrowserCreator", _vm?.Creator ?? "All");
                 _settingsManager.UpdateSetting("HubBrowserTags", new List<string>(_selectedTags ?? new List<string>()));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to save HubBrowser state: {ex}");
             }
         }
 
@@ -549,7 +583,18 @@ namespace VPM.Windows
 
         private void HubBrowserWindow_Closed(object sender, EventArgs e)
         {
-            try { _vm?.Dispose(); } catch (Exception) { }
+            // Ensure settings changes (filters, tags, etc.) are flushed to disk so reopening the Hub Browser restores state.
+            try
+            {
+                SaveHubBrowserState();
+                _settingsManager?.SaveSettingsImmediate();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to flush settings on close: {ex}");
+            }
+
+            try { _vm?.Dispose(); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to dispose HubBrowserViewModel: {ex}"); }
             _hubService?.Dispose();
             
             // Dispose WebView2 - wrap in try-catch as it can throw if browser process has terminated
@@ -560,8 +605,9 @@ namespace VPM.Windows
                     OverviewWebView.Dispose();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to dispose OverviewWebView: {ex}");
             }
         }
         
@@ -574,8 +620,13 @@ namespace VPM.Windows
             
             try
             {
-                // Create a user data folder in temp for WebView2
-                var userDataFolder = Path.Combine(Path.GetTempPath(), "VPM_WebView2");
+                var userDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "VPM",
+                    "WebView2",
+                    "v1");
+
+                Directory.CreateDirectory(userDataFolder);
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
                 await OverviewWebView.EnsureCoreWebView2Async(env);
                 
@@ -656,9 +707,9 @@ namespace VPM.Windows
                 
                 await OverviewWebView.CoreWebView2.ExecuteScriptAsync(script);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Handle exception
+                Debug.WriteLine($"[HubBrowserWindow] Failed to inject dark theme styles: {ex}");
             }
         }
         
@@ -689,9 +740,9 @@ namespace VPM.Windows
                     var url = _currentWebViewUrl.Replace("-panel", "");
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Handle exception
+                    Debug.WriteLine($"[HubBrowserWindow] Failed to open URL in browser: {ex}");
                 }
             }
         }
@@ -704,9 +755,9 @@ namespace VPM.Windows
                 {
                     Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Handle exception
+                    Debug.WriteLine($"[HubBrowserWindow] Failed to open support URL: {ex}");
                 }
             }
         }
@@ -767,9 +818,9 @@ namespace VPM.Windows
                         _vm.SearchCommand.Execute(null);
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Handle exception
+                    Debug.WriteLine($"[HubBrowserWindow] Failed to apply tag filter: {ex}");
                 }
             }
         }
@@ -784,12 +835,12 @@ namespace VPM.Windows
             if (_isOverviewPanelVisible)
             {
                 CollapseOverviewPanel();
-                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception) { }
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview visibility=false: {ex}"); }
             }
             else if (!string.IsNullOrEmpty(_currentResourceId))
             {
                 _ = ExpandOverviewPanelAsync();
-                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception) { }
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview visibility=true: {ex}"); }
             }
         }
         
@@ -813,8 +864,9 @@ namespace VPM.Windows
             {
                 _settingsManager.UpdateSetting("HubBrowserOverviewPanelWidth", _lastOverviewPanelWidth);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview panel width: {ex}");
             }
         }
             
@@ -824,7 +876,7 @@ namespace VPM.Windows
             if (OverviewPanelColumn.Width.Value > 0)
             {
                 _lastOverviewPanelWidth = OverviewPanelColumn.Width.Value;
-                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelWidth", _lastOverviewPanelWidth); } catch (Exception) { }
+                try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelWidth", _lastOverviewPanelWidth); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview width while collapsing: {ex}"); }
             }
             
             OverviewPanelColumn.Width = new GridLength(0);
@@ -834,7 +886,7 @@ namespace VPM.Windows
 
             ApplyGoldenRatioSizing(force: true);
 
-            try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception) { }
+            try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", false); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview visibility=false: {ex}"); }
         }
         
         /// <summary>
@@ -846,55 +898,6 @@ namespace VPM.Windows
                 return;
             
             await NavigateToHubPage(tab.Name);
-        }
-        
-        #endregion
-        
-        #region Adaptive Grid
-
-        private const double MinCardWidth = 200;
-        private const double MaxCardWidth = 280;
-        private const double CardMargin = 8; // 4px margin on each side
-
-        private void ResourcesListBox_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            UpdateGridColumns(e.NewSize.Width);
-        }
-
-        private void UpdateGridColumns(double availableWidth)
-        {
-            if (availableWidth <= 0)
-                return;
-            
-            // Calculate optimal number of columns
-            // Each card needs MinCardWidth + margins
-            int maxColumns = Math.Max(1, (int)(availableWidth / (MinCardWidth + CardMargin)));
-            int minColumns = Math.Max(1, (int)(availableWidth / (MaxCardWidth + CardMargin)));
-            
-            // Use a column count that gives us cards between min and max width
-            int columns = Math.Max(minColumns, Math.Min(maxColumns, 6)); // Cap at 6 columns
-            
-            // Find the UniformGrid and update columns
-            var panel = FindVisualChild<UniformGrid>(ResourcesListBox);
-            if (panel != null)
-            {
-                panel.Columns = columns;
-            }
-        }
-        
-        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
-        {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-                var child = VisualTreeHelper.GetChild(parent, i);
-                if (child is T typedChild)
-                    return typedChild;
-                
-                var result = FindVisualChild<T>(child);
-                if (result != null)
-                    return result;
-            }
-            return null;
         }
         
         #endregion
@@ -1132,8 +1135,9 @@ namespace VPM.Windows
                 ActiveFiltersItems.ItemsSource = chips;
                 ActiveFiltersBorder.Visibility = chips.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to update active filters UI: {ex}");
             }
         }
 
@@ -1310,12 +1314,13 @@ namespace VPM.Windows
                     DetailImage.Source = null;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 if (_currentImageUrl == imageUrl)
                 {
                     DetailImage.Source = null;
                 }
+                Debug.WriteLine($"[HubBrowserWindow] Failed to load detail image: {ex}");
             }
         }
 
@@ -1351,9 +1356,9 @@ namespace VPM.Windows
                             detail.TagsDict = resource.TagsDict;
                         }
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // Handle exception
+                        Debug.WriteLine($"[HubBrowserWindow] Failed to preserve tags: {ex}");
                     }
                     // Push current state to stack before showing new resource (if there is one)
                     // This saves the previous resource so we can go back to it
@@ -1382,7 +1387,7 @@ namespace VPM.Windows
                     // Show + navigate the Overview panel when selecting a resource
                     if (!_isOverviewPanelVisible)
                     {
-                        try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception) { }
+                        try { _settingsManager.UpdateSetting("HubBrowserOverviewPanelVisible", true); } catch (Exception ex) { Debug.WriteLine($"[HubBrowserWindow] Failed to persist overview visibility=true: {ex}"); }
                         _ = ExpandOverviewPanelAsync();
                     }
                     else
@@ -1397,6 +1402,7 @@ namespace VPM.Windows
             catch (Exception ex)
             {
                 StatusText.Text = $"Error loading details: {ex.Message}";
+                Debug.WriteLine($"[HubBrowserWindow] Failed to load resource details: {ex}");
             }
         }
 
@@ -1444,9 +1450,9 @@ namespace VPM.Windows
                     DetailCreatorIconBrush.ImageSource = new BitmapImage(new Uri(detail.IconUrl));
                     DetailCreatorIcon.Visibility = Visibility.Visible;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Handle exception
+                    Debug.WriteLine($"[HubBrowserWindow] Failed to load creator icon: {ex}");
                 }
             }
             else
@@ -1529,8 +1535,9 @@ namespace VPM.Windows
                     DetailTagsPanel.Visibility = Visibility.Collapsed;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to populate tags: {ex}");
                 DetailTagsPanel.Visibility = Visibility.Collapsed;
             }
             
@@ -1626,7 +1633,7 @@ namespace VPM.Windows
                     latestVersion = ExtractVersionFromUrl(downloadUrl, file.Filename);
                 }
                 
-                // If we found a version, replace .latest with actual version
+                
                 if (!string.IsNullOrEmpty(latestVersion))
                 {
                     // Handle both .latest. (middle) and .latest (end) patterns
@@ -1771,10 +1778,10 @@ namespace VPM.Windows
                 return -1;
             
             // Get version number from the end
-            var lastDot = name.LastIndexOf('.');
-            if (lastDot > 0)
+            var lastDotIndex = name.LastIndexOf('.');
+            if (lastDotIndex > 0)
             {
-                var afterDot = name.Substring(lastDot + 1);
+                var afterDot = name.Substring(lastDotIndex + 1);
                 if (int.TryParse(afterDot, out var version))
                 {
                     return version;
@@ -1806,13 +1813,13 @@ namespace VPM.Windows
                 name = name.Substring(0, name.Length - 7);
             
             // Remove version number (digits at the end after last dot)
-            var lastDot = name.LastIndexOf('.');
-            if (lastDot > 0)
+            var lastDotIndex = name.LastIndexOf('.');
+            if (lastDotIndex > 0)
             {
-                var afterDot = name.Substring(lastDot + 1);
+                var afterDot = name.Substring(lastDotIndex + 1);
                 if (int.TryParse(afterDot, out _))
                 {
-                    return name.Substring(0, lastDot);
+                    return name.Substring(0, lastDotIndex);
                 }
             }
             
@@ -1854,9 +1861,9 @@ namespace VPM.Windows
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Handle exception
+                    Debug.WriteLine($"[HubBrowserWindow] Failed to derive VaM folder: {ex}");
                 }
                 
                 current = parent;
@@ -1906,9 +1913,9 @@ namespace VPM.Windows
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Handle exception
+                Debug.WriteLine($"[HubBrowserWindow] Failed to extract version from URL: {ex}");
             }
             return null;
         }
@@ -2099,6 +2106,7 @@ namespace VPM.Windows
             catch (Exception ex)
             {
                 ShowWebViewError($"Navigation failed: {ex.Message}");
+                Debug.WriteLine($"[HubBrowserWindow] Failed to navigate to Hub page: {ex}");
             }
         }
         
@@ -2179,8 +2187,9 @@ namespace VPM.Windows
                     Process.Start("explorer.exe", _destinationFolder);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to open installed file: {ex}");
             }
         }
 
@@ -2463,8 +2472,9 @@ namespace VPM.Windows
                                         {
                                             await LoadDownloadedPackageAndDependenciesAsync(downloadedPath);
                                         }
-                                        catch (Exception)
+                                        catch (Exception ex)
                                         {
+                                            Debug.WriteLine($"[HubBrowserWindow] Failed to load downloaded package/dependencies: {ex}");
                                         }
                                     });
                                 }
@@ -3597,6 +3607,27 @@ namespace VPM.Windows
     /// </summary>
     public static class CachedImageBehavior
     {
+        private static readonly DependencyProperty ManagerProperty =
+            DependencyProperty.RegisterAttached(
+                "Manager",
+                typeof(CachedImageManager),
+                typeof(CachedImageBehavior),
+                new PropertyMetadata(null));
+
+        private static readonly DependencyProperty HandlerProperty =
+            DependencyProperty.RegisterAttached(
+                "Handler",
+                typeof(PropertyChangedEventHandler),
+                typeof(CachedImageBehavior),
+                new PropertyMetadata(null));
+
+        private static readonly DependencyProperty UnloadedHookedProperty =
+            DependencyProperty.RegisterAttached(
+                "UnloadedHooked",
+                typeof(bool),
+                typeof(CachedImageBehavior),
+                new PropertyMetadata(false));
+
         public static string GetImageUrl(DependencyObject obj)
         {
             return (string)obj.GetValue(ImageUrlProperty);
@@ -3619,11 +3650,56 @@ namespace VPM.Windows
             if (!(d is Image image))
                 return;
 
+            // Detach previous handler/manager (important with virtualization/recycling)
+            try
+            {
+                var oldManager = (CachedImageManager)image.GetValue(ManagerProperty);
+                var oldHandler = (PropertyChangedEventHandler)image.GetValue(HandlerProperty);
+                if (oldManager != null && oldHandler != null)
+                {
+                    oldManager.PropertyChanged -= oldHandler;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[CachedImageBehavior] Failed to detach previous handler: {ex}");
+            }
+            finally
+            {
+                image.SetValue(ManagerProperty, null);
+                image.SetValue(HandlerProperty, null);
+            }
+
             var imageUrl = (string)e.NewValue;
             if (string.IsNullOrEmpty(imageUrl))
             {
                 image.Source = null;
                 return;
+            }
+
+            // Ensure we cleanup when the element is unloaded (recycling, tab switches, etc.)
+            if (!(bool)image.GetValue(UnloadedHookedProperty))
+            {
+                image.SetValue(UnloadedHookedProperty, true);
+                image.Unloaded += (_, __) =>
+                {
+                    try
+                    {
+                        var mgr = (CachedImageManager)image.GetValue(ManagerProperty);
+                        var h = (PropertyChangedEventHandler)image.GetValue(HandlerProperty);
+                        if (mgr != null && h != null)
+                            mgr.PropertyChanged -= h;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[CachedImageBehavior] Failed to detach on Unloaded: {ex}");
+                    }
+                    finally
+                    {
+                        image.SetValue(ManagerProperty, null);
+                        image.SetValue(HandlerProperty, null);
+                    }
+                };
             }
 
             var manager = CachedImageManager.GetOrCreate(imageUrl);
@@ -3632,14 +3708,26 @@ namespace VPM.Windows
                 // Set initial image (may be null)
                 image.Source = manager.Image;
 
-                // Listen for updates
-                manager.PropertyChanged += (s, args) =>
+                void SetSourceOnUiThread()
+                {
+                    if (image.Dispatcher.CheckAccess())
+                        image.Source = manager.Image;
+                    else
+                        image.Dispatcher.BeginInvoke(new Action(() => image.Source = manager.Image));
+                }
+
+                // Build and store handler so we can detach later
+                PropertyChangedEventHandler handler = (s, args) =>
                 {
                     if (args.PropertyName == nameof(CachedImageManager.Image))
-                    {
-                        image.Source = manager.Image;
-                    }
+                        SetSourceOnUiThread();
                 };
+
+                image.SetValue(ManagerProperty, manager);
+                image.SetValue(HandlerProperty, handler);
+
+                // Listen for updates
+                manager.PropertyChanged += handler;
             }
         }
     }
@@ -3776,8 +3864,9 @@ namespace VPM.Windows
                 bitmap.Freeze();
                 Image = bitmap;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to load image directly: {ex}");
             }
         }
     }

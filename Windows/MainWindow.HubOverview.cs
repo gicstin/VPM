@@ -40,7 +40,13 @@ namespace VPM
             try
             {
                 // Use the same user data folder as HubBrowserWindow to share cache, cookies, and login sessions
-                var userDataFolder = Path.Combine(Path.GetTempPath(), "VPM_WebView2");
+                var userDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "VPM",
+                    "WebView2",
+                    "v1");
+
+                Directory.CreateDirectory(userDataFolder);
                 var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
                 await HubOverviewWebView.EnsureCoreWebView2Async(env);
                 

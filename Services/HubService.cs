@@ -15,6 +15,27 @@ using VPM.Models;
 
 namespace VPM.Services
 {
+    public sealed class ServiceResult<T>
+    {
+        public bool Success { get; }
+        public T Value { get; }
+        public string ErrorMessage { get; }
+        public Exception Exception { get; }
+
+        private ServiceResult(bool success, T value, string errorMessage, Exception exception)
+        {
+            Success = success;
+            Value = value;
+            ErrorMessage = errorMessage;
+            Exception = exception;
+        }
+
+        public static ServiceResult<T> Ok(T value) => new ServiceResult<T>(true, value, null, null);
+
+        public static ServiceResult<T> Fail(string errorMessage, Exception exception = null) =>
+            new ServiceResult<T>(false, default, errorMessage, exception);
+    }
+
     /// <summary>
     /// Service for interacting with the VaM Hub API
     /// Adapted from var_browser's HubBrowse implementation
@@ -104,13 +125,19 @@ namespace VPM.Services
         /// </summary>
         public async Task<HubFilterOptions> GetFilterOptionsAsync(CancellationToken cancellationToken = default)
         {
+            var result = await GetFilterOptionsResultAsync(cancellationToken);
+            return result.Success ? result.Value : _cachedFilterOptions;
+        }
+
+        public async Task<ServiceResult<HubFilterOptions>> GetFilterOptionsResultAsync(CancellationToken cancellationToken = default)
+        {
             // Check cache first
             if (_cachedFilterOptions != null && DateTime.Now - _filterOptionsCacheTime < _filterOptionsCacheExpiry)
             {
                 PerformanceMonitor.RecordOperation("GetFilterOptionsAsync", 0, "Cached");
-                return _cachedFilterOptions;
+                return ServiceResult<HubFilterOptions>.Ok(_cachedFilterOptions);
             }
-            
+
             using (var timer = PerformanceMonitor.StartOperation("GetFilterOptionsAsync"))
             {
                 try
@@ -129,21 +156,28 @@ namespace VPM.Services
                         PropertyNameCaseInsensitive = true
                     });
 
+                    if (options == null)
+                        return ServiceResult<HubFilterOptions>.Fail("Hub returned empty filter options.");
+
                     // Cache the result
-                    if (options != null)
-                    {
-                        _cachedFilterOptions = options;
-                        _filterOptionsCacheTime = DateTime.Now;
-                    }
-                    
-                    return options;
+                    _cachedFilterOptions = options;
+                    _filterOptionsCacheTime = DateTime.Now;
+
+                    return ServiceResult<HubFilterOptions>.Ok(options);
                 }
-                catch (Exception)
+                catch (OperationCanceledException)
                 {
-                    // Return cached version if available, even if expired
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubService] GetFilterOptionsResultAsync failed: {ex}");
+
+                    // Return cached version if available, even if expired, but still report failure
                     if (_cachedFilterOptions != null)
-                        return _cachedFilterOptions;
-                    return null;
+                        return ServiceResult<HubFilterOptions>.Fail("Failed to refresh Hub filter options; using cached options.", ex);
+
+                    return ServiceResult<HubFilterOptions>.Fail("Failed to load Hub filter options.", ex);
                 }
             }
         }
@@ -453,7 +487,7 @@ namespace VPM.Services
         /// <summary>
         /// Refreshes the cache in the background without blocking the caller
         /// </summary>
-        private async Task RefreshCacheInBackgroundAsync(CancellationToken cancellationToken)
+        private async Task RefreshCacheInBackgroundAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -467,8 +501,9 @@ namespace VPM.Services
                     _packagesCacheTime = DateTime.Now;
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"[HubService] RefreshCacheInBackgroundAsync failed: {ex}");
             }
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -19,6 +20,7 @@ namespace VPM.Windows
         private CancellationTokenSource _searchCts;
         private readonly DispatcherTimer _searchDebounceTimer;
         private bool _suppressAutoSearch;
+        private bool _suppressStateSave = true;
 
         // Pre-computed lookups for fast library status checking
         private HashSet<string> _localPackageNames;
@@ -205,6 +207,8 @@ namespace VPM.Windows
                 if (SetProperty(ref _payType, value))
                 {
                     SaveState();
+                    try { _settingsManager.SaveSettingsImmediate(); } catch { }
+                    try { _ = _settingsManager.SaveSettingsAsync(); } catch { }
                     if (!_suppressAutoSearch)
                         _ = SearchAsync(explicitSearch: true);
                 }
@@ -286,6 +290,16 @@ namespace VPM.Windows
             }
         }
 
+        private string _tags = "All";
+        public string Tags
+        {
+            get => _tags;
+            set
+            {
+                SetProperty(ref _tags, value ?? "All");
+            }
+        }
+
         // Commands
         private readonly RelayCommand _searchCommand;
         public RelayCommand SearchCommand => _searchCommand;
@@ -337,6 +351,7 @@ namespace VPM.Windows
             ErrorText = null;
             try
             {
+                _suppressStateSave = true;
                 var packagesTask = _hubService.LoadPackagesJsonAsync();
                 var filterTask = LoadFilterOptionsAsync();
                 await Task.WhenAll(packagesTask, filterTask);
@@ -349,6 +364,7 @@ namespace VPM.Windows
             }
             finally
             {
+                _suppressStateSave = false;
                 IsLoading = false;
             }
         }
@@ -397,7 +413,15 @@ namespace VPM.Windows
             try
             {
                 StatusText = "Loading filter options...";
-                var options = await _hubService.GetFilterOptionsAsync();
+                var result = await _hubService.GetFilterOptionsResultAsync();
+
+                if (!result.Success)
+                {
+                    Debug.WriteLine($"[HubBrowserViewModel] GetFilterOptions failed: {result.ErrorMessage} {result.Exception}");
+                    StatusText = result.ErrorMessage ?? "Failed to load filter options.";
+                }
+
+                var options = result.Success ? result.Value : await _hubService.GetFilterOptionsAsync();
 
                 Categories.Clear();
                 Categories.Add("All");
@@ -423,10 +447,12 @@ namespace VPM.Windows
                 foreach (var s in SortOptions)
                     SortSecondaryOptions.Add(s);
 
-                StatusText = "Ready";
+                if (result.Success)
+                    StatusText = "Ready";
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"[HubBrowserViewModel] Error loading filter options: {ex}");
                 StatusText = $"Error loading filter options: {ex.Message}";
             }
         }
@@ -451,7 +477,7 @@ namespace VPM.Windows
                 Category = string.IsNullOrWhiteSpace(Category) ? "All" : Category,
                 Creator = string.IsNullOrWhiteSpace(Creator) ? "All" : Creator,
                 PayType = string.IsNullOrWhiteSpace(PayType) ? "All" : PayType,
-                Tags = "All",
+                Tags = string.IsNullOrWhiteSpace(Tags) ? "All" : Tags,
                 Sort = string.IsNullOrWhiteSpace(Sort) ? "Last Update" : Sort,
                 SortSecondary = string.IsNullOrWhiteSpace(SortSecondary) ? "None" : SortSecondary,
                 OnlyDownloadable = OnlyDownloadable
@@ -484,8 +510,24 @@ namespace VPM.Windows
                     TotalPages = response.Pagination?.TotalPages ?? 1;
 
                     var list = response.Resources ?? new List<HubResource>();
-                    foreach (var resource in list)
-                        CheckLibraryStatus(resource);
+                    var evaluated = await Task.Run(() =>
+                    {
+                        var results = new List<(HubResource Resource, bool InLibrary, bool UpdateAvailable)>(list.Count);
+                        foreach (var resource in list)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            var (inLibrary, updateAvailable) = EvaluateLibraryStatus(resource);
+                            results.Add((resource, inLibrary, updateAvailable));
+                        }
+                        return results;
+                    }, token);
+
+                    foreach (var item in evaluated)
+                    {
+                        item.Resource.InLibrary = item.InLibrary;
+                        item.Resource.UpdateAvailable = item.UpdateAvailable;
+                        item.Resource.UpdateMessage = item.UpdateAvailable ? "Update available" : null;
+                    }
 
                     Results.Clear();
                     foreach (var r in list)
@@ -519,6 +561,47 @@ namespace VPM.Windows
             }
         }
 
+        private (bool InLibrary, bool UpdateAvailable) EvaluateLibraryStatus(HubResource resource)
+        {
+            if (resource?.HubFiles == null || resource.HubFiles.Count == 0)
+                return (false, false);
+
+            var inLibrary = false;
+            var updateAvailable = false;
+
+            foreach (var file in resource.HubFiles)
+            {
+                var packageName = file?.PackageName;
+                if (string.IsNullOrEmpty(packageName))
+                    continue;
+
+                var cleanName = packageName.Replace(".var", "", StringComparison.OrdinalIgnoreCase);
+                if (_localPackageNames != null && _localPackageNames.Contains(cleanName))
+                {
+                    inLibrary = true;
+                }
+                else
+                {
+                    var groupName = GetPackageGroupName(cleanName);
+                    if (_localPackageVersions != null && _localPackageVersions.ContainsKey(groupName))
+                        inLibrary = true;
+                }
+
+                var pkgGroupName = GetPackageGroupName(cleanName);
+                if (!updateAvailable && _localPackageVersions != null &&
+                    _localPackageVersions.TryGetValue(pkgGroupName, out var localVersion) && localVersion > 0 &&
+                    _hubService.HasUpdate(pkgGroupName, localVersion))
+                {
+                    updateAvailable = true;
+                }
+
+                if (inLibrary && updateAvailable)
+                    break;
+            }
+
+            return (inLibrary, updateAvailable);
+        }
+
         private void BuildLocalPackageLookups()
         {
             _localPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -542,40 +625,6 @@ namespace VPM.Windows
                         if (!_localPackageVersions.TryGetValue(groupName, out var existing) || version > existing)
                             _localPackageVersions[groupName] = version;
                     }
-                }
-            }
-        }
-
-        private void CheckLibraryStatus(HubResource resource)
-        {
-            if (resource?.HubFiles == null || resource.HubFiles.Count == 0)
-                return;
-
-            foreach (var file in resource.HubFiles)
-            {
-                var packageName = file?.PackageName;
-                if (string.IsNullOrEmpty(packageName))
-                    continue;
-
-                var cleanName = packageName.Replace(".var", "");
-
-                if (_localPackageNames.Contains(cleanName))
-                {
-                    resource.InLibrary = true;
-                }
-                else
-                {
-                    var groupName = GetPackageGroupName(cleanName);
-                    if (_localPackageVersions.ContainsKey(groupName))
-                        resource.InLibrary = true;
-                }
-
-                var pkgGroupName = GetPackageGroupName(cleanName);
-                if (_localPackageVersions.TryGetValue(pkgGroupName, out var localVersion) && localVersion > 0 &&
-                    _hubService.HasUpdate(pkgGroupName, localVersion))
-                {
-                    resource.UpdateAvailable = true;
-                    resource.UpdateMessage = "Update available";
                 }
             }
         }
@@ -605,10 +654,14 @@ namespace VPM.Windows
         {
             try
             {
+                if (_suppressStateSave)
+                    return;
+
                 _settingsManager.UpdateSetting("HubBrowserSearchText", SearchText?.Trim() ?? "");
                 _settingsManager.UpdateSetting("HubBrowserSource", Scope ?? "All");
                 _settingsManager.UpdateSetting("HubBrowserCategory", Category ?? "All");
-                _settingsManager.UpdateSetting("HubBrowserPayType", PayType ?? "All");
+                if (_settingsManager?.Settings != null)
+                    _settingsManager.Settings.HubBrowserPayType = PayType ?? "All";
                 _settingsManager.UpdateSetting("HubBrowserSort", Sort ?? "Last Update");
                 _settingsManager.UpdateSetting("HubBrowserSortSecondary", SortSecondary ?? "None");
                 _settingsManager.UpdateSetting("HubBrowserCreator", Creator ?? "All");
@@ -627,7 +680,8 @@ namespace VPM.Windows
                 SearchText = _settingsManager.GetSetting("HubBrowserSearchText", "") ?? "";
                 Scope = _settingsManager.GetSetting("HubBrowserSource", "All") ?? "All";
                 Category = _settingsManager.GetSetting("HubBrowserCategory", "All") ?? "All";
-                PayType = _settingsManager.GetSetting("HubBrowserPayType", "All") ?? "All";
+                var savedPayType = _settingsManager?.Settings?.HubBrowserPayType ?? "All";
+                PayType = savedPayType;
                 Sort = _settingsManager.GetSetting("HubBrowserSort", "Last Update") ?? "Last Update";
                 SortSecondary = _settingsManager.GetSetting("HubBrowserSortSecondary", "None") ?? "None";
                 Creator = _settingsManager.GetSetting("HubBrowserCreator", "All") ?? "All";

@@ -693,7 +693,7 @@
                             Margin="0,0,4,0"
                             VerticalAlignment="Center"
                             Foreground="{StaticResource DarkText}"
-                            Text="Pricing:" />
+                            Text="Type:" />
                         <ComboBox
                             x:Name="PayTypeFilter"
                             Width="75"
@@ -1067,17 +1067,27 @@
                             Background="Transparent"
                             BorderThickness="0"
                             ItemsSource="{Binding Results}"
-                            SelectedItem="{Binding SelectedResource, Mode=TwoWay}"
                             KeyDown="ResourcesListBox_KeyDown"
                             MouseDoubleClick="ResourcesListBox_MouseDoubleClick"
                             PreviewMouseLeftButtonUp="ResourcesListBox_PreviewMouseLeftButtonUp"
+                            ScrollViewer.CanContentScroll="True"
                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            SelectedItem="{Binding SelectedResource, Mode=TwoWay}"
                             SelectionChanged="ResourcesListBox_SelectionChanged"
-                            SizeChanged="ResourcesListBox_SizeChanged">
+                            VirtualizingPanel.IsVirtualizing="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling">
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <UniformGrid x:Name="ResourcesUniformGrid" Columns="4" />
+                                    <local:VirtualizingWrapPanel
+                                        DetailsHeight="120"
+                                        ItemHeight="340"
+                                        ItemWidth="200"
+                                        MaxItemWidth="320"
+                                        ThumbnailAspectRatio="0.86"
+                                        ThumbnailMaxHeight="280"
+                                        ThumbnailMinHeight="140"
+                                        UseDynamicItemHeight="True" />
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
                             <ListBox.ItemContainerStyle>
@@ -1295,7 +1305,7 @@
                                                     Foreground="#808080"
                                                     Text="{Binding TagLine}"
                                                     TextTrimming="CharacterEllipsis"
-                                                    TextWrapping="Wrap"
+                                                    TextWrapping="NoWrap"
                                                     Visibility="{Binding TagLine, Converter={StaticResource NullToVis}}" />
 
                                                 <!--  Creator with icon  -->

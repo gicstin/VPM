@@ -2,10 +2,11 @@
 bin/
 obj/
 .build/
+_vb/
 
 # Visual Studio
 .vs/
-.vb/
+_vb/
 *.user
 *.suo
 *.sln.docstates
