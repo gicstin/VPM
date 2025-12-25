@@ -69,6 +69,8 @@ namespace VPM.Windows
         private List<string> _selectedTags = new List<string>();
         private bool _isTagsFilterUpdating = false;
 
+        private bool _scrollToTopOnNextResults = false;
+
         private async Task LoadAllTagsAsync()
         {
             try
@@ -410,6 +412,16 @@ namespace VPM.Windows
 
             try
             {
+                _vm.PropertyChanged += HubBrowserViewModel_PropertyChanged_Scroll;
+                _vm.Results.CollectionChanged += Results_CollectionChanged_Scroll;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to subscribe to scroll reset events: {ex}");
+            }
+
+            try
+            {
                 if (_vm != null)
                 {
                     _vm.PropertyChanged += (s, e) =>
@@ -464,6 +476,71 @@ namespace VPM.Windows
             DownloadQueueList.ItemsSource = _downloadQueue;
             
             // Note: OldVersionHandlingDropdown event handler is set in XAML code-behind after InitializeComponent
+        }
+
+        private void HubBrowserViewModel_PropertyChanged_Scroll(object sender, PropertyChangedEventArgs e)
+        {
+            if (string.Equals(e?.PropertyName, nameof(HubBrowserViewModel.CurrentPage), StringComparison.Ordinal))
+            {
+                _scrollToTopOnNextResults = true;
+            }
+        }
+
+        private void Results_CollectionChanged_Scroll(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (!_scrollToTopOnNextResults)
+                return;
+
+            if (_vm?.Results == null || _vm.Results.Count == 0)
+                return;
+
+            _scrollToTopOnNextResults = false;
+
+            Dispatcher.BeginInvoke(new Action(ScrollResultsToTop), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void ScrollResultsToTop()
+        {
+            try
+            {
+                if (ResourcesListBox == null)
+                    return;
+
+                if (_vm?.Results != null && _vm.Results.Count > 0)
+                {
+                    ResourcesListBox.ScrollIntoView(_vm.Results[0]);
+                }
+
+                var scrollViewer = FindVisualChild<ScrollViewer>(ResourcesListBox);
+                scrollViewer?.ScrollToTop();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to scroll results to top: {ex}");
+            }
+        }
+
+        private static T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null)
+                return null;
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                var child = VisualTreeHelper.GetChild(parent, i);
+                if (child is T typedChild)
+                {
+                    return typedChild;
+                }
+
+                var result = FindVisualChild<T>(child);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
         }
 
         private void HubBrowserWindow_SourceInitialized(object sender, EventArgs e)

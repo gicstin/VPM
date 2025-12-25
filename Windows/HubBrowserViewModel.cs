@@ -1,8 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -16,6 +16,7 @@ namespace VPM.Windows
         private readonly HubService _hubService;
         private readonly SettingsManager _settingsManager;
         private readonly Dictionary<string, string> _localPackagePaths;
+        private readonly Dispatcher _uiDispatcher;
 
         private CancellationTokenSource _searchCts;
         private readonly DispatcherTimer _searchDebounceTimer;
@@ -25,6 +26,13 @@ namespace VPM.Windows
         // Pre-computed lookups for fast library status checking
         private HashSet<string> _localPackageNames;
         private Dictionary<string, int> _localPackageVersions;
+
+        private readonly ConcurrentDictionary<string, HubResourceDetail> _resourceDetailCache = new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly object _searchDedupLock = new object();
+        private string _activeSearchKey;
+        private string _lastCompletedSearchKey;
+        private DateTime _lastCompletedSearchUtc = DateTime.MinValue;
 
         public ObservableCollection<HubResource> Results { get; } = new ObservableCollection<HubResource>();
 
@@ -343,6 +351,8 @@ namespace VPM.Windows
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _localPackagePaths = localPackagePaths ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+            _uiDispatcher = Dispatcher.CurrentDispatcher;
+
             _hubService.StatusChanged += (s, status) => StatusText = status;
 
             _searchCommand = new RelayCommand(() => _ = SearchAsync(explicitSearch: true), () => !IsLoading);
@@ -359,8 +369,6 @@ namespace VPM.Windows
                 CurrentPage = 1;
                 _ = SearchAsync(explicitSearch: false);
             };
-
-            BuildLocalPackageLookups();
         }
 
         public async Task InitializeAsync()
@@ -370,6 +378,7 @@ namespace VPM.Windows
             try
             {
                 _suppressStateSave = true;
+
                 var packagesTask = _hubService.LoadPackagesJsonAsync();
                 var filterTask = LoadFilterOptionsAsync();
                 await Task.WhenAll(packagesTask, filterTask);
@@ -435,7 +444,6 @@ namespace VPM.Windows
 
                 if (!result.Success)
                 {
-                    Debug.WriteLine($"[HubBrowserViewModel] GetFilterOptions failed: {result.ErrorMessage} {result.Exception}");
                     StatusText = result.ErrorMessage ?? "Failed to load filter options.";
                 }
 
@@ -470,7 +478,6 @@ namespace VPM.Windows
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[HubBrowserViewModel] Error loading filter options: {ex}");
                 StatusText = $"Error loading filter options: {ex.Message}";
             }
         }
@@ -502,6 +509,11 @@ namespace VPM.Windows
             };
         }
 
+        private static string BuildSearchKey(HubSearchParams p)
+        {
+            return $"{p?.Page}|{p?.PerPage}|{p?.Location}|{p?.Search}|{p?.PayType}|{p?.Category}|{p?.Creator}|{p?.Tags}|{p?.Sort}|{p?.SortSecondary}|{p?.OnlyDownloadable}";
+        }
+
         public async Task SearchAsync(bool explicitSearch)
         {
             _searchCts?.Cancel();
@@ -518,6 +530,26 @@ namespace VPM.Windows
                 StatusText = explicitSearch && showOverlay ? "Loading..." : "Updating...";
 
                 var searchParams = BuildSearchParams();
+
+                var searchKey = BuildSearchKey(searchParams);
+                lock (_searchDedupLock)
+                {
+                    // If the same search is already running, don't start it again.
+                    if (!string.IsNullOrEmpty(_activeSearchKey) && string.Equals(_activeSearchKey, searchKey, StringComparison.Ordinal))
+                    {
+                        return;
+                    }
+
+                    // If the same search just completed very recently, skip accidental double-invocation.
+                    if (!string.IsNullOrEmpty(_lastCompletedSearchKey) && string.Equals(_lastCompletedSearchKey, searchKey, StringComparison.Ordinal) &&
+                        (DateTime.UtcNow - _lastCompletedSearchUtc) < TimeSpan.FromSeconds(2))
+                    {
+                        return;
+                    }
+
+                    _activeSearchKey = searchKey;
+                }
+
                 var response = await _hubService.SearchResourcesAsync(searchParams, token);
 
                 token.ThrowIfCancellationRequested();
@@ -528,30 +560,17 @@ namespace VPM.Windows
                     TotalPages = response.Pagination?.TotalPages ?? 1;
 
                     var list = response.Resources ?? new List<HubResource>();
-                    var evaluated = new List<(HubResource Resource, bool InLibrary, bool UpdateAvailable)>(list.Count);
-                    foreach (var resource in list)
-                    {
-                        token.ThrowIfCancellationRequested();
-                        var (inLibrary, updateAvailable) = await EvaluateLibraryStatusAsync(resource, token);
-                        evaluated.Add((resource, inLibrary, updateAvailable));
-                    }
-
-                    foreach (var item in evaluated)
-                    {
-                        item.Resource.InLibrary = item.InLibrary;
-                        item.Resource.UpdateAvailable = item.UpdateAvailable;
-                        item.Resource.UpdateMessage = item.UpdateAvailable ? "Update available" : null;
-                    }
-
                     Results.Clear();
                     foreach (var r in list)
                         Results.Add(r);
 
-                    HasEmptyResults = TotalResources == 0;
-                    StatusText = "Ready";
                     _hasLoadedResultsOnce = true;
 
-                    SaveState();
+                    // Don't block the page render on expensive detail/status evaluation.
+                    // Compute flags in the background and apply them progressively.
+                    _ = EvaluateStatusesAsync(list, token);
+
+                    HasEmptyResults = TotalResources == 0;
                 }
                 else
                 {
@@ -571,7 +590,61 @@ namespace VPM.Windows
             }
             finally
             {
+                lock (_searchDedupLock)
+                {
+                    _lastCompletedSearchKey = _activeSearchKey;
+                    _lastCompletedSearchUtc = DateTime.UtcNow;
+                    _activeSearchKey = null;
+                }
                 IsLoading = false;
+            }
+        }
+
+        private async Task EvaluateStatusesAsync(IReadOnlyList<HubResource> resources, CancellationToken token)
+        {
+            if (resources == null || resources.Count == 0)
+                return;
+
+            var maxConcurrency = 6;
+            try
+            {
+                using (var gate = new SemaphoreSlim(maxConcurrency))
+                {
+                    var tasks = new List<Task>(resources.Count);
+                    foreach (var resource in resources)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            await gate.WaitAsync(token).ConfigureAwait(false);
+                            try
+                            {
+                                token.ThrowIfCancellationRequested();
+                                var (inLibrary, updateAvailable) = await EvaluateLibraryStatusAsync(resource, token).ConfigureAwait(false);
+
+                                // Apply UI-bound updates on the dispatcher thread
+                                _uiDispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    resource.InLibrary = inLibrary;
+                                    resource.UpdateAvailable = updateAvailable;
+                                    resource.UpdateMessage = updateAvailable ? "Update available" : null;
+                                }), DispatcherPriority.Background);
+                            }
+                            finally
+                            {
+                                gate.Release();
+                            }
+                        }, token));
+                    }
+
+                    await Task.WhenAll(tasks);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // ignored
+            }
+            catch (Exception ex)
+            {
             }
         }
 
@@ -585,7 +658,18 @@ namespace VPM.Windows
             {
                 try
                 {
-                    detail = await _hubService.GetResourceDetailAsync(resource.ResourceId, isPackageName: false, cancellationToken);
+                    if (_resourceDetailCache.TryGetValue(resource.ResourceId, out var cached) && cached != null)
+                    {
+                        detail = cached;
+                    }
+                    else
+                    {
+                        detail = await _hubService.GetResourceDetailAsync(resource.ResourceId, isPackageName: false, cancellationToken).ConfigureAwait(false);
+                        if (detail != null)
+                        {
+                            _resourceDetailCache[resource.ResourceId] = detail;
+                        }
+                    }
                 }
                 catch (OperationCanceledException)
                 {

@@ -67,6 +67,9 @@ namespace VPM.Services
         private readonly Dictionary<string, (HubSearchResponse Response, DateTime CacheTime)> _searchCache = new();
         private readonly int _searchCacheMaxSize = 20;
         private readonly TimeSpan _searchCacheExpiry = TimeSpan.FromMinutes(5);
+        private readonly object _searchCacheLock = new object();
+
+        private readonly HubSearchCache _hubSearchCache;
 
         // Binary cache for packages.json with HTTP conditional request support
         private readonly HubResourcesCache _hubResourcesCache;
@@ -94,6 +97,11 @@ namespace VPM.Services
         /// </summary>
         public event EventHandler AllDownloadsCompleted;
 
+        private readonly string _cacheDirectory;
+        private readonly string _resourceDetailCacheDirectory;
+        private readonly object _resourceDetailDiskCacheLock = new object();
+        private readonly TimeSpan _resourceDetailDiskCacheTtl = TimeSpan.FromDays(7);
+
         public HubService()
         {
             var handler = new HttpClientHandler
@@ -116,6 +124,74 @@ namespace VPM.Services
             
             // Initialize the binary cache for Hub resources
             _hubResourcesCache = new HubResourcesCache(_httpClient);
+
+            _hubSearchCache = new HubSearchCache(ttl: TimeSpan.FromMinutes(10), maxEntries: 200);
+
+            _cacheDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VPM", "Cache");
+            _resourceDetailCacheDirectory = Path.Combine(_cacheDirectory, "HubResourceDetails");
+            try
+            {
+                if (!Directory.Exists(_resourceDetailCacheDirectory))
+                    Directory.CreateDirectory(_resourceDetailCacheDirectory);
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+
+        private string GetResourceDetailCachePath(string cacheKey)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey))
+                return null;
+
+            var safe = new string(cacheKey.Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch).ToArray());
+            return Path.Combine(_resourceDetailCacheDirectory, safe + ".json");
+        }
+
+        private bool TryLoadResourceDetailFromDisk(string cacheKey, out string json)
+        {
+            json = null;
+            try
+            {
+                var path = GetResourceDetailCachePath(cacheKey);
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return false;
+
+                var lastWrite = File.GetLastWriteTimeUtc(path);
+                if (DateTime.UtcNow - lastWrite > _resourceDetailDiskCacheTtl)
+                    return false;
+
+                lock (_resourceDetailDiskCacheLock)
+                {
+                    json = File.ReadAllText(path, Encoding.UTF8);
+                }
+                return !string.IsNullOrWhiteSpace(json);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void SaveResourceDetailToDisk(string cacheKey, string json)
+        {
+            if (string.IsNullOrWhiteSpace(cacheKey) || string.IsNullOrWhiteSpace(json))
+                return;
+
+            try
+            {
+                var path = GetResourceDetailCachePath(cacheKey);
+                if (string.IsNullOrEmpty(path))
+                    return;
+
+                lock (_resourceDetailDiskCacheLock)
+                {
+                    File.WriteAllText(path, json, Encoding.UTF8);
+                }
+            }
+            catch (Exception ex)
+            {
+            }
         }
 
         #region Search & Browse
@@ -171,8 +247,6 @@ namespace VPM.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[HubService] GetFilterOptionsResultAsync failed: {ex}");
-
                     // Return cached version if available, even if expired, but still report failure
                     if (_cachedFilterOptions != null)
                         return ServiceResult<HubFilterOptions>.Fail("Failed to refresh Hub filter options; using cached options.", ex);
@@ -191,11 +265,31 @@ namespace VPM.Services
             var cacheKey = BuildSearchCacheKey(searchParams);
             
             // Check cache first
-            if (_searchCache.TryGetValue(cacheKey, out var cached) && 
-                DateTime.Now - cached.CacheTime < _searchCacheExpiry)
+            lock (_searchCacheLock)
             {
-                PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"Cached - Page {searchParams.Page}");
-                return cached.Response;
+                if (_searchCache.TryGetValue(cacheKey, out var cached) &&
+                    DateTime.Now - cached.CacheTime < _searchCacheExpiry)
+                {
+                    var ageMs = (DateTime.Now - cached.CacheTime).TotalMilliseconds;
+                    PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"Cached - Page {searchParams.Page}");
+                    return cached.Response;
+                }
+            }
+
+            try
+            {
+                if (_hubSearchCache != null && _hubSearchCache.TryGet(cacheKey, out var diskCached) && diskCached != null)
+                {
+                    lock (_searchCacheLock)
+                    {
+                        _searchCache[cacheKey] = (diskCached, DateTime.Now);
+                    }
+                    PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"DiskCached - Page {searchParams.Page}");
+                    return diskCached;
+                }
+            }
+            catch (Exception ex)
+            {
             }
             
             using (var timer = PerformanceMonitor.StartOperation("SearchResourcesAsync")
@@ -246,13 +340,24 @@ namespace VPM.Services
                 // Cache the result
                 if (response != null)
                 {
-                    // Evict oldest entries if cache is full
-                    if (_searchCache.Count >= _searchCacheMaxSize)
+                    lock (_searchCacheLock)
                     {
-                        var oldest = _searchCache.OrderBy(x => x.Value.CacheTime).First().Key;
-                        _searchCache.Remove(oldest);
+                        // Evict oldest entries if cache is full
+                        if (_searchCache.Count >= _searchCacheMaxSize)
+                        {
+                            var oldest = _searchCache.OrderBy(x => x.Value.CacheTime).First().Key;
+                            _searchCache.Remove(oldest);
+                        }
+                        _searchCache[cacheKey] = (response, DateTime.Now);
                     }
-                    _searchCache[cacheKey] = (response, DateTime.Now);
+
+                    try
+                    {
+                        _hubSearchCache?.Store(cacheKey, response);
+                    }
+                    catch
+                    {
+                    }
                 }
                 
                 return response;
@@ -272,7 +377,18 @@ namespace VPM.Services
         /// </summary>
         public void ClearSearchCache()
         {
-            _searchCache.Clear();
+            lock (_searchCacheLock)
+            {
+                _searchCache.Clear();
+            }
+
+            try
+            {
+                _hubSearchCache?.Clear();
+            }
+            catch
+            {
+            }
         }
 
         /// <summary>
@@ -289,6 +405,27 @@ namespace VPM.Services
             {
                 PerformanceMonitor.RecordOperation("GetResourceDetailAsync", 0, $"Cached - {cacheKey}");
                 return cached.Detail;
+            }
+
+            try
+            {
+                if (TryLoadResourceDetailFromDisk(cacheKey, out var cachedJson))
+                {
+                    var detailFromDisk = JsonSerializer.Deserialize<HubResourceDetail>(cachedJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (detailFromDisk != null)
+                    {
+                        _resourceDetailCache[cacheKey] = (detailFromDisk, DateTime.Now);
+                        PerformanceMonitor.RecordOperation("GetResourceDetailAsync", 0, $"DiskCached - {cacheKey}");
+                        return detailFromDisk;
+                    }
+                }
+            }
+            catch
+            {
             }
             
             using (var timer = PerformanceMonitor.StartOperation("GetResourceDetailAsync")
@@ -327,6 +464,8 @@ namespace VPM.Services
                 // Cache the result
                 if (detail != null)
                 {
+                    SaveResourceDetailToDisk(cacheKey, jsonResponse);
+
                     // Evict oldest entries if cache is full
                     if (_resourceDetailCache.Count >= _resourceDetailCacheMaxSize)
                     {
@@ -503,7 +642,6 @@ namespace VPM.Services
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[HubService] RefreshCacheInBackgroundAsync failed: {ex}");
             }
         }
 
@@ -748,7 +886,6 @@ namespace VPM.Services
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[HubService] Download queue processing error: {ex.Message}");
                     }
                 });
             }
