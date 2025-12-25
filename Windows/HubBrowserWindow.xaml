@@ -1070,6 +1070,7 @@
                             KeyDown="ResourcesListBox_KeyDown"
                             MouseDoubleClick="ResourcesListBox_MouseDoubleClick"
                             PreviewMouseLeftButtonUp="ResourcesListBox_PreviewMouseLeftButtonUp"
+                            RequestBringIntoView="ResourcesListBox_RequestBringIntoView"
                             ScrollViewer.CanContentScroll="True"
                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                             ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -1092,6 +1093,8 @@
                             </ListBox.ItemsPanel>
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
+                                    <Setter Property="Focusable" Value="False" />
+                                    <Setter Property="IsTabStop" Value="False" />
                                     <Setter Property="Padding" Value="0" />
                                     <Setter Property="Margin" Value="0" />
                                     <Setter Property="Background" Value="Transparent" />

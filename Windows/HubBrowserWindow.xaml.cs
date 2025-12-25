@@ -70,6 +70,7 @@ namespace VPM.Windows
         private bool _isTagsFilterUpdating = false;
 
         private bool _scrollToTopOnNextResults = false;
+        private bool _allowResultsBringIntoView = false;
 
         private async Task LoadAllTagsAsync()
         {
@@ -508,6 +509,7 @@ namespace VPM.Windows
 
                 if (_vm?.Results != null && _vm.Results.Count > 0)
                 {
+                    _allowResultsBringIntoView = true;
                     ResourcesListBox.ScrollIntoView(_vm.Results[0]);
                 }
 
@@ -517,6 +519,10 @@ namespace VPM.Windows
             catch (Exception ex)
             {
                 Debug.WriteLine($"[HubBrowserWindow] Failed to scroll results to top: {ex}");
+            }
+            finally
+            {
+                _allowResultsBringIntoView = false;
             }
         }
 
@@ -1584,6 +1590,33 @@ namespace VPM.Windows
             // Selection alone should not auto-open details; activation is Enter or double-click.
         }
 
+        private void ResourcesListBox_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+        {
+            // WPF will auto-scroll the ListBox to fully show the selected item.
+            // This is undesirable for the Hub grid; we only want to scroll when changing pages.
+            if (_allowResultsBringIntoView)
+                return;
+
+            // Some templates raise this from nested elements; suppress whenever the source is within an item.
+            if (e?.OriginalSource is DependencyObject dep && FindVisualParent<ListBoxItem>(dep) != null)
+            {
+                e.Handled = true;
+            }
+        }
+
+        private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            var current = child;
+            while (current != null)
+            {
+                if (current is T typed)
+                    return typed;
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
         private void ResourcesListBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
@@ -1604,6 +1637,18 @@ namespace VPM.Windows
             {
                 return;
             }
+
+            var clickedItem = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+            if (clickedItem?.DataContext is HubResource clickedResource)
+            {
+                if (ResourcesListBox != null)
+                    ResourcesListBox.SelectedItem = clickedResource;
+
+                ShowResourceDetail(clickedResource);
+                e.Handled = true;
+                return;
+            }
+
             if (ResourcesListBox?.SelectedItem is HubResource resource)
             {
                 ShowResourceDetail(resource);
@@ -1636,6 +1681,17 @@ namespace VPM.Windows
 
         private void ResourcesListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            var clickedItem = FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject);
+            if (clickedItem?.DataContext is HubResource clickedResource)
+            {
+                if (ResourcesListBox != null)
+                    ResourcesListBox.SelectedItem = clickedResource;
+
+                ShowResourceDetail(clickedResource);
+                e.Handled = true;
+                return;
+            }
+
             if (ResourcesListBox.SelectedItem is HubResource resource)
             {
                 ShowResourceDetail(resource);
