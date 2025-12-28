@@ -40,6 +40,7 @@ namespace VPM.Services
         // Cached data
         private Dictionary<string, string> _packageIdToResourceId;
         private Dictionary<string, int> _packageGroupToLatestVersion;
+        private List<string> _cachedCreators;
         private DateTime _lastLoadTime = DateTime.MinValue;
         private bool _isLoaded = false;
         
@@ -158,7 +159,7 @@ namespace VPM.Services
         /// <summary>
         /// Loads the cache from disk. Returns true if cache was loaded successfully.
         /// </summary>
-        public bool LoadFromDisk()
+        public bool LoadFromDisk(bool ignoreExpiration = false)
         {
             if (!File.Exists(_cacheFilePath))
             {
@@ -193,7 +194,7 @@ namespace VPM.Services
                 _cacheFileTime = new DateTime(cacheTicks);
                 
                 // Check if cache is too old
-                if (DateTime.Now - _cacheFileTime > _maxCacheAge)
+                if (!ignoreExpiration && DateTime.Now - _cacheFileTime > _maxCacheAge)
                 {
                     return false;
                 }
@@ -205,31 +206,49 @@ namespace VPM.Services
                     return false;
                 }
                 
+                // Build dictionaries locally first to minimize lock time
+                var newPackageIdToResourceId = new Dictionary<string, string>(packageCount, StringComparer.OrdinalIgnoreCase);
+                var newPackageGroupToLatestVersion = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                
+                for (int i = 0; i < packageCount; i++)
+                {
+                    var packageName = reader.ReadString();
+                    var resourceId = StringPool.Intern(reader.ReadString());
+                    
+                    newPackageIdToResourceId[packageName] = resourceId;
+                    
+                    // Build version index
+                    var version2 = ExtractVersion(packageName);
+                    var groupName = GetPackageGroupName(packageName);
+                    
+                    if (version2 >= 0 && !string.IsNullOrEmpty(groupName))
+                    {
+                        if (!newPackageGroupToLatestVersion.TryGetValue(groupName, out var currentLatest) || version2 > currentLatest)
+                        {
+                            newPackageGroupToLatestVersion[groupName] = version2;
+                        }
+                    }
+                }
+
+                // Pre-compute creators list while we have the data
+                var creatorsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var name in newPackageIdToResourceId.Keys)
+                {
+                    var firstDot = name.IndexOf('.');
+                    if (firstDot > 0)
+                    {
+                        var creator = name.Substring(0, firstDot);
+                        creatorsSet.Add(creator);
+                    }
+                }
+                var newCreators = creatorsSet.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+                
                 _cacheLock.EnterWriteLock();
                 try
                 {
-                    _packageIdToResourceId = new Dictionary<string, string>(packageCount, StringComparer.OrdinalIgnoreCase);
-                    _packageGroupToLatestVersion = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                    
-                    for (int i = 0; i < packageCount; i++)
-                    {
-                        var packageName = reader.ReadString();
-                        var resourceId = reader.ReadString();
-                        
-                        _packageIdToResourceId[packageName] = resourceId;
-                        
-                        // Build version index
-                        var version2 = ExtractVersion(packageName);
-                        var groupName = GetPackageGroupName(packageName);
-                        
-                        if (version2 >= 0 && !string.IsNullOrEmpty(groupName))
-                        {
-                            if (!_packageGroupToLatestVersion.TryGetValue(groupName, out var currentLatest) || version2 > currentLatest)
-                            {
-                                _packageGroupToLatestVersion[groupName] = version2;
-                            }
-                        }
-                    }
+                    _packageIdToResourceId = newPackageIdToResourceId;
+                    _packageGroupToLatestVersion = newPackageGroupToLatestVersion;
+                    _cachedCreators = newCreators;
                     
                     _isLoaded = true;
                     _lastLoadTime = DateTime.Now;
@@ -254,9 +273,9 @@ namespace VPM.Services
         /// <summary>
         /// Loads the cache asynchronously from disk
         /// </summary>
-        public Task<bool> LoadFromDiskAsync()
+        public Task<bool> LoadFromDiskAsync(bool ignoreExpiration = false)
         {
-            return Task.Run(() => LoadFromDisk());
+            return Task.Run(() => LoadFromDisk(ignoreExpiration));
         }
         
         /// <summary>
@@ -453,6 +472,16 @@ namespace VPM.Services
                     _conditionalHits++;
                     _lastLoadTime = DateTime.Now;
                     
+                    // Update cache file time in memory to prevent immediate refresh loop
+                    // This treats the confirmed valid data as "fresh"
+                    _cacheFileTime = DateTime.Now;
+
+                    // If not loaded (e.g. because it was expired), load it now!
+                    if (!_isLoaded)
+                    {
+                        LoadFromDisk(ignoreExpiration: true);
+                    }
+                    
                     // Estimate bytes saved (typical packages.json is ~2-5MB)
                     _bytesSaved += _packageIdToResourceId.Count * 50; // Rough estimate
                     
@@ -462,21 +491,18 @@ namespace VPM.Services
                 
                 response.EnsureSuccessStatusCode();
                 
-                // Read the response
-                var jsonContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var contentLength = jsonContent.Length;
-                _bytesDownloaded += contentLength;
+                // Read the response stream instead of loading full string into memory
+                using var jsonStream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 
-                // Parse JSON
-                var packagesJson = JsonDocument.Parse(jsonContent);
+                // Build dictionaries locally first
+                var newPackageIdToResourceId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var newPackageGroupToLatestVersion = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 
-                _cacheLock.EnterWriteLock();
-                try
+                // Use Task.Run for CPU-bound JSON parsing to avoid blocking UI thread if called from UI context
+                var result = await Task.Run(() => 
                 {
-                    _packageIdToResourceId = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    _packageGroupToLatestVersion = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                    
-                    foreach (var prop in packagesJson.RootElement.EnumerateObject())
+                    using var doc = JsonDocument.Parse(jsonStream);
+                    foreach (var prop in doc.RootElement.EnumerateObject())
                     {
                         var packageName = prop.Name.Replace(".var", "");
                         
@@ -484,18 +510,18 @@ namespace VPM.Services
                         string resourceId;
                         if (prop.Value.ValueKind == JsonValueKind.String)
                         {
-                            resourceId = prop.Value.GetString();
+                            resourceId = StringPool.Intern(prop.Value.GetString());
                         }
                         else if (prop.Value.ValueKind == JsonValueKind.Number)
                         {
-                            resourceId = prop.Value.GetRawText();
+                            resourceId = StringPool.Intern(prop.Value.GetRawText());
                         }
                         else
                         {
-                            resourceId = prop.Value.ToString();
+                            resourceId = StringPool.Intern(prop.Value.ToString());
                         }
                         
-                        _packageIdToResourceId[packageName] = resourceId;
+                        newPackageIdToResourceId[packageName] = resourceId;
                         
                         // Build version index
                         var version = ExtractVersion(packageName);
@@ -503,12 +529,35 @@ namespace VPM.Services
                         
                         if (version >= 0 && !string.IsNullOrEmpty(groupName))
                         {
-                            if (!_packageGroupToLatestVersion.TryGetValue(groupName, out var currentLatest) || version > currentLatest)
+                            if (!newPackageGroupToLatestVersion.TryGetValue(groupName, out var currentLatest) || version > currentLatest)
                             {
-                                _packageGroupToLatestVersion[groupName] = version;
+                                newPackageGroupToLatestVersion[groupName] = version;
                             }
                         }
                     }
+                    
+                    // Pre-compute creators list
+                    var creatorsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var name in newPackageIdToResourceId.Keys)
+                    {
+                        var firstDot = name.IndexOf('.');
+                        if (firstDot > 0)
+                        {
+                            var creator = name.Substring(0, firstDot);
+                            creatorsSet.Add(creator);
+                        }
+                    }
+                    return (newPackageIdToResourceId, newPackageGroupToLatestVersion, creatorsSet.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList());
+                }, cancellationToken);
+
+                var (newPackageIdMap, newVersionMap, newCreatorsList) = result;
+
+                _cacheLock.EnterWriteLock();
+                try
+                {
+                    _packageIdToResourceId = newPackageIdMap;
+                    _packageGroupToLatestVersion = newVersionMap;
+                    _cachedCreators = newCreatorsList;
                     
                     _isLoaded = true;
                     _lastLoadTime = DateTime.Now;
@@ -556,10 +605,15 @@ namespace VPM.Services
             if (!_isLoaded)
                 return true;
             
-            if (_lastLoadTime == DateTime.MinValue)
+            // If we haven't checked with server/loaded for a while
+            if (DateTime.Now - _lastLoadTime > _staleCheckInterval)
                 return true;
             
-            return DateTime.Now - _lastLoadTime > _staleCheckInterval;
+            // If the cache data itself is old, we should verify it
+            if (DateTime.Now - _cacheFileTime > _staleCheckInterval)
+                return true;
+            
+            return false;
         }
         
         #endregion
@@ -625,6 +679,12 @@ namespace VPM.Services
             _cacheLock.EnterReadLock();
             try
             {
+                if (_cachedCreators != null)
+                {
+                    // Return a copy to be safe, or just the list if we treat it as immutable
+                    return new List<string>(_cachedCreators);
+                }
+
                 if (_packageIdToResourceId == null || _packageIdToResourceId.Count == 0)
                     return new List<string>();
                 
@@ -1190,6 +1250,7 @@ namespace VPM.Services
                 {
                     _packageIdToResourceId.Clear();
                     _packageGroupToLatestVersion.Clear();
+                    _cachedCreators = null;
                     _imageCache.Clear();
                     _isLoaded = false;
                     _lastLoadTime = DateTime.MinValue;
@@ -1265,18 +1326,18 @@ namespace VPM.Services
         
         private static int ExtractVersion(string packageName)
         {
-            var name = packageName;
+            var nameSpan = packageName.AsSpan();
             
-            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
+            if (nameSpan.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                nameSpan = nameSpan.Slice(0, nameSpan.Length - 4);
             
-            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+            if (nameSpan.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
                 return -1;
             
-            var lastDot = name.LastIndexOf('.');
+            var lastDot = nameSpan.LastIndexOf('.');
             if (lastDot > 0)
             {
-                var afterDot = name.Substring(lastDot + 1);
+                var afterDot = nameSpan.Slice(lastDot + 1);
                 if (int.TryParse(afterDot, out var version))
                     return version;
             }
@@ -1286,23 +1347,23 @@ namespace VPM.Services
         
         private static string GetPackageGroupName(string packageName)
         {
-            var name = packageName;
+            var nameSpan = packageName.AsSpan();
             
-            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
+            if (nameSpan.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                nameSpan = nameSpan.Slice(0, nameSpan.Length - 4);
             
-            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 7);
+            if (nameSpan.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
+                nameSpan = nameSpan.Slice(0, nameSpan.Length - 7);
             
-            var lastDot = name.LastIndexOf('.');
+            var lastDot = nameSpan.LastIndexOf('.');
             if (lastDot > 0)
             {
-                var afterDot = name.Substring(lastDot + 1);
+                var afterDot = nameSpan.Slice(lastDot + 1);
                 if (int.TryParse(afterDot, out _))
-                    return name.Substring(0, lastDot);
+                    return StringPool.Intern(nameSpan.Slice(0, lastDot).ToString());
             }
             
-            return name;
+            return StringPool.Intern(nameSpan.ToString());
         }
         
         #endregion

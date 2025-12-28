@@ -75,10 +75,7 @@ namespace VPM.Services
         private readonly HubResourcesCache _hubResourcesCache;
         private bool _cacheInitialized = false;
         
-        // In-memory cache references (populated from HubResourcesCache)
-        private Dictionary<string, string> _packageIdToResourceId;
-        private Dictionary<string, int> _packageGroupToLatestVersion;
-        private DateTime _packagesCacheTime = DateTime.MinValue;
+        // In-memory cache references (delegated to HubResourcesCache)
         private readonly TimeSpan _packagesCacheExpiry = TimeSpan.FromMinutes(30); // Reduced since we use conditional requests
 
         // Download queue management
@@ -101,6 +98,10 @@ namespace VPM.Services
         private readonly string _resourceDetailCacheDirectory;
         private readonly object _resourceDetailDiskCacheLock = new object();
         private readonly TimeSpan _resourceDetailDiskCacheTtl = TimeSpan.FromDays(7);
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
 
         public HubService()
         {
@@ -148,28 +149,24 @@ namespace VPM.Services
             return Path.Combine(_resourceDetailCacheDirectory, safe + ".json");
         }
 
-        private bool TryLoadResourceDetailFromDisk(string cacheKey, out string json)
+        private async Task<HubResourceDetail> TryLoadResourceDetailFromDiskAsync(string cacheKey)
         {
-            json = null;
             try
             {
                 var path = GetResourceDetailCachePath(cacheKey);
                 if (string.IsNullOrEmpty(path) || !File.Exists(path))
-                    return false;
+                    return null;
 
                 var lastWrite = File.GetLastWriteTimeUtc(path);
                 if (DateTime.UtcNow - lastWrite > _resourceDetailDiskCacheTtl)
-                    return false;
+                    return null;
 
-                lock (_resourceDetailDiskCacheLock)
-                {
-                    json = File.ReadAllText(path, Encoding.UTF8);
-                }
-                return !string.IsNullOrWhiteSpace(json);
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                return await JsonSerializer.DeserializeAsync<HubResourceDetail>(stream, _jsonOptions);
             }
             catch
             {
-                return false;
+                return null;
             }
         }
 
@@ -227,10 +224,7 @@ namespace VPM.Services
                     var requestJson = request.ToJsonString();
 
                     var response = await PostRequestRawAsync(requestJson, cancellationToken);
-                    var options = JsonSerializer.Deserialize<HubFilterOptions>(response, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
+                    var options = JsonSerializer.Deserialize<HubFilterOptions>(response, _jsonOptions);
 
                     if (options == null)
                         return ServiceResult<HubFilterOptions>.Fail("Hub returned empty filter options.");
@@ -257,6 +251,39 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Try to get a cached search response for the given parameters, ignoring expiration if requested.
+        /// </summary>
+        public HubSearchResponse TryGetCachedSearch(HubSearchParams searchParams, bool ignoreExpiration)
+        {
+            var cacheKey = BuildSearchCacheKey(searchParams);
+
+            // Check memory cache first
+            lock (_searchCacheLock)
+            {
+                if (_searchCache.TryGetValue(cacheKey, out var cached))
+                {
+                    // If ignoring expiration or cache is fresh
+                    if (ignoreExpiration || DateTime.Now - cached.CacheTime < _searchCacheExpiry)
+                    {
+                        return cached.Response;
+                    }
+                }
+            }
+
+            // Check disk cache
+            if (_hubSearchCache != null && _hubSearchCache.TryGet(cacheKey, out var diskCached, ignoreExpiration) && diskCached != null)
+            {
+                lock (_searchCacheLock)
+                {
+                    _searchCache[cacheKey] = (diskCached, DateTime.Now);
+                }
+                return diskCached;
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Search for resources on the Hub
         /// </summary>
         public async Task<HubSearchResponse> SearchResourcesAsync(HubSearchParams searchParams, CancellationToken cancellationToken = default)
@@ -264,32 +291,12 @@ namespace VPM.Services
             // Build cache key from search params
             var cacheKey = BuildSearchCacheKey(searchParams);
             
-            // Check cache first
-            lock (_searchCacheLock)
+            // Check cache first (fresh only)
+            var cached = TryGetCachedSearch(searchParams, ignoreExpiration: false);
+            if (cached != null)
             {
-                if (_searchCache.TryGetValue(cacheKey, out var cached) &&
-                    DateTime.Now - cached.CacheTime < _searchCacheExpiry)
-                {
-                    var ageMs = (DateTime.Now - cached.CacheTime).TotalMilliseconds;
-                    PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"Cached - Page {searchParams.Page}");
-                    return cached.Response;
-                }
-            }
-
-            try
-            {
-                if (_hubSearchCache != null && _hubSearchCache.TryGet(cacheKey, out var diskCached) && diskCached != null)
-                {
-                    lock (_searchCacheLock)
-                    {
-                        _searchCache[cacheKey] = (diskCached, DateTime.Now);
-                    }
-                    PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"DiskCached - Page {searchParams.Page}");
-                    return diskCached;
-                }
-            }
-            catch (Exception)
-            {
+                PerformanceMonitor.RecordOperation("SearchResourcesAsync", 0, $"Cached - Page {searchParams.Page}");
+                return cached;
             }
             
             using (var timer = PerformanceMonitor.StartOperation("SearchResourcesAsync")
@@ -409,19 +416,12 @@ namespace VPM.Services
 
             try
             {
-                if (TryLoadResourceDetailFromDisk(cacheKey, out var cachedJson))
+                var detailFromDisk = await TryLoadResourceDetailFromDiskAsync(cacheKey);
+                if (detailFromDisk != null)
                 {
-                    var detailFromDisk = JsonSerializer.Deserialize<HubResourceDetail>(cachedJson, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    if (detailFromDisk != null)
-                    {
-                        _resourceDetailCache[cacheKey] = (detailFromDisk, DateTime.Now);
-                        PerformanceMonitor.RecordOperation("GetResourceDetailAsync", 0, $"DiskCached - {cacheKey}");
-                        return detailFromDisk;
-                    }
+                    _resourceDetailCache[cacheKey] = (detailFromDisk, DateTime.Now);
+                    PerformanceMonitor.RecordOperation("GetResourceDetailAsync", 0, $"DiskCached - {cacheKey}");
+                    return detailFromDisk;
                 }
             }
             catch
@@ -456,10 +456,7 @@ namespace VPM.Services
                 }
 
                 // Deserialize directly as HubResourceDetail since fields are at root
-                var detail = JsonSerializer.Deserialize<HubResourceDetail>(jsonResponse, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var detail = JsonSerializer.Deserialize<HubResourceDetail>(jsonResponse, _jsonOptions);
 
                 // Cache the result
                 if (detail != null)
@@ -547,7 +544,7 @@ namespace VPM.Services
         public async Task<bool> LoadPackagesJsonAsync(bool forceRefresh = false, CancellationToken cancellationToken = default)
         {
             // Check if in-memory cache is still valid
-            if (!forceRefresh && _packageIdToResourceId != null && DateTime.Now - _packagesCacheTime < _packagesCacheExpiry)
+            if (!forceRefresh && _cacheInitialized && _hubResourcesCache.IsLoaded && !_hubResourcesCache.NeedsRefresh())
                 return true;
 
             try
@@ -559,16 +556,13 @@ namespace VPM.Services
                 {
                     StatusChanged?.Invoke(this, "Loading Hub packages from cache...");
                     
-                    if (_hubResourcesCache.LoadFromDisk())
+                    if (await _hubResourcesCache.LoadFromDiskAsync())
                     {
-                        // Cache loaded successfully, populate in-memory dictionaries
-                        _packageIdToResourceId = _hubResourcesCache.GetPackageIdToResourceId();
-                        _packageGroupToLatestVersion = _hubResourcesCache.GetPackageGroupToLatestVersion();
-                        _packagesCacheTime = DateTime.Now;
+                        // Cache loaded successfully
                         _cacheInitialized = true;
                         
                         sw.Stop();
-                        StatusChanged?.Invoke(this, $"Loaded {_packageIdToResourceId.Count} packages from cache ({sw.ElapsedMilliseconds}ms)");
+                        StatusChanged?.Invoke(this, $"Loaded {_hubResourcesCache.PackageCount} packages from cache ({sw.ElapsedMilliseconds}ms)");
                         
                         // Check if cache needs refresh in background (non-blocking)
                         if (_hubResourcesCache.NeedsRefresh() || forceRefresh)
@@ -589,24 +583,19 @@ namespace VPM.Services
                 
                 if (success)
                 {
-                    // Update in-memory dictionaries from cache
-                    _packageIdToResourceId = _hubResourcesCache.GetPackageIdToResourceId();
-                    _packageGroupToLatestVersion = _hubResourcesCache.GetPackageGroupToLatestVersion();
-                    _packagesCacheTime = DateTime.Now;
-                    
                     sw.Stop();
                     var stats = _hubResourcesCache.GetStatistics();
                     var cacheInfo = stats.ConditionalHits > 0 ? $" (cached, {stats.ConditionalHitRate:F0}% conditional hits)" : "";
-                    StatusChanged?.Invoke(this, $"Loaded {_packageIdToResourceId.Count} packages from Hub index{cacheInfo} ({sw.ElapsedMilliseconds}ms)");
+                    StatusChanged?.Invoke(this, $"Loaded {_hubResourcesCache.PackageCount} packages from Hub index{cacheInfo} ({sw.ElapsedMilliseconds}ms)");
                     
                     return true;
                 }
                 else
                 {
                     // Fetch failed, but we might have stale cache data
-                    if (_packageIdToResourceId != null && _packageIdToResourceId.Count > 0)
+                    if (_hubResourcesCache.PackageCount > 0)
                     {
-                        StatusChanged?.Invoke(this, $"Using cached Hub index ({_packageIdToResourceId.Count} packages) - network unavailable");
+                        StatusChanged?.Invoke(this, $"Using cached Hub index ({_hubResourcesCache.PackageCount} packages) - network unavailable");
                         return true;
                     }
                     
@@ -619,7 +608,7 @@ namespace VPM.Services
                 StatusChanged?.Invoke(this, $"Failed to load Hub packages index: {ex.Message}");
                 
                 // Return true if we have any cached data
-                return _packageIdToResourceId != null && _packageIdToResourceId.Count > 0;
+                return _hubResourcesCache.PackageCount > 0;
             }
         }
         
@@ -634,10 +623,7 @@ namespace VPM.Services
                 
                 if (success)
                 {
-                    _packageIdToResourceId = _hubResourcesCache.GetPackageIdToResourceId();
-                    _packageGroupToLatestVersion = _hubResourcesCache.GetPackageGroupToLatestVersion();
                     _cacheInitialized = true;
-                    _packagesCacheTime = DateTime.Now;
                 }
             }
             catch (Exception)
@@ -650,15 +636,7 @@ namespace VPM.Services
         /// </summary>
         public bool HasUpdate(string packageGroupName, int localVersion)
         {
-            if (_packageGroupToLatestVersion == null)
-                return false;
-
-            if (_packageGroupToLatestVersion.TryGetValue(packageGroupName, out var hubVersion))
-            {
-                return hubVersion > localVersion;
-            }
-
-            return false;
+            return _hubResourcesCache.HasUpdate(packageGroupName, localVersion);
         }
 
         /// <summary>
@@ -666,11 +644,7 @@ namespace VPM.Services
         /// </summary>
         public string GetResourceId(string packageName)
         {
-            if (_packageIdToResourceId == null)
-                return null;
-
-            _packageIdToResourceId.TryGetValue(packageName.Replace(".var", ""), out var resourceId);
-            return resourceId;
+            return _hubResourcesCache.GetResourceId(packageName);
         }
         
         /// <summary>
@@ -680,15 +654,7 @@ namespace VPM.Services
         /// <returns>Latest version number, or -1 if not found</returns>
         public int GetLatestVersion(string packageGroupName)
         {
-            if (_packageGroupToLatestVersion == null)
-                return -1;
-
-            if (_packageGroupToLatestVersion.TryGetValue(packageGroupName, out var latestVersion))
-            {
-                return latestVersion;
-            }
-
-            return -1;
+            return _hubResourcesCache.GetLatestVersion(packageGroupName);
         }
         
         /// <summary>
@@ -697,7 +663,7 @@ namespace VPM.Services
         /// <returns>Number of packages in the Hub index</returns>
         public int GetPackageCount()
         {
-            return _packageIdToResourceId?.Count ?? 0;
+            return _hubResourcesCache.PackageCount;
         }
         
         /// <summary>
@@ -706,23 +672,7 @@ namespace VPM.Services
         /// <returns>Sorted list of unique creator names</returns>
         public List<string> GetAllCreators()
         {
-            if (_packageIdToResourceId == null || _packageIdToResourceId.Count == 0)
-                return new List<string>();
-            
-            var creators = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            foreach (var packageName in _packageIdToResourceId.Keys)
-            {
-                // Package format: Creator.PackageName.Version
-                var firstDot = packageName.IndexOf('.');
-                if (firstDot > 0)
-                {
-                    var creator = packageName.Substring(0, firstDot);
-                    creators.Add(creator);
-                }
-            }
-            
-            return creators.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+            return _hubResourcesCache.GetAllCreators();
         }
 
         #endregion
@@ -1236,9 +1186,6 @@ namespace VPM.Services
             var result = _hubResourcesCache?.ClearCache() ?? false;
             if (result)
             {
-                _packageIdToResourceId = null;
-                _packageGroupToLatestVersion = null;
-                _packagesCacheTime = DateTime.MinValue;
                 _cacheInitialized = false;
             }
             return result;

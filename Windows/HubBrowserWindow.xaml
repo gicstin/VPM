@@ -957,23 +957,27 @@
                     CornerRadius="4">
                     <Grid>
                         <!--  Loading Indicator  -->
-                        <StackPanel
+                        <!--  Loading Overlay  -->
+                        <Grid
                             x:Name="LoadingPanel"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
                             Panel.ZIndex="20"
+                            Background="#AA1E1E1E"
                             Visibility="{Binding LoadingVisibility}">
-                            <TextBlock
+                            <StackPanel
                                 HorizontalAlignment="Center"
-                                FontSize="16"
-                                Foreground="{StaticResource DarkText}"
-                                Text="Loading..." />
-                            <ProgressBar
-                                Width="200"
-                                Height="20"
-                                Margin="0,8,0,0"
-                                IsIndeterminate="True" />
-                        </StackPanel>
+                                VerticalAlignment="Center">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    FontSize="16"
+                                    Foreground="{StaticResource DarkText}"
+                                    Text="Loading..." />
+                                <ProgressBar
+                                    Width="200"
+                                    Height="20"
+                                    Margin="0,8,0,0"
+                                    IsIndeterminate="True" />
+                            </StackPanel>
+                        </Grid>
 
                         <!--  Empty Results Panel  -->
                         <Border

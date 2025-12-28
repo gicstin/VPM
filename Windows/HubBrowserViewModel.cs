@@ -379,15 +379,56 @@ namespace VPM.Windows
             {
                 _suppressStateSave = true;
 
+                // Start loading packages in background
                 var packagesTask = _hubService.LoadPackagesJsonAsync();
+
+                // Chain actions to run when packages are loaded
+                _ = packagesTask.ContinueWith(async t =>
+                {
+                    if (t.Status == TaskStatus.RanToCompletion && t.Result)
+                    {
+                        await _uiDispatcher.InvokeAsync(async () =>
+                        {
+                            LoadCreatorListFromPackages();
+                            // Re-evaluate statuses for currently visible items
+                            if (Results != null && Results.Count > 0)
+                            {
+                                await RefreshLibraryStatusesAsync();
+                            }
+                        });
+                    }
+                }, TaskScheduler.Default);
+
                 var filterTask = LoadFilterOptionsAsync();
-                await Task.WhenAll(packagesTask, filterTask);
-
-                LoadCreatorListFromPackages();
+                
+                // Try to load stale cache first for instant UI
                 RestoreState();
+                var searchParams = BuildSearchParams();
+                var cachedResponse = _hubService.TryGetCachedSearch(searchParams, ignoreExpiration: true);
+                if (cachedResponse?.IsSuccess == true)
+                {
+                    TotalResources = cachedResponse.Pagination?.TotalFound ?? 0;
+                    TotalPages = cachedResponse.Pagination?.TotalPages ?? 1;
+                    
+                    Results.Clear();
+                    if (cachedResponse.Resources != null)
+                    {
+                        foreach (var r in cachedResponse.Resources)
+                            Results.Add(r);
+                    }
+                    
+                    _hasLoadedResultsOnce = true;
+                    HasEmptyResults = TotalResources == 0;
+                    
+                    // Show as "Updating..." instead of "Loading..."
+                    IsLoading = false; 
+                    StatusText = "Updating...";
+                }
 
+                await filterTask;
+                
                 CurrentPage = Math.Max(1, CurrentPage);
-                await SearchAsync(explicitSearch: true);
+                await SearchAsync(explicitSearch: true, suppressOverlay: _hasLoadedResultsOnce);
             }
             finally
             {
@@ -514,7 +555,7 @@ namespace VPM.Windows
             return $"{p?.Page}|{p?.PerPage}|{p?.Location}|{p?.Search}|{p?.PayType}|{p?.Category}|{p?.Creator}|{p?.Tags}|{p?.Sort}|{p?.SortSecondary}|{p?.OnlyDownloadable}";
         }
 
-        public async Task SearchAsync(bool explicitSearch)
+        public async Task SearchAsync(bool explicitSearch, bool suppressOverlay = false)
         {
             _searchCts?.Cancel();
             _searchCts = new CancellationTokenSource();
@@ -525,9 +566,16 @@ namespace VPM.Windows
                 ErrorText = null;
                 HasEmptyResults = false;
 
-                var showOverlay = !_hasLoadedResultsOnce || HasError;
-                IsLoading = explicitSearch && showOverlay;
-                StatusText = explicitSearch && showOverlay ? "Loading..." : "Updating...";
+                // Show overlay if it is an explicit search and not suppressed.
+                // ALSO show overlay if we have never loaded results (unless suppressed, but usually we need to show something).
+                // If we rely on suppressOverlay from InitializeAsync, it is true only if we found cached data.
+                // So if we didn't find cached data, suppressOverlay is false, so showOverlay is true.
+                // If we found cached data, suppressOverlay is true. showOverlay is false.
+                // For Pagination (explicitSearch=true, suppressOverlay=false), showOverlay is true.
+                var showOverlay = (explicitSearch && !suppressOverlay) || (!_hasLoadedResultsOnce && !suppressOverlay) || HasError;
+                
+                IsLoading = showOverlay;
+                StatusText = showOverlay ? "Loading..." : "Updating...";
 
                 var searchParams = BuildSearchParams();
 
@@ -571,6 +619,11 @@ namespace VPM.Windows
                     _ = EvaluateStatusesAsync(list, token);
 
                     HasEmptyResults = TotalResources == 0;
+                    
+                    if (!IsLoading)
+                    {
+                        StatusText = "Up to date";
+                    }
                 }
                 else
                 {

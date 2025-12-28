@@ -49,7 +49,7 @@ namespace VPM.Services
             LoadFromDisk();
         }
 
-        public bool TryGet(string key, out HubSearchResponse response)
+        public bool TryGet(string key, out HubSearchResponse response, bool ignoreExpiration = false)
         {
             response = null;
             if (string.IsNullOrEmpty(key))
@@ -61,7 +61,7 @@ namespace VPM.Services
                 if (!_entries.TryGetValue(key, out var entry) || entry?.JsonUtf8 == null)
                     return false;
 
-                if (DateTime.UtcNow - entry.CachedAtUtc > _ttl)
+                if (!ignoreExpiration && DateTime.UtcNow - entry.CachedAtUtc > _ttl)
                 {
                     _lock.EnterWriteLock();
                     try
