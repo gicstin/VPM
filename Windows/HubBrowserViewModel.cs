@@ -622,12 +622,12 @@ namespace VPM.Windows
                                 var (inLibrary, updateAvailable) = await EvaluateLibraryStatusAsync(resource, token).ConfigureAwait(false);
 
                                 // Apply UI-bound updates on the dispatcher thread
-                                _uiDispatcher.BeginInvoke(new Action(() =>
+                                await _uiDispatcher.InvokeAsync(new Action(() =>
                                 {
                                     resource.InLibrary = inLibrary;
                                     resource.UpdateAvailable = updateAvailable;
                                     resource.UpdateMessage = updateAvailable ? "Update available" : null;
-                                }), DispatcherPriority.Background);
+                                }), DispatcherPriority.Background).Task.ConfigureAwait(false);
                             }
                             finally
                             {
@@ -643,7 +643,7 @@ namespace VPM.Windows
             {
                 // ignored
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }

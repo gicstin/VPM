@@ -313,7 +313,7 @@ namespace VPM.Services
                         {
                             // Use provided destination folder, or fall back to app folder
                             var destinationFolder = _destinationFolder ?? System.IO.Path.Combine(
-                                System.IO.Path.GetDirectoryName(_downloader.GetType().Assembly.Location),
+                                System.AppContext.BaseDirectory,
                                 "AddonPackages"
                             );
                             

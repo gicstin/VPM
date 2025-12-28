@@ -146,6 +146,8 @@ namespace VPM.Models
         // Move To Destination Paths - list of named paths for quick package moving
         private List<MoveToDestination> _moveToDestinations = new List<MoveToDestination>();
 
+        private bool _disableMoveToConfirmation = false;
+
         // Playlists - list of package playlists for quick activation
         private List<Playlist> _playlists = new List<Playlist>();
 
@@ -768,6 +770,12 @@ namespace VPM.Models
             set => SetProperty(ref _moveToDestinations, value ?? new List<MoveToDestination>());
         }
 
+        public bool DisableMoveToConfirmation
+        {
+            get => _disableMoveToConfirmation;
+            set => SetProperty(ref _disableMoveToConfirmation, value);
+        }
+
         // Playlist Properties
         public List<Playlist> Playlists
         {
@@ -895,7 +903,8 @@ namespace VPM.Models
                 PackageFilterOrder = new List<string>(FilterConfiguration.PackageFilters),
                 SceneFilterOrder = new List<string>(FilterConfiguration.SceneFilters),
                 PresetFilterOrder = new List<string>(FilterConfiguration.PresetFilters),
-                SortingStates = new Dictionary<string, SerializableSortingState>()
+                SortingStates = new Dictionary<string, SerializableSortingState>(),
+                DisableMoveToConfirmation = false
             };
         }
     }

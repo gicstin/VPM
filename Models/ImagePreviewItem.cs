@@ -45,8 +45,35 @@ namespace VPM.Models
                 {
                     _internalPath = value;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(IsScenePath));
+                    OnPropertyChanged(nameof(IsSceneJson));
                     UpdateExtractionButtonState();
                 }
+            }
+        }
+
+        public bool IsScenePath
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(InternalPath))
+                    return false;
+
+                var p = InternalPath.Replace('\\', '/').TrimStart('/');
+                return p.StartsWith("Saves/scene/", System.StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        public bool IsSceneJson
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(InternalPath))
+                    return false;
+
+                var p = InternalPath.Replace('\\', '/').TrimStart('/');
+                return p.StartsWith("Saves/scene/", System.StringComparison.OrdinalIgnoreCase) &&
+                       p.EndsWith(".json", System.StringComparison.OrdinalIgnoreCase);
             }
         }
 

@@ -292,7 +292,7 @@ namespace VPM
                                     using (var fileStream = new FileStream(thumbnailPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                                     {
                                         imageBytes = new byte[fileStream.Length];
-                                        fileStream.Read(imageBytes, 0, imageBytes.Length);
+                                        fileStream.ReadExactly(imageBytes, 0, imageBytes.Length);
                                     }
                                     // File is now released - create BitmapImage from memory
                                     var bi = new BitmapImage();

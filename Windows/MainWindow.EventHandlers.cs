@@ -6483,6 +6483,7 @@ namespace VPM
                 MenuItem showDependencyItem = null;
                 MenuItem openInExplorerItem = null;
                 MenuItem filterByCreatorItem = null;
+                MenuItem launchSceneInVamMenuItem = null;
                 MenuItem moveToMenuItem = null;
                 MenuItem addToPlaylistMenuItem = null;
                 MenuItem restoreOriginalItem = null;
@@ -6498,6 +6499,8 @@ namespace VPM
                             openInExplorerItem = menuItem;
                         else if (header == "👤 Filter by Creator")
                             filterByCreatorItem = menuItem;
+                        else if (header.StartsWith("🚀 Launch Scene in VaM", StringComparison.OrdinalIgnoreCase))
+                            launchSceneInVamMenuItem = menuItem;
                         else if (header == "📦 Move To")
                             moveToMenuItem = menuItem;
                         else if (header == "🕹️ Add to Playlist")
@@ -6515,6 +6518,19 @@ namespace VPM
 
                 if (filterByCreatorItem != null)
                     filterByCreatorItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+                if (launchSceneInVamMenuItem != null)
+                {
+                    if (selectedCount == 1)
+                    {
+                        var hasScenes = PopulateLaunchSceneInVamMenu(launchSceneInVamMenuItem);
+                        launchSceneInVamMenuItem.Visibility = hasScenes ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        launchSceneInVamMenuItem.Visibility = System.Windows.Visibility.Collapsed;
+                    }
+                }
 
                 // Populate Move To submenu with configured destinations
                 if (moveToMenuItem != null)
@@ -6534,6 +6550,519 @@ namespace VPM
                     UpdateRestoreOriginalMenuItem(restoreOriginalItem);
                 }
             }
+        }
+
+        private bool PopulateLaunchSceneInVamMenu(MenuItem launchSceneInVamMenuItem)
+        {
+            if (launchSceneInVamMenuItem == null)
+                return false;
+
+            launchSceneInVamMenuItem.Items.Clear();
+
+            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
+            if (selectedPackages == null || selectedPackages.Count != 1)
+            {
+                launchSceneInVamMenuItem.IsEnabled = false;
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(_selectedFolder))
+            {
+                launchSceneInVamMenuItem.IsEnabled = false;
+                return false;
+            }
+
+            var packageItem = selectedPackages[0];
+            _packageManager.PackageMetadata.TryGetValue(packageItem.MetadataKey, out var metadata);
+
+            if (metadata == null || string.IsNullOrEmpty(metadata.FilePath) || !File.Exists(metadata.FilePath))
+            {
+                launchSceneInVamMenuItem.IsEnabled = false;
+                return false;
+            }
+
+            launchSceneInVamMenuItem.IsEnabled = true;
+
+            // PackageId used by VaM for --vpb.vds.scene is the .var name without extension
+            var packageId = Path.GetFileNameWithoutExtension(metadata.FilePath);
+
+            List<SceneItem> scenes;
+            try
+            {
+                // Scan scenes inside the VAR (Saves/scene/*.json)
+                var scanner = _sceneScanner ?? new SceneScanner(_selectedFolder);
+                scenes = scanner.ScanVarScenes(metadata.FilePath)
+                    .OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error scanning VAR scenes: {ex.Message}");
+                scenes = new List<SceneItem>();
+            }
+
+            if (scenes.Count == 0)
+            {
+                launchSceneInVamMenuItem.IsEnabled = false;
+                return false;
+            }
+
+            // UX: for small counts, show Scene-first layout; for larger counts, group by mode
+            if (scenes.Count <= 4)
+            {
+                // Scene -> launch options (Desktop/VR/Screen Selector) + Log Mode submenu
+                var addedSceneBlocks = 0;
+                for (var i = 0; i < scenes.Count; i++)
+                {
+                    var scene = scenes[i];
+                    var internalPath = ExtractInternalVarPath(scene?.FilePath);
+                    if (string.IsNullOrEmpty(internalPath))
+                        continue;
+
+                    var vdsSceneValue = $"{packageId}:/{internalPath.TrimStart('/')}";
+
+                    // Desktop
+                    launchSceneInVamMenuItem.Items.Add(CreateLaunchSceneMenuItem(
+                        $"{scene.DisplayName} (Desktop)",
+                        "Desktop",
+                        $"-vrmode None --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    // VR
+                    launchSceneInVamMenuItem.Items.Add(CreateLaunchSceneMenuItem(
+                        $"{scene.DisplayName} (VR)",
+                        "VR",
+                        $"-vrmode OpenVR --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    // Screen selector
+                    launchSceneInVamMenuItem.Items.Add(CreateLaunchSceneMenuItem(
+                        $"{scene.DisplayName} (Screen Selector)",
+                        "Screen Selector",
+                        $"-show-screen-selector --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    // Log mode submenu (3 options)
+                    var logModeMenu = new MenuItem
+                    {
+                        Header = $"{scene.DisplayName} (Log Mode)",
+                        ToolTip = vdsSceneValue
+                    };
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Desktop (Log)",
+                        "Desktop (Log)",
+                        $"-vrmode None -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "VR (Log)",
+                        "VR (Log)",
+                        $"-vrmode OpenVR -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Screen Selector (Log)",
+                        "Screen Selector (Log)",
+                        $"-show-screen-selector -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    launchSceneInVamMenuItem.Items.Add(logModeMenu);
+
+                    addedSceneBlocks++;
+
+                    if (i < scenes.Count - 1)
+                    {
+                        launchSceneInVamMenuItem.Items.Add(new Separator());
+                    }
+                }
+
+                if (addedSceneBlocks == 0)
+                {
+                    launchSceneInVamMenuItem.IsEnabled = false;
+                    return false;
+                }
+
+                return true;
+            }
+            else
+            {
+                // Mode -> list of scenes
+                var desktopMenu = new MenuItem { Header = "Desktop" };
+                var vrMenu = new MenuItem { Header = "VR" };
+                var screenSelectorMenu = new MenuItem { Header = "Screen Selector" };
+                var logModeMenu = new MenuItem { Header = "Log Mode" };
+
+                var desktopLogMenu = new MenuItem { Header = "Desktop (Log)" };
+                var vrLogMenu = new MenuItem { Header = "VR (Log)" };
+                var screenSelectorLogMenu = new MenuItem { Header = "Screen Selector (Log)" };
+
+                var added = 0;
+
+                foreach (var scene in scenes)
+                {
+                    var internalPath = ExtractInternalVarPath(scene?.FilePath);
+                    if (string.IsNullOrEmpty(internalPath))
+                        continue;
+
+                    var vdsSceneValue = $"{packageId}:/{internalPath.TrimStart('/')}";
+                    var label = scene.DisplayName;
+
+                    desktopMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "Desktop",
+                        $"-vrmode None --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    vrMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "VR",
+                        $"-vrmode OpenVR --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    screenSelectorMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "Screen Selector",
+                        $"-show-screen-selector --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    desktopLogMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "Desktop (Log)",
+                        $"-vrmode None -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    vrLogMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "VR (Log)",
+                        $"-vrmode OpenVR -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    screenSelectorLogMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        label,
+                        "Screen Selector (Log)",
+                        $"-show-screen-selector -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    added++;
+                }
+
+                if (added == 0)
+                {
+                    launchSceneInVamMenuItem.IsEnabled = false;
+                    return false;
+                }
+
+                logModeMenu.Items.Add(desktopLogMenu);
+                logModeMenu.Items.Add(vrLogMenu);
+                logModeMenu.Items.Add(screenSelectorLogMenu);
+
+                launchSceneInVamMenuItem.Items.Add(desktopMenu);
+                launchSceneInVamMenuItem.Items.Add(vrMenu);
+                launchSceneInVamMenuItem.Items.Add(screenSelectorMenu);
+                launchSceneInVamMenuItem.Items.Add(logModeMenu);
+
+                return true;
+            }
+        }
+
+        private MenuItem CreateLaunchSceneMenuItem(string header, string modeName, string args, string toolTip)
+        {
+            var item = new MenuItem
+            {
+                Header = header,
+                ToolTip = toolTip,
+                Tag = args
+            };
+
+            item.Click += (s, e) =>
+            {
+                try
+                {
+                    // Safety: VaM's --vpb.vds.scene must target a scene JSON.
+                    // If we accidentally pass a preview image (jpg/png/etc), VaM will launch but not load the scene.
+                    var marker = "--vpb.vds.scene";
+                    var idx = args?.IndexOf(marker, StringComparison.OrdinalIgnoreCase) ?? -1;
+                    if (idx >= 0)
+                    {
+                        var after = args.Substring(idx + marker.Length).TrimStart();
+                        string value = null;
+
+                        if (after.StartsWith("\"", StringComparison.Ordinal))
+                        {
+                            var end = after.IndexOf('"', 1);
+                            if (end > 1)
+                                value = after.Substring(1, end - 1);
+                        }
+                        else
+                        {
+                            var end = after.IndexOf(' ');
+                            value = end >= 0 ? after.Substring(0, end) : after;
+                        }
+
+                        if (!string.IsNullOrEmpty(value) && !value.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                        {
+                            CustomMessageBox.Show(
+                                $"Refusing to launch: vpb.vds.scene is not a .json scene file:\n\n{value}\n\n" +
+                                "This usually means the tile points to a preview image instead of the scene JSON.",
+                                "Invalid Scene Path",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Warning);
+                            return;
+                        }
+                    }
+
+                    LaunchVirtAMate(modeName, args);
+                }
+                catch (Exception ex)
+                {
+                    CustomMessageBox.Show($"Error launching VirtAMate:\n\n{ex.Message}",
+                        "Launch Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+
+            return item;
+        }
+
+        private void SceneLaunchButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_selectedFolder))
+                {
+                    CustomMessageBox.Show("Please select a VAM root folder first.",
+                        "No Folder Selected", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (sender is not Button button)
+                    return;
+
+                if (button.DataContext is not ImagePreviewItem item)
+                    return;
+
+                if (string.IsNullOrEmpty(item.VarFilePath) || string.IsNullOrEmpty(item.InternalPath))
+                    return;
+
+                var packageId = Path.GetFileNameWithoutExtension(item.VarFilePath);
+                if (string.IsNullOrEmpty(packageId))
+                    return;
+
+                var rawInternalPath = item.InternalPath.Replace('\\', '/').TrimStart('/');
+
+                // The image tile 'Scene' category items frequently point at preview images (.jpg/.png),
+                // but VaM requires the actual scene JSON under Saves/scene/*.json.
+                var scanner = _sceneScanner ?? new SceneScanner(_selectedFolder);
+                List<SceneItem> scenes;
+                try
+                {
+                    scenes = scanner.ScanVarScenes(item.VarFilePath)
+                        .OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                catch (Exception ex)
+                {
+                    scenes = new List<SceneItem>();
+                }
+
+                // Try to map the preview image path to a .json scene path.
+                var preferredInternalJsonCandidates = new List<string>();
+                try
+                {
+                    var ext = Path.GetExtension(rawInternalPath);
+                    if (!string.IsNullOrEmpty(ext))
+                    {
+                        var extLower = ext.ToLowerInvariant();
+                        if (extLower == ".jpg" || extLower == ".jpeg" || extLower == ".png" || extLower == ".webp" || extLower == ".gif" || extLower == ".bmp")
+                        {
+                            var folder = Path.GetDirectoryName(rawInternalPath)?.Replace('\\', '/');
+                            var rawName = Path.GetFileNameWithoutExtension(rawInternalPath);
+
+                            // Candidate 1: raw name (keep any dots)
+                            if (!string.IsNullOrEmpty(rawName))
+                            {
+                                var candidate = string.IsNullOrEmpty(folder)
+                                    ? $"{rawName}.json"
+                                    : $"{folder.TrimEnd('/')}/{rawName}.json";
+                                preferredInternalJsonCandidates.Add(candidate);
+                            }
+
+                            // Candidate 2: trim trailing dots (handles names like "Lilith..jpg")
+                            var trimmed = rawName;
+                            while (!string.IsNullOrEmpty(trimmed) && trimmed.EndsWith(".", StringComparison.Ordinal))
+                                trimmed = trimmed.Substring(0, trimmed.Length - 1);
+                            if (!string.IsNullOrEmpty(trimmed) && !string.Equals(trimmed, rawName, StringComparison.Ordinal))
+                            {
+                                var candidate = string.IsNullOrEmpty(folder)
+                                    ? $"{trimmed}.json"
+                                    : $"{folder.TrimEnd('/')}/{trimmed}.json";
+                                preferredInternalJsonCandidates.Add(candidate);
+                            }
+                        }
+                        else if (extLower == ".json")
+                        {
+                            preferredInternalJsonCandidates.Add(rawInternalPath);
+                        }
+                    }
+                }
+                catch
+                {
+                    preferredInternalJsonCandidates.Clear();
+                }
+
+                SceneItem matchedScene = null;
+                if (preferredInternalJsonCandidates.Count > 0 && scenes.Count > 0)
+                {
+                    foreach (var candidate in preferredInternalJsonCandidates)
+                    {
+                        if (string.IsNullOrEmpty(candidate))
+                            continue;
+
+                        matchedScene = scenes.FirstOrDefault(s =>
+                        {
+                            var ip = ExtractInternalVarPath(s?.FilePath);
+                            return !string.IsNullOrEmpty(ip) &&
+                                   string.Equals(ip.TrimStart('/'), candidate.TrimStart('/'), StringComparison.OrdinalIgnoreCase);
+                        });
+
+                        if (matchedScene != null)
+                            break;
+                    }
+                }
+
+                var menu = new ContextMenu();
+
+                void AddModeItems(ItemsControl targetMenu, string vdsSceneValue)
+                {
+                    targetMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Desktop",
+                        "Desktop",
+                        $"-vrmode None --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    targetMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "VR",
+                        "VR",
+                        $"-vrmode OpenVR --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    targetMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Screen Selector",
+                        "Screen Selector",
+                        $"-show-screen-selector --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    var logModeMenu = new MenuItem
+                    {
+                        Header = "Log Mode",
+                        ToolTip = vdsSceneValue
+                    };
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Desktop (Log)",
+                        "Desktop (Log)",
+                        $"-vrmode None -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "VR (Log)",
+                        "VR (Log)",
+                        $"-vrmode OpenVR -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    logModeMenu.Items.Add(CreateLaunchSceneMenuItem(
+                        "Screen Selector (Log)",
+                        "Screen Selector (Log)",
+                        $"-show-screen-selector -logFile log.txt --vpb.vds.scene \"{vdsSceneValue}\"",
+                        vdsSceneValue));
+
+                    targetMenu.Items.Add(logModeMenu);
+                }
+
+                if (matchedScene != null)
+                {
+                    var internalJson = ExtractInternalVarPath(matchedScene.FilePath)?.TrimStart('/');
+                    if (string.IsNullOrEmpty(internalJson) || !internalJson.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        CustomMessageBox.Show(
+                            "Unable to resolve a valid scene .json path from this tile.",
+                            "Invalid Scene Path",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+                    var vdsSceneValue = $"{packageId}:/{internalJson}";
+
+                    AddModeItems(menu, vdsSceneValue);
+                }
+                else if (scenes.Count == 1)
+                {
+                    var internalJson = ExtractInternalVarPath(scenes[0].FilePath)?.TrimStart('/');
+                    if (!string.IsNullOrEmpty(internalJson) && internalJson.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var vdsSceneValue = $"{packageId}:/{internalJson}";
+
+                        AddModeItems(menu, vdsSceneValue);
+                    }
+                    else
+                    {
+                        CustomMessageBox.Show(
+                            "Unable to resolve a valid scene .json path from this package.",
+                            "Invalid Scene Path",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
+                }
+                else if (scenes.Count > 1)
+                {
+                    // Ambiguous: show scene list, each with mode options.
+                    foreach (var scene in scenes)
+                    {
+                        var internalJson = ExtractInternalVarPath(scene.FilePath)?.TrimStart('/');
+                        if (string.IsNullOrEmpty(internalJson) || !internalJson.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        var vdsSceneValue = $"{packageId}:/{internalJson}";
+                        var sceneMenu = new MenuItem { Header = scene.DisplayName, ToolTip = vdsSceneValue };
+                        AddModeItems(sceneMenu, vdsSceneValue);
+                        menu.Items.Add(sceneMenu);
+                    }
+                }
+                else
+                {
+                    CustomMessageBox.Show(
+                        "No scene JSON files were found in this package under Saves/scene/*.json.\n\n" +
+                        "This tile appears to reference a preview image, not a scene file.",
+                        "No Scenes Found",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                button.ContextMenu = menu;
+                menu.PlacementTarget = button;
+                menu.IsOpen = true;
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBox.Show($"Error launching scene menu:\n\n{ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static string ExtractInternalVarPath(string sceneItemFilePath)
+        {
+            if (string.IsNullOrEmpty(sceneItemFilePath))
+                return null;
+
+            // SceneScanner uses "{varPath}::{entry.Key}" for VAR scenes
+            var parts = sceneItemFilePath.Split(new[] { "::" }, 2, StringSplitOptions.None);
+            if (parts.Length != 2)
+                return null;
+
+            var internalPath = parts[1]?.Replace('\\', '/');
+            return internalPath;
         }
 
         private void DependenciesContextMenu_Opened(object sender, RoutedEventArgs e)
@@ -6796,16 +7325,23 @@ namespace VPM
             {
                 if (!Directory.Exists(destination.Path))
                 {
-                    var result = DarkMessageBox.Show(
-                        $"The destination folder does not exist:\n{destination.Path}\n\nWould you like to create it?",
-                        "Create Folder?",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
+                    if (_settingsManager?.Settings?.DisableMoveToConfirmation == true)
+                    {
+                        Directory.CreateDirectory(destination.Path);
+                    }
+                    else
+                    {
+                        var result = DarkMessageBox.Show(
+                            $"The destination folder does not exist:\n{destination.Path}\n\nWould you like to create it?",
+                            "Create Folder?",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Question);
 
-                    if (result != MessageBoxResult.Yes)
-                        return;
+                        if (result != MessageBoxResult.Yes)
+                            return;
 
-                    Directory.CreateDirectory(destination.Path);
+                        Directory.CreateDirectory(destination.Path);
+                    }
                 }
 
                 // Verify write permissions
@@ -6842,26 +7378,31 @@ namespace VPM
                 return;
             }
 
+            bool suppressDialogs = selectedPackages.Count == 1 || (_settingsManager?.Settings?.DisableMoveToConfirmation == true);
+
             // Build summary of packages to move
             var packageSummary = string.Join("\n", selectedPackages.Take(10).Select(p => $"  • {p.DisplayName}"));
             if (selectedPackages.Count > 10)
                 packageSummary += $"\n  ... and {selectedPackages.Count - 10} more";
 
-            // Confirm the operation
-            var confirmResult = DarkMessageBox.Show(
-                $"Move to: {destination.Name}\n{destination.Path}\n\n{packageSummary}",
-                "Confirm Move",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
+            if (!suppressDialogs)
+            {
+                // Confirm the operation
+                var confirmResult = DarkMessageBox.Show(
+                    $"Move to: {destination.Name}\n{destination.Path}\n\n{packageSummary}",
+                    "Confirm Move",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
 
-            if (confirmResult != MessageBoxResult.Yes)
-                return;
+                if (confirmResult != MessageBoxResult.Yes)
+                    return;
+            }
 
-            await MovePackagesAsync(selectedPackages, destination.Path);
+            await MovePackagesAsync(selectedPackages, destination.Path, suppressDialogs);
         }
 
 
-        private async Task MovePackagesAsync(List<PackageItem> packages, string destinationPath)
+        private async Task MovePackagesAsync(List<PackageItem> packages, string destinationPath, bool suppressDialogs)
         {
             int successCount = 0;
             int failureCount = 0;
@@ -7189,8 +7730,18 @@ namespace VPM
                         }
                     }
                     
-                    var messageType = failureCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information;
-                    DarkMessageBox.Show(summaryMessage, "Move Operation Complete", MessageBoxButton.OK, messageType);
+                    // Dialog rules:
+                    // - If only one package was moved: do not show success/summary, only show errors.
+                    // - If confirmation dialogs are disabled: do not show success/summary, only show errors.
+                    // - Always show an error dialog when at least one move failed.
+                    if (failureCount > 0)
+                    {
+                        DarkMessageBox.Show(summaryMessage, "Move Operation Complete", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    else if (!suppressDialogs)
+                    {
+                        DarkMessageBox.Show(summaryMessage, "Move Operation Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                 }
                 
                 SetStatus($"Move complete: {successCount} moved, {skippedCount} skipped, {failureCount} failed");

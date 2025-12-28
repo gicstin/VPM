@@ -38,6 +38,11 @@
                 Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
                 Text="Configure destination folders for quickly moving packages. These will appear in the right-click context menu under 'Move To'."
                 TextWrapping="Wrap" />
+            <CheckBox
+                x:Name="DisableMoveToConfirmationCheckBox"
+                Margin="0,10,0,0"
+                Content="Disable move confirmation dialogs"
+                Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
         </StackPanel>
 
         <!--  DataGrid  -->

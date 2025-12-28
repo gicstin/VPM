@@ -42,7 +42,7 @@ namespace VPM.Services
                 if (!Directory.Exists(_cacheDirectory))
                     Directory.CreateDirectory(_cacheDirectory);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
 
@@ -237,7 +237,7 @@ namespace VPM.Services
                     _lock.ExitWriteLock();
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }
@@ -286,7 +286,7 @@ namespace VPM.Services
                 File.Copy(tmpPath, _cacheFilePath, overwrite: true);
                 try { File.Delete(tmpPath); } catch { }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }

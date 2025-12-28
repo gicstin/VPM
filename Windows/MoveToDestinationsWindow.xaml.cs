@@ -66,6 +66,11 @@ namespace VPM.Windows
                 existingDestinations.Select(d => new MoveToDestinationViewModel(d))
             );
             DestinationsDataGrid.ItemsSource = _destinations;
+
+            if (_settingsManager?.Settings != null)
+            {
+                DisableMoveToConfirmationCheckBox.IsChecked = _settingsManager.Settings.DisableMoveToConfirmation;
+            }
         }
 
         private void UpdateStatus()
@@ -329,6 +334,8 @@ namespace VPM.Windows
             if (_settingsManager?.Settings != null)
             {
                 _settingsManager.Settings.MoveToDestinations = destinations;
+                _settingsManager.Settings.DisableMoveToConfirmation = DisableMoveToConfirmationCheckBox.IsChecked == true;
+                _settingsManager.SaveSettingsImmediate();
             }
             else
             {

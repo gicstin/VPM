@@ -134,7 +134,7 @@ namespace VPM.Services
                 if (!Directory.Exists(_resourceDetailCacheDirectory))
                     Directory.CreateDirectory(_resourceDetailCacheDirectory);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }
@@ -189,7 +189,7 @@ namespace VPM.Services
                     File.WriteAllText(path, json, Encoding.UTF8);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }
@@ -288,7 +288,7 @@ namespace VPM.Services
                     return diskCached;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
             
@@ -640,7 +640,7 @@ namespace VPM.Services
                     _packagesCacheTime = DateTime.Now;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
             }
         }
@@ -884,7 +884,7 @@ namespace VPM.Services
                     {
                         await ProcessDownloadQueueAsync();
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                     }
                 });

@@ -2809,6 +2809,7 @@
 
                             <DataGrid.ContextMenu>
                                 <ContextMenu Opened="PackageContextMenu_Opened">
+                                    <MenuItem x:Name="LaunchSceneInVamMenuItem" Header="🚀 Launch Scene in VaM" />
                                     <MenuItem Click="ShowDependencyGraph_Click" Header="📊 Show Dependency Graph" />
                                     <MenuItem Click="OpenInExplorer_Click" Header="📁 Open in Explorer" />
                                     <MenuItem Click="CopyPackageName_Click" Header="📋 Copy Package Name" />
@@ -5345,6 +5346,8 @@
                                                     LoadImageCallback="{Binding LoadImageCallback}"
                                                     Loaded="LazyLoadImage_Loaded"
                                                     PackageKey="{Binding PackageName}"
+                                                    ToolTipService.Placement="Bottom"
+                                                    ToolTip="{Binding InternalPath}"
                                                     Unloaded="LazyLoadImage_Unloaded"
                                                     VarFilePath="{Binding VarFilePath}">
                                                     <windows:LazyLoadImage.Width>
@@ -5370,6 +5373,74 @@
                                                     </windows:LazyLoadImage.Height>
                                                     <windows:LazyLoadImage.CornerRadius>3</windows:LazyLoadImage.CornerRadius>
                                                 </windows:LazyLoadImage>
+
+                                                <!--  Scene Launch button (only for Scene category items)  -->
+                                                <Button
+                                                    Width="30"
+                                                    Height="30"
+                                                    Margin="12"
+                                                    Padding="0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Top"
+                                                    Background="#64505050"
+                                                    BorderBrush="Transparent"
+                                                    BorderThickness="1"
+                                                    Click="SceneLaunchButton_Click"
+                                                    Cursor="Hand"
+                                                    FontSize="12"
+                                                    Foreground="White"
+                                                    ToolTip="Launch scene in VaM">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsScenePath}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                    <TextBlock
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        Text="🚀" />
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border
+                                                                x:Name="ButtonBorder"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="6">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <MultiTrigger>
+                                                                    <MultiTrigger.Conditions>
+                                                                        <Condition Property="IsMouseOver" Value="True" />
+                                                                        <Condition Property="IsEnabled" Value="True" />
+                                                                    </MultiTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="#C8454545" />
+                                                                    <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FF0078D7" />
+                                                                    <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="1" />
+                                                                </MultiTrigger>
+                                                                <MultiTrigger>
+                                                                    <MultiTrigger.Conditions>
+                                                                        <Condition Property="IsMouseOver" Value="True" />
+                                                                        <Condition Property="IsEnabled" Value="False" />
+                                                                    </MultiTrigger.Conditions>
+                                                                    <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="#FF0078D7" />
+                                                                </MultiTrigger>
+                                                                <Trigger Property="IsEnabled" Value="False">
+                                                                    <Setter Property="Opacity" Value="1" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsPressed" Value="True">
+                                                                    <Setter Property="Background" Value="#C8555555" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                </Button>
                                             </Grid>
                                         </DataTemplate>
                                     </windows:ImageListView.ItemTemplate>
