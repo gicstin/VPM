@@ -6930,7 +6930,7 @@ namespace VPM
                         .OrderBy(s => s.DisplayName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     scenes = new List<SceneItem>();
                 }
