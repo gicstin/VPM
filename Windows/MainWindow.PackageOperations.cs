@@ -329,12 +329,16 @@ namespace VPM
                     }
                 }
 
+                // PERFORMANCE FIX: Create HashSets for O(1) lookups during missing dependency calculation
+                var availableDepsSet = new HashSet<string>(availableDependencies, StringComparer.OrdinalIgnoreCase);
+                var externalDepsSet = new HashSet<string>(externalDependencies.Select(e => e.name), StringComparer.OrdinalIgnoreCase);
+
                 // Calculate missing dependencies (neither to-be-loaded, nor already loaded)
                 var missingCount = 0;
                 foreach (var depName in allDependencies)
                 {
                     // Check if it's being loaded
-                    if (packagesToLoad.Contains(depName) || availableDependencies.Contains(depName) || externalDependencies.Any(e => e.name.Equals(depName, StringComparison.OrdinalIgnoreCase)))
+                    if (packagesToLoad.Contains(depName) || availableDepsSet.Contains(depName) || externalDepsSet.Contains(depName))
                         continue;
 
                     // Check if it's already loaded or has another valid status that doesn't require loading but isn't "Missing"
@@ -814,10 +818,15 @@ namespace VPM
                     // Update dependency statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
+                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
+                    var dependencyLookup = selectedDependencies.ToDictionary(
+                        d => d.Name, 
+                        d => d, 
+                        StringComparer.OrdinalIgnoreCase);
+
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var dependency = selectedDependencies.FirstOrDefault(d => d.Name == packageName);
-                        if (dependency != null && success)
+                        if (dependencyLookup.TryGetValue(packageName, out var dependency) && success)
                         {
                             dependency.Status = "Loaded";
                             statusUpdates.Add((packageName, "Loaded", dependency.StatusColor));
@@ -962,13 +971,21 @@ namespace VPM
 
                     var results = await _packageFileManager.UnloadPackagesAsync(dependencyNames, progress);
 
+                    // Clear metadata cache to ensure new paths are picked up
+                    ClearPackageMetadataCache();
+
                     // Update dependency statuses based on results
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
 
+                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
+                    var dependencyLookup = selectedDependencies.ToDictionary(
+                        d => d.Name, 
+                        d => d, 
+                        StringComparer.OrdinalIgnoreCase);
+
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var dependency = selectedDependencies.FirstOrDefault(d => d.Name == packageName);
-                        if (dependency != null && success)
+                        if (dependencyLookup.TryGetValue(packageName, out var dependency) && success)
                         {
                             dependency.Status = "Available";
                             statusUpdates.Add((packageName, "Available", dependency.StatusColor));

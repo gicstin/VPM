@@ -3358,9 +3358,38 @@ namespace VPM
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(filePath))
+                {
+                    SetStatus("Cannot open folder: Invalid file path");
+                    return;
+                }
+
+                // Ensure path is absolute and uses correct separators
+                try 
+                {
+                    filePath = Path.GetFullPath(filePath);
+                }
+                catch
+                {
+                    // If path is invalid, try to use it as is if it exists, otherwise return
+                    if (!File.Exists(filePath))
+                    {
+                        SetStatus($"Cannot open folder: Path is invalid: {filePath}");
+                        return;
+                    }
+                }
+
+                if (!File.Exists(filePath))
+                {
+                    SetStatus($"Cannot open folder: File does not exist: {filePath}");
+                    return;
+                }
+
                 // Use /select to open Explorer and select the file
                 // Note: This will open a new window each time - this is standard Windows behavior
+                // Ensure arguments are properly quoted and separated
                 var argument = $"/select, \"{filePath}\"";
+                
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "explorer.exe",
@@ -3368,9 +3397,9 @@ namespace VPM
                     UseShellExecute = true
                 });
             }
-            catch
+            catch (Exception ex)
             {
-                throw;
+                SetStatus($"Error opening folder: {ex.Message}");
             }
         }
 
