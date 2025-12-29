@@ -5682,7 +5682,7 @@
                                 <Border
                                     x:Name="HubOverviewLoadingOverlay"
                                     Panel.ZIndex="10"
-                                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                    Background="#AA000000"
                                     Visibility="Collapsed">
                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <TextBlock

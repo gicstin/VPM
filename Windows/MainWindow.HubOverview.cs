@@ -69,7 +69,11 @@ namespace VPM
                 // Handle navigation events
                 HubOverviewWebView.NavigationStarting += HubOverviewWebView_NavigationStarting;
                 HubOverviewWebView.NavigationCompleted += HubOverviewWebView_NavigationCompleted;
+                HubOverviewWebView.CoreWebView2.DOMContentLoaded += HubOverviewWebView_DOMContentLoaded;
                 
+                // Inject CSS to improve dark theme appearance (persistent script)
+                await InjectHubOverviewDarkThemeStyles();
+
                 _hubOverviewWebViewInitialized = true;
             }
             catch (Exception ex)
@@ -84,12 +88,19 @@ namespace VPM
             HubOverviewLoadingOverlay.Visibility = Visibility.Visible;
             HubOverviewErrorPanel.Visibility = Visibility.Collapsed;
         }
+
+        private void HubOverviewWebView_DOMContentLoaded(object sender, CoreWebView2DOMContentLoadedEventArgs e)
+        {
+            // Hide loading overlay as soon as DOM is ready (text is visible)
+            // No need to wait for all images to load
+            HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
+        }
         
         private void HubOverviewWebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            Debug.WriteLine($"[HubOverview] NavigationCompleted: IsSuccess={e.IsSuccess}, IsClearing={_isClearing}");
+
             
-            // Always hide loading overlay
+            // Always hide loading overlay (fallback)
             HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
             
             // Ignore navigation events when we're intentionally clearing the WebView
@@ -107,13 +118,10 @@ namespace VPM
             {
                 HubOverviewErrorPanel.Visibility = Visibility.Collapsed;
                 HubOverviewPlaceholder.Visibility = Visibility.Collapsed;
-                
-                // Inject CSS to improve dark theme appearance
-                InjectHubOverviewDarkThemeStyles();
             }
         }
         
-        private async void InjectHubOverviewDarkThemeStyles()
+        private async Task InjectHubOverviewDarkThemeStyles()
         {
             try
             {
@@ -136,7 +144,7 @@ namespace VPM
                     }})();
                 ";
                 
-                await HubOverviewWebView.CoreWebView2.ExecuteScriptAsync(script);
+                await HubOverviewWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
             }
             catch (Exception)
             {
@@ -260,11 +268,11 @@ namespace VPM
             // Skip if same package is already loaded AND we have a valid resource
             if (_currentHubPackageName == packageGroupName && _currentHubResourceId != null)
             {
-                Debug.WriteLine($"[HubOverview] Skipping - same package already loaded: {packageGroupName}");
+
                 return;
             }
             
-            Debug.WriteLine($"[HubOverview] Loading Hub overview for: {packageGroupName} (previous: {_currentHubPackageName}, prevResourceId: {_currentHubResourceId})");
+
             
             // Clear previous state when switching packages
             _currentHubPackageName = packageGroupName;
@@ -285,7 +293,6 @@ namespace VPM
                 
                 if (detail == null || string.IsNullOrEmpty(detail.ResourceId))
                 {
-                    Debug.WriteLine($"[HubOverview] No detail returned from Hub API");
                     ShowHubOverviewPlaceholder($"Hub page not available for:\n{packageGroupName}");
                     return;
                 }
@@ -293,13 +300,11 @@ namespace VPM
                 // Validate that the returned resource actually matches our package
                 if (!ValidateHubResourceMatch(detail, packageGroupName, selectedPackage.Name))
                 {
-                    Debug.WriteLine($"[HubOverview] Validation failed - showing placeholder");
                     ShowHubOverviewPlaceholder($"Hub page not available for:\n{packageGroupName}");
                     return;
                 }
                 
                 _currentHubResourceId = detail.ResourceId;
-                Debug.WriteLine($"[HubOverview] Navigating to resource: {detail.ResourceId}");
                 
                 // Navigate to the Hub overview page
                 await NavigateToHubOverviewAsync(detail.ResourceId);
@@ -329,85 +334,62 @@ namespace VPM
         /// <returns>True if the resource is a valid match for the package</returns>
         private static bool ValidateHubResourceMatch(Models.HubResourceDetail detail, string packageGroupName, string fullPackageName)
         {
-            Debug.WriteLine($"[HubOverview] ValidateHubResourceMatch called:");
-            Debug.WriteLine($"[HubOverview]   packageGroupName: '{packageGroupName}'");
-            Debug.WriteLine($"[HubOverview]   fullPackageName: '{fullPackageName}'");
-            
             if (detail == null)
             {
-                Debug.WriteLine($"[HubOverview]   FAIL: detail is null");
                 return false;
             }
             
             if (string.IsNullOrEmpty(packageGroupName))
             {
-                Debug.WriteLine($"[HubOverview]   FAIL: packageGroupName is null/empty");
                 return false;
             }
             
-            Debug.WriteLine($"[HubOverview]   Hub Resource: ResourceId='{detail.ResourceId}', Title='{detail.Title}', Creator='{detail.Creator}'");
-            Debug.WriteLine($"[HubOverview]   Hub HubFiles count: {detail.HubFiles?.Count ?? 0}");
-            
             // Extract creator from package group name (first segment before the dot)
             var packageCreator = ExtractCreatorFromPackageName(packageGroupName);
-            Debug.WriteLine($"[HubOverview]   Extracted packageCreator: '{packageCreator}'");
             
             if (string.IsNullOrEmpty(packageCreator))
             {
-                Debug.WriteLine($"[HubOverview]   FAIL: Could not extract creator from packageGroupName");
                 return false;
             }
             
             // Rule 1: Creator must match (case-insensitive)
             var creatorMatch = string.Equals(detail.Creator, packageCreator, StringComparison.OrdinalIgnoreCase);
-            Debug.WriteLine($"[HubOverview]   Rule 1 - Creator match: Hub='{detail.Creator}' vs Package='{packageCreator}' => {creatorMatch}");
             
             if (string.IsNullOrEmpty(detail.Creator) || !creatorMatch)
             {
-                Debug.WriteLine($"[HubOverview]   FAIL: Creator mismatch");
                 return false;
             }
             
             // Rule 2: Check if any HubFile matches the package group name
             if (detail.HubFiles != null && detail.HubFiles.Count > 0)
             {
-                Debug.WriteLine($"[HubOverview]   Rule 2 - Checking {detail.HubFiles.Count} HubFiles:");
                 foreach (var file in detail.HubFiles)
                 {
-                    Debug.WriteLine($"[HubOverview]     File: '{file.Filename}'");
-                    
                     if (string.IsNullOrEmpty(file.Filename))
                     {
-                        Debug.WriteLine($"[HubOverview]       Skipping: filename is null/empty");
                         continue;
                     }
                     
                     // Get the package group name from the Hub file
                     var hubFileGroupName = GetPackageGroupName(file.Filename);
-                    Debug.WriteLine($"[HubOverview]       Extracted group name: '{hubFileGroupName}'");
                     
                     // Check for exact match of package group name
                     var fileMatch = string.Equals(hubFileGroupName, packageGroupName, StringComparison.OrdinalIgnoreCase);
-                    Debug.WriteLine($"[HubOverview]       Match with '{packageGroupName}': {fileMatch}");
                     
                     if (fileMatch)
                     {
-                        Debug.WriteLine($"[HubOverview]   SUCCESS: Found matching HubFile");
                         return true;
                     }
                 }
                 
                 // Has files but none match - this is a false positive
-                Debug.WriteLine($"[HubOverview]   FAIL: Has {detail.HubFiles.Count} files but none match packageGroupName");
                 return false;
             }
             
             // Rule 3: No HubFiles available (externally hosted?) - fall back to looser matching
-            Debug.WriteLine($"[HubOverview]   Rule 3 - No HubFiles, falling back to title matching");
             
             // Check if the package name (without creator prefix) appears in the title
             var packageNameWithoutCreator = ExtractPackageNameWithoutCreator(packageGroupName);
-            Debug.WriteLine($"[HubOverview]   packageNameWithoutCreator: '{packageNameWithoutCreator}'");
             
             if (!string.IsNullOrEmpty(packageNameWithoutCreator) && !string.IsNullOrEmpty(detail.Title))
             {
@@ -415,22 +397,16 @@ namespace VPM
                 var normalizedTitle = NormalizeForComparison(detail.Title);
                 var normalizedPackageName = NormalizeForComparison(packageNameWithoutCreator);
                 
-                Debug.WriteLine($"[HubOverview]   Normalized title: '{normalizedTitle}'");
-                Debug.WriteLine($"[HubOverview]   Normalized package: '{normalizedPackageName}'");
-                
                 // Title should contain the package name
                 var titleContains = normalizedTitle.Contains(normalizedPackageName, StringComparison.OrdinalIgnoreCase);
-                Debug.WriteLine($"[HubOverview]   Title contains package name: {titleContains}");
                 
                 if (titleContains)
                 {
-                    Debug.WriteLine($"[HubOverview]   SUCCESS: Title contains package name");
                     return true;
                 }
             }
             
             // No files and title doesn't match - reject
-            Debug.WriteLine($"[HubOverview]   FAIL: No HubFiles and title doesn't match");
             return false;
         }
         
@@ -533,7 +509,6 @@ namespace VPM
         
         private void ShowHubOverviewPlaceholder(string message)
         {
-            Debug.WriteLine($"[HubOverview] ShowHubOverviewPlaceholder: {message.Replace("\n", " ")}");
             HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
             HubOverviewErrorPanel.Visibility = Visibility.Collapsed;
             HubOverviewPlaceholderText.Text = message;
@@ -545,7 +520,6 @@ namespace VPM
         
         private void ShowHubOverviewError(string message)
         {
-            Debug.WriteLine($"[HubOverview] ShowHubOverviewError: {message.Replace("\n", " ")}");
             HubOverviewLoadingOverlay.Visibility = Visibility.Collapsed;
             HubOverviewPlaceholder.Visibility = Visibility.Collapsed;
             HubOverviewErrorText.Text = message;
@@ -557,7 +531,6 @@ namespace VPM
         
         private void ShowHubOverviewLoading()
         {
-            Debug.WriteLine($"[HubOverview] ShowHubOverviewLoading");
             HubOverviewLoadingOverlay.Visibility = Visibility.Visible;
             HubOverviewPlaceholder.Visibility = Visibility.Collapsed;
             HubOverviewErrorPanel.Visibility = Visibility.Collapsed;
@@ -568,7 +541,6 @@ namespace VPM
         /// </summary>
         private void ClearHubOverviewWebView()
         {
-            Debug.WriteLine($"[HubOverview] ClearHubOverviewWebView called");
             try
             {
                 if (_hubOverviewWebViewInitialized && HubOverviewWebView?.CoreWebView2 != null)

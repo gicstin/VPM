@@ -52,19 +52,7 @@ namespace VPM.Windows
             // Load thumbnail
             if (!string.IsNullOrEmpty(_resource.ImageUrl))
             {
-                try
-                {
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(_resource.ImageUrl);
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    ThumbnailImage.Source = bitmap;
-                }
-                catch
-                {
-                    // Ignore thumbnail loading errors
-                }
+                _ = LoadThumbnailAsync(_resource.ImageUrl);
             }
 
             // Build files list
@@ -92,6 +80,24 @@ namespace VPM.Windows
 
             FilesItemsControl.ItemsSource = _files;
             UpdateDownloadAllButton();
+        }
+
+        private async Task LoadThumbnailAsync(string imageUrl)
+        {
+            try
+            {
+                // Use cached image service to support binary caching and offline access
+                var bitmap = await _hubService.GetCachedImageAsync(imageUrl);
+                if (bitmap != null)
+                {
+                    ThumbnailImage.Source = bitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Ignore thumbnail loading errors but log debug
+                System.Diagnostics.Debug.WriteLine($"[HubResourceDetailWindow] Failed to load thumbnail: {ex}");
+            }
         }
 
         private HubFileViewModel CreateFileViewModel(HubFile file, bool isDependency)

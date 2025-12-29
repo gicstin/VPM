@@ -6791,10 +6791,22 @@ namespace VPM
                 Tag = args
             };
 
-            item.Click += (s, e) =>
+            item.Click += async (s, e) =>
             {
                 try
                 {
+                    // Automatic Load+Deps for the scene package
+                    if (!string.IsNullOrEmpty(toolTip))
+                    {
+                        var colonIndex = toolTip.IndexOf(':');
+                        if (colonIndex > 0)
+                        {
+                            var packageId = toolTip.Substring(0, colonIndex);
+                            bool loadSuccess = await LoadPackagesWithDependenciesAsync(new List<string> { packageId }, interactive: true, suppressEmptyMessage: true);
+                            if (!loadSuccess) return;
+                        }
+                    }
+
                     // Safety: VaM's --vpb.vds.scene must target a scene JSON.
                     // If we accidentally pass a preview image (jpg/png/etc), VaM will launch but not load the scene.
                     var marker = "--vpb.vds.scene";

@@ -242,6 +242,279 @@ namespace VPM
             }
         }
 
+        public async Task<bool> LoadPackagesWithDependenciesAsync(List<string> packageNames, bool interactive = true, bool suppressEmptyMessage = false)
+        {
+            try
+            {
+                if (!EnsureVamFolderSelected()) return false;
+
+                if (packageNames == null || packageNames.Count == 0)
+                {
+                    if (interactive && !suppressEmptyMessage)
+                        MessageBox.Show("No packages specified.", "No Packages", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return false;
+                }
+
+                var packagesToLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
+                var externalPackages = new List<string>();
+                var regularPackages = new List<string>();
+
+                foreach (var packageName in packageNames)
+                {
+                    if (!_packageManager.PackageMetadata.TryGetValue(packageName, out var metadata))
+                        continue;
+
+                    // Load if Available or External (and not already loaded/cleared)
+                    if (metadata.Status == "Available")
+                    {
+                        packagesToLoad.Add(packageName);
+                        regularPackages.Add(packageName);
+                    }
+                    else if (metadata.IsExternal)
+                    {
+                        packagesToLoad.Add(packageName);
+                        externalPackages.Add(packageName);
+                    }
+                    
+                    // Resolve dependencies
+                    if (metadata.Dependencies != null)
+                    {
+                        foreach (var dependency in metadata.Dependencies)
+                        {
+                            var dependencyName = dependency;
+                            if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                            {
+                                dependencyName = Path.GetFileNameWithoutExtension(dependency);
+                            }
+
+                            string baseName = dependencyName;
+                            var lastDotIndex = dependencyName.LastIndexOf('.');
+                            if (lastDotIndex > 0)
+                            {
+                                var potentialVersion = dependencyName.Substring(lastDotIndex + 1);
+                                if (int.TryParse(potentialVersion, out _) || potentialVersion.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    baseName = dependencyName.Substring(0, lastDotIndex);
+                                }
+                            }
+
+                            allDependencies.Add(baseName);
+                        }
+                    }
+                }
+
+                // Find available dependencies (local)
+                var availableDependencies = allDependencies
+                    .Where(d => !packagesToLoad.Contains(d))
+                    .Where(d => {
+                        var status = _packageFileManager?.GetPackageStatus(d);
+                        return status == "Available" || status == "Outdated" || status == "Archived";
+                    })
+                    .ToList();
+
+                // Find external dependencies
+                var externalDependencies = new List<(string name, VarMetadata metadata)>();
+                foreach (var depName in allDependencies.Where(d => !packagesToLoad.Contains(d) && !availableDependencies.Contains(d)))
+                {
+                    var depMetadata = _packageManager?.PackageMetadata?.Values
+                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
+                        .OrderByDescending(p => p.Version)
+                        .FirstOrDefault();
+                    
+                    if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
+                    {
+                        externalDependencies.Add((depName, depMetadata));
+                    }
+                }
+
+                var totalToLoad = packagesToLoad.Count + availableDependencies.Count + externalDependencies.Count;
+
+                if (totalToLoad == 0)
+                {
+                    if (interactive && !suppressEmptyMessage)
+                        MessageBox.Show("No packages or dependencies available to load.", "No Packages", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return true;
+                }
+
+                if (interactive && totalToLoad >= 50)
+                {
+                    var displayPackages = packagesToLoad.Take(3).ToList();
+                    var allDeps = availableDependencies.Concat(externalDependencies.Select(e => e.name)).ToList();
+                    var displayDeps = allDeps.Take(3).ToList();
+                    var displayText = "Packages:\n" + string.Join("\n", displayPackages);
+                    if (packagesToLoad.Count > 3)
+                        displayText += $"\n... and {packagesToLoad.Count - 3} more";
+                    
+                    if (allDeps.Count > 0)
+                    {
+                        displayText += "\n\nDependencies:\n" + string.Join("\n", displayDeps);
+                        if (allDeps.Count > 3)
+                            displayText += $"\n... and {allDeps.Count - 3} more";
+                    }
+
+                    var result = MessageBox.Show(
+                        $"Load {packagesToLoad.Count} packages + {allDeps.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
+                        "Confirm Load Operation",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result != MessageBoxResult.Yes)
+                        return false;
+                }
+
+                LoadPackagesButton.IsEnabled = false;
+                LoadPackagesWithDepsButton.IsEnabled = false;
+
+                try
+                {
+                    var allPackagesToLoad = new List<string>(packagesToLoad);
+                    allPackagesToLoad.AddRange(availableDependencies);
+                    allPackagesToLoad.AddRange(externalDependencies.Select(e => e.name));
+
+                    await PrepareForPackageFileOperationsAsync(allPackagesToLoad);
+
+                    var results = new List<(string packageName, bool success, string error)>();
+                    var totalCount = totalToLoad;
+                    var completed = 0;
+
+                    foreach (var pkgName in externalPackages)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {pkgName}...");
+
+                        if (_packageManager.PackageMetadata.TryGetValue(pkgName, out var metadata) && 
+                            !string.IsNullOrEmpty(metadata.FilePath))
+                        {
+                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(pkgName, metadata.FilePath);
+                            results.Add((pkgName, success, error));
+                        }
+                        else
+                        {
+                            results.Add((pkgName, false, "External package file path not found in metadata"));
+                        }
+                    }
+
+                    foreach (var (depName, depMetadata) in externalDependencies)
+                    {
+                        completed++;
+                        SetStatus(totalCount > 1
+                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
+                            : $"Loading {depName}...");
+
+                        var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(depName, depMetadata.FilePath);
+                        results.Add((depName, success, error));
+                    }
+
+                    var regularAndDeps = regularPackages.Concat(availableDependencies).ToList();
+                    if (regularAndDeps.Count > 0)
+                    {
+                        var progress = CreateStatusProgress(p =>
+                        {
+                            SetStatus(totalCount > 1
+                                ? $"Loading packages and dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
+                                : $"Loading {p.currentPackage}...");
+                        });
+
+                        var regularResults = await _packageFileManager.LoadPackagesAsync(regularAndDeps, progress);
+                        results.AddRange(regularResults);
+                    }
+
+                    ClearPackageMetadataCache();
+
+                    var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
+                    
+                    // Note: We don't have PackageItems here to update directly, but BulkUpdatePackageStatus will handle it.
+                    // However, we need to handle ExternalDestinationName clearing if we had PackageItems.
+                    // The original code updated the specific PackageItem instances from the grid.
+                    // Here we rely on RefeshCurrentlyDisplayedImagesAsync to refresh UI from metadata.
+                    
+                    var successfullyLoaded = results
+                        .Where(r => r.success)
+                        .Select(r => r.packageName)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    if (successfullyLoaded.Count > 0)
+                    {
+                        await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
+                        
+                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
+                        
+                        if (PackageDataGrid?.SelectedItems?.Count > 0)
+                        {
+                            var selectedPackage = PackageDataGrid.SelectedItems[0] as PackageItem;
+                            if (selectedPackage != null)
+                            {
+                                DisplayDependencies(selectedPackage);
+                            }
+                        }
+                    }
+
+                    LoadPackagesButton.IsEnabled = true;
+                    LoadPackagesWithDepsButton.IsEnabled = true;
+                    UpdatePackageButtonBar();
+
+                    await RefreshCurrentlyDisplayedImagesAsync();
+
+                    var successCount = results.Count(r => r.success);
+                    var failureCount = results.Count(r => !r.success);
+                    var throttledCount = results.Count(r => !r.success && r.error.Contains("recently performed"));
+                    var actualFailureCount = failureCount - throttledCount;
+
+                    if (successCount > 0 && actualFailureCount == 0)
+                    {
+                        SetStatus($"Successfully loaded {successCount} packages and dependencies" +
+                                 (throttledCount > 0 ? $" ({throttledCount} skipped - too soon)" : ""));
+                    }
+                    else if (successCount > 0 && actualFailureCount > 0)
+                    {
+                        SetStatus($"Loaded {successCount} packages and dependencies ({actualFailureCount} failed)");
+                    }
+                    else if (actualFailureCount > 0)
+                    {
+                        SetStatus($"Failed to load {actualFailureCount} packages and dependencies");
+
+                        if (interactive)
+                        {
+                            var actualErrors = results.Where(r => !r.success && !r.error.Contains("recently performed")).ToList();
+                            if (actualErrors.Count > 0 && actualErrors.Count <= 5)
+                            {
+                                var errors = actualErrors.Select(r => $"{r.packageName}: {r.error}");
+                                MessageBox.Show($"Load operation failed:\n\n{string.Join("\n", errors)}",
+                                              "Load Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            }
+                        }
+                    }
+                    else if (throttledCount > 0)
+                    {
+                        SetStatus($"Operation skipped - please wait a moment before retrying");
+                    }
+                    
+                    return actualFailureCount == 0;
+                }
+                finally
+                {
+                    if (!LoadPackagesButton.IsEnabled)
+                    {
+                        LoadPackagesButton.IsEnabled = true;
+                        LoadPackagesWithDepsButton.IsEnabled = true;
+                        UpdatePackageButtonBar();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                if (interactive)
+                    MessageBox.Show($"Error during load operation: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                SetStatus("Load operation failed");
+                return false;
+            }
+        }
+
         private async void LoadPackagesWithDeps_Click(object sender, RoutedEventArgs e)
         {
             try

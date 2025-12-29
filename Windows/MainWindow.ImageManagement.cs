@@ -880,7 +880,12 @@ namespace VPM
                                 }
                             }
 
-                            foreach (var location in locations)
+                            // SORTING: Prioritize "Scene" type images to appear at the top
+                            var sortedLocations = locations.OrderByDescending(l => 
+                                string.Equals(VPM.Services.VarContentExtractor.GetCategoryFromPath(l.InternalPath), "Scene", StringComparison.OrdinalIgnoreCase))
+                                .ToList();
+
+                            foreach (var location in sortedLocations)
                             {
                                 if (cancellationToken.IsCancellationRequested) 
                                     break;
