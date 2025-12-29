@@ -6802,8 +6802,21 @@ namespace VPM
                         if (colonIndex > 0)
                         {
                             var packageId = toolTip.Substring(0, colonIndex);
-                            bool loadSuccess = await LoadPackagesWithDependenciesAsync(new List<string> { packageId }, interactive: true, suppressEmptyMessage: true);
+                            var (loadSuccess, missingCount) = await LoadPackagesWithDependenciesAsync(new List<string> { packageId }, interactive: true, suppressEmptyMessage: true);
+                            
                             if (!loadSuccess) return;
+
+                            if (missingCount > 0)
+                            {
+                                var result = CustomMessageBox.Show(
+                                    $"{missingCount} dependencies are missing and could cause scene to not load correctly.\n\nWould you like to launch the scene?",
+                                    "Missing Dependencies",
+                                    MessageBoxButton.YesNo,
+                                    MessageBoxImage.Warning);
+                                
+                                if (result != MessageBoxResult.Yes)
+                                    return;
+                            }
                         }
                     }
 

@@ -242,17 +242,17 @@ namespace VPM
             }
         }
 
-        public async Task<bool> LoadPackagesWithDependenciesAsync(List<string> packageNames, bool interactive = true, bool suppressEmptyMessage = false)
+        public async Task<(bool success, int missingCount)> LoadPackagesWithDependenciesAsync(List<string> packageNames, bool interactive = true, bool suppressEmptyMessage = false)
         {
             try
             {
-                if (!EnsureVamFolderSelected()) return false;
+                if (!EnsureVamFolderSelected()) return (false, 0);
 
                 if (packageNames == null || packageNames.Count == 0)
                 {
                     if (interactive && !suppressEmptyMessage)
                         MessageBox.Show("No packages specified.", "No Packages", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return false;
+                    return (false, 0);
                 }
 
                 var packagesToLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -329,13 +329,38 @@ namespace VPM
                     }
                 }
 
+                // Calculate missing dependencies (neither to-be-loaded, nor already loaded)
+                var missingCount = 0;
+                foreach (var depName in allDependencies)
+                {
+                    // Check if it's being loaded
+                    if (packagesToLoad.Contains(depName) || availableDependencies.Contains(depName) || externalDependencies.Any(e => e.name.Equals(depName, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    // Check if it's already loaded or has another valid status that doesn't require loading but isn't "Missing"
+                    var status = _packageFileManager?.GetPackageStatus(depName);
+                    if (status == "Loaded") 
+                        continue;
+                    
+                    // Note: "Unknown" usually implies missing if not found in metadata
+                    // If GetPackageStatus returns "Missing", or if it's "Unknown" (and not in metadata properly)
+                    // Simplified check: If it's not Loaded, Available, Outdated, Archived, or External -> It's missing
+                    
+                    // We already filtered Available/Outdated/Archived into availableDependencies.
+                    // We already filtered External into externalDependencies.
+                    // So if we are here, it's not any of those.
+                    // If it was Loaded, we skipped it above.
+                    // So it must be Missing.
+                    missingCount++;
+                }
+
                 var totalToLoad = packagesToLoad.Count + availableDependencies.Count + externalDependencies.Count;
 
                 if (totalToLoad == 0)
                 {
                     if (interactive && !suppressEmptyMessage)
                         MessageBox.Show("No packages or dependencies available to load.", "No Packages", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return true;
+                    return (true, missingCount);
                 }
 
                 if (interactive && totalToLoad >= 50)
@@ -361,7 +386,7 @@ namespace VPM
                         MessageBoxImage.Question);
 
                     if (result != MessageBoxResult.Yes)
-                        return false;
+                        return (false, missingCount);
                 }
 
                 LoadPackagesButton.IsEnabled = false;
@@ -427,11 +452,6 @@ namespace VPM
 
                     var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
                     
-                    // Note: We don't have PackageItems here to update directly, but BulkUpdatePackageStatus will handle it.
-                    // However, we need to handle ExternalDestinationName clearing if we had PackageItems.
-                    // The original code updated the specific PackageItem instances from the grid.
-                    // Here we rely on RefeshCurrentlyDisplayedImagesAsync to refresh UI from metadata.
-                    
                     var successfullyLoaded = results
                         .Where(r => r.success)
                         .Select(r => r.packageName)
@@ -494,7 +514,7 @@ namespace VPM
                         SetStatus($"Operation skipped - please wait a moment before retrying");
                     }
                     
-                    return actualFailureCount == 0;
+                    return (actualFailureCount == 0, missingCount);
                 }
                 finally
                 {
@@ -511,7 +531,7 @@ namespace VPM
                 if (interactive)
                     MessageBox.Show($"Error during load operation: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 SetStatus("Load operation failed");
-                return false;
+                return (false, 0);
             }
         }
 
@@ -532,267 +552,7 @@ namespace VPM
                     return;
                 }
 
-                var packagesToLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var package in selectedPackages)
-                {
-                    packagesToLoad.Add(package.Name);
-
-                    _packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var packageMetadata);
-                    if (packageMetadata?.Dependencies != null)
-                    {
-                        foreach (var dependency in packageMetadata.Dependencies)
-                        {
-                            var dependencyName = dependency;
-                            if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                            {
-                                dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                            }
-
-                            string baseName = dependencyName;
-                            var lastDotIndex = dependencyName.LastIndexOf('.');
-                            if (lastDotIndex > 0)
-                            {
-                                var potentialVersion = dependencyName.Substring(lastDotIndex + 1);
-                                if (int.TryParse(potentialVersion, out _) || potentialVersion.Equals("latest", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    baseName = dependencyName.Substring(0, lastDotIndex);
-                                }
-                            }
-
-                            allDependencies.Add(baseName);
-                        }
-                    }
-                }
-
-                // Find available dependencies (local) - includes Available, Outdated, and Archived
-                var availableDependencies = allDependencies
-                    .Where(d => !packagesToLoad.Contains(d))
-                    .Where(d => {
-                        var status = _packageFileManager?.GetPackageStatus(d);
-                        return status == "Available" || status == "Outdated" || status == "Archived";
-                    })
-                    .ToList();
-
-                // Find external dependencies (in external destinations)
-                var externalDependencies = new List<(string name, VarMetadata metadata)>();
-                foreach (var depName in allDependencies.Where(d => !packagesToLoad.Contains(d) && !availableDependencies.Contains(d)))
-                {
-                    // Find metadata for this dependency - get highest version if multiple exist
-                    var depMetadata = _packageManager?.PackageMetadata?.Values
-                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
-                        .OrderByDescending(p => p.Version)
-                        .FirstOrDefault();
-                    
-                    if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
-                    {
-                        externalDependencies.Add((depName, depMetadata));
-                    }
-                }
-
-                var totalToLoad = packagesToLoad.Count + availableDependencies.Count + externalDependencies.Count;
-
-                if (totalToLoad == 0)
-                {
-                    MessageBox.Show("No packages or dependencies available to load.", "No Packages",
-                                   MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-
-                if (totalToLoad >= 50)
-                {
-                    var displayPackages = packagesToLoad.Take(3).ToList();
-                    var allDeps = availableDependencies.Concat(externalDependencies.Select(e => e.name)).ToList();
-                    var displayDeps = allDeps.Take(3).ToList();
-                    var displayText = "Packages:\n" + string.Join("\n", displayPackages);
-                    if (packagesToLoad.Count > 3)
-                        displayText += $"\n... and {packagesToLoad.Count - 3} more";
-                    
-                    if (allDeps.Count > 0)
-                    {
-                        displayText += "\n\nDependencies:\n" + string.Join("\n", displayDeps);
-                        if (allDeps.Count > 3)
-                            displayText += $"\n... and {allDeps.Count - 3} more";
-                    }
-
-                    var result = CustomMessageBox.Show(
-                        $"Load {packagesToLoad.Count} packages + {allDeps.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
-                        "Confirm Load Operation",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (result != MessageBoxResult.Yes)
-                        return;
-                }
-
-                LoadPackagesButton.IsEnabled = false;
-                LoadPackagesWithDepsButton.IsEnabled = false;
-
-                try
-                {
-                    // Separate external packages from regular available packages
-                    var externalPackages = selectedPackages.Where(p => p.IsExternal).ToList();
-                    var regularPackages = selectedPackages.Where(p => !p.IsExternal && p.Status == "Available").ToList();
-                    
-                    var allPackagesToLoad = new List<string>(packagesToLoad);
-                    allPackagesToLoad.AddRange(availableDependencies);
-                    allPackagesToLoad.AddRange(externalDependencies.Select(e => e.name));
-
-                    await PrepareForPackageFileOperationsAsync(allPackagesToLoad);
-
-                    var results = new List<(string packageName, bool success, string error)>();
-                    var totalCount = externalPackages.Count + regularPackages.Count + availableDependencies.Count + externalDependencies.Count;
-                    var completed = 0;
-
-                    // Load external packages first using their file paths from metadata
-                    foreach (var package in externalPackages)
-                    {
-                        completed++;
-                        SetStatus(totalCount > 1
-                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {package.Name}...");
-
-                        if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) && 
-                            !string.IsNullOrEmpty(metadata.FilePath))
-                        {
-                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(package.Name, metadata.FilePath);
-                            results.Add((package.Name, success, error));
-                        }
-                        else
-                        {
-                            results.Add((package.Name, false, "External package file path not found in metadata"));
-                        }
-                    }
-
-                    // Load external dependencies using their file paths from metadata
-                    foreach (var (depName, depMetadata) in externalDependencies)
-                    {
-                        completed++;
-                        SetStatus(totalCount > 1
-                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {depName}...");
-
-                        var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(depName, depMetadata.FilePath);
-                        results.Add((depName, success, error));
-                    }
-
-                    // Load regular available packages and dependencies
-                    var regularAndDeps = regularPackages.Select(p => p.Name).Concat(availableDependencies).ToList();
-                    if (regularAndDeps.Count > 0)
-                    {
-                        var progress = CreateStatusProgress(p =>
-                        {
-                            SetStatus(totalCount > 1
-                                ? $"Loading packages and dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
-                                : $"Loading {p.currentPackage}...");
-                        });
-
-                        var regularResults = await _packageFileManager.LoadPackagesAsync(regularAndDeps, progress);
-                        results.AddRange(regularResults);
-                    }
-
-                    // Clear metadata cache to ensure new paths are picked up
-                    ClearPackageMetadataCache();
-
-                    var statusUpdates = new List<(string packageName, string status, Color statusColor)>();
-
-                    // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
-                    var packageLookup = selectedPackages.ToDictionary(
-                        p => p.Name, 
-                        p => p, 
-                        StringComparer.OrdinalIgnoreCase);
-
-                    foreach ((string packageName, bool success, string error) in results)
-                    {
-                        if (packageLookup.TryGetValue(packageName, out var package) && success)
-                        {
-                            // Clear external destination properties so status color reflects "Loaded"
-                            package.ExternalDestinationName = "";
-                            package.ExternalDestinationColorHex = "";
-                            package.Status = "Loaded";
-                            statusUpdates.Add((packageName, "Loaded", package.StatusColor));
-                        }
-                    }
-
-                    if (statusUpdates.Count > 0)
-                    {
-                        UpdateMultiplePackageStatusInImageGrid(statusUpdates);
-                    }
-
-                    var successfullyLoaded = results
-                        .Where(r => r.success)
-                        .Select(r => r.packageName)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    if (successfullyLoaded.Count > 0)
-                    {
-                        await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
-                        
-                        // Refresh package status index to reflect newly loaded packages and dependencies
-                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
-                        
-                        // Refresh the dependency display to show updated statuses
-                        if (PackageDataGrid?.SelectedItems?.Count > 0)
-                        {
-                            var selectedPackage = PackageDataGrid.SelectedItems[0] as PackageItem;
-                            if (selectedPackage != null)
-                            {
-                                DisplayDependencies(selectedPackage);
-                            }
-                        }
-                    }
-
-                    // Re-enable UI BEFORE refreshing image grid
-                    LoadPackagesButton.IsEnabled = true;
-                    LoadPackagesWithDepsButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
-
-                    // Refresh image grid to show newly loaded packages and dependencies
-                    await RefreshCurrentlyDisplayedImagesAsync();
-
-                    var successCount = results.Count(r => r.success);
-                    var failureCount = results.Count(r => !r.success);
-                    var throttledCount = results.Count(r => !r.success && r.error.Contains("recently performed"));
-                    var actualFailureCount = failureCount - throttledCount;
-
-                    if (successCount > 0 && actualFailureCount == 0)
-                    {
-                        SetStatus($"Successfully loaded {successCount} packages and dependencies" +
-                                 (throttledCount > 0 ? $" ({throttledCount} skipped - too soon)" : ""));
-                    }
-                    else if (successCount > 0 && actualFailureCount > 0)
-                    {
-                        SetStatus($"Loaded {successCount} packages and dependencies ({actualFailureCount} failed)");
-                    }
-                    else if (actualFailureCount > 0)
-                    {
-                        SetStatus($"Failed to load {actualFailureCount} packages and dependencies");
-
-                        var actualErrors = results.Where(r => !r.success && !r.error.Contains("recently performed")).ToList();
-                        if (actualErrors.Count > 0 && actualErrors.Count <= 5)
-                        {
-                            var errors = actualErrors.Select(r => $"{r.packageName}: {r.error}");
-                            MessageBox.Show($"Load operation failed:\n\n{string.Join("\n", errors)}",
-                                          "Load Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                        }
-                    }
-                    else if (throttledCount > 0)
-                    {
-                        SetStatus($"Operation skipped - please wait a moment before retrying");
-                    }
-                }
-                finally
-                {
-                    // Re-enable UI if not already enabled
-                    if (!LoadPackagesButton.IsEnabled)
-                    {
-                        LoadPackagesButton.IsEnabled = true;
-                        LoadPackagesWithDepsButton.IsEnabled = true;
-                        UpdatePackageButtonBar();
-                    }
-                }
+                await LoadPackagesWithDependenciesAsync(selectedPackages.Select(p => p.Name).ToList(), interactive: true);
             }
             catch (Exception)
             {
