@@ -74,22 +74,16 @@ namespace VPM.Services
 
         private static readonly RequiredItem[] RequiredItems =
         [
-            new RequiredItem("BepInEx/core/BepInEx.Harmony.xml", false),
-            new RequiredItem("BepInEx/core/BepInEx.xml", false),
             new RequiredItem("BepInEx/core/HarmonyXInterop.dll", false),
             new RequiredItem("BepInEx/core/0Harmony.dll", false),
-            new RequiredItem("BepInEx/core/0Harmony.xml", false),
-            new RequiredItem("BepInEx/core/MonoMod.RuntimeDetour.xml", false),
             new RequiredItem("BepInEx/core/MonoMod.RuntimeDetour.dll", false),
             new RequiredItem("BepInEx/core/MonoMod.Utils.dll", false),
-            new RequiredItem("BepInEx/core/MonoMod.Utils.xml", false),
             new RequiredItem("BepInEx/core/Mono.Cecil.dll", false),
             new RequiredItem("BepInEx/core/Mono.Cecil.Mdb.dll", false),
             new RequiredItem("BepInEx/core/Mono.Cecil.Pdb.dll", false),
             new RequiredItem("BepInEx/core/Mono.Cecil.Rocks.dll", false),
             new RequiredItem("BepInEx/core/BepInEx.dll", false),
             new RequiredItem("BepInEx/core/BepInEx.Preloader.dll", false),
-            new RequiredItem("BepInEx/core/BepInEx.Preloader.xml", false),
             new RequiredItem("BepInEx/core/0Harmony20.dll", false),
             new RequiredItem("BepInEx/core/BepInEx.Harmony.dll", false),
             new RequiredItem(".doorstop_version", false),
@@ -98,13 +92,13 @@ namespace VPM.Services
             new RequiredItem("doorstop_config.ini", false),
             new RequiredItem("BepInEx/plugins", true),
             new RequiredItem("BepInEx/plugins/I18N.West.dll", false),
-            new RequiredItem("BepInEx/plugins/var_browser.dll", false),
+            new RequiredItem("BepInEx/plugins/VPB.dll", false),
             new RequiredItem("BepInEx/plugins/I18N.CJK.dll", false),
             new RequiredItem("BepInEx/plugins/I18N.dll", false),
             new RequiredItem("BepInEx/plugins/I18N.MidEast.dll", false),
             new RequiredItem("BepInEx/plugins/I18N.Other.dll", false),
             new RequiredItem("BepInEx/plugins/I18N.Rare.dll", false),
-            new RequiredItem("Custom/Scripts/var_browser/VarBrowserSessionPlugin.cs", false),
+            new RequiredItem("Custom/Scripts/VPB/VPB-SessionPlugin.cs", false),
             new RequiredItem("VaM (Log Mode).bat", false)
         ];
 
