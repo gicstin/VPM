@@ -16,7 +16,7 @@ _vb/
 
 # Runtime generated
 *.log
-code_metrics.txt
+
 
 # OS files
 .DS_Store
@@ -28,3 +28,4 @@ Thumbs.db
 *.swp
 *.swo
 *~
+/VPM-TODO.md

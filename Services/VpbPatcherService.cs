@@ -132,125 +132,101 @@ namespace VPM.Services
             if (!File.Exists(vamExe))
                 throw new DirectoryNotFoundException($"VaM.exe not found in: {gameFolder}");
 
+            try
+            {
+                var varBrowserPath = Path.Combine(gameFolder, "BepInEx", "plugins", "var_browser.dll");
+                if (File.Exists(varBrowserPath))
+                {
+                    var info = new FileInfo(varBrowserPath);
+                    if (info.Length > 220 * 1024)
+                    {
+                        var newPath = varBrowserPath + ".bak.remove";
+                        if (File.Exists(newPath))
+                            File.Delete(newPath);
+                        File.Move(varBrowserPath, newPath);
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+
             var manifest = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
             var usedGitRef = manifest.Count > 0 ? manifest[0].GitRef : gitRef;
-
-            var shaByRelativePath = manifest
-                .GroupBy(m => NormalizeRelativePath(m.RelativePath), StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().BlobSha, StringComparer.OrdinalIgnoreCase);
 
             var missing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var outdated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var issuesByPath = new Dictionary<string, VpbPatchFileIssue>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var required in RequiredItems)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+            var parallelOptions = new ParallelOptions 
+            { 
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Environment.ProcessorCount 
+            };
 
-                var reqPath = NormalizeRelativePath(required.RelativePath);
+            await Parallel.ForEachAsync(manifest, parallelOptions, async (entry, ct) =>
+            {
+                var reqPath = NormalizeRelativePath(entry.RelativePath);
                 var destPath = GetDestinationPath(gameFolder, reqPath);
 
-                if (required.IsDirectory)
+                if (!File.Exists(destPath))
                 {
-                    if (!Directory.Exists(destPath))
+                    lock (issuesByPath)
                     {
                         missing.Add(reqPath);
-
                         issuesByPath[reqPath] = new VpbPatchFileIssue
                         {
                             IssueType = VpbPatchIssueType.Missing,
                             RelativePath = reqPath,
-                            IsDirectory = true,
-                            IsRequired = true,
-                            Reason = "Directory not found"
-                        };
-                    }
-                    continue;
-                }
-
-                if (!File.Exists(destPath))
-                {
-                    missing.Add(reqPath);
-
-                    shaByRelativePath.TryGetValue(reqPath, out var expectedShaMissing);
-                    issuesByPath[reqPath] = new VpbPatchFileIssue
-                    {
-                        IssueType = VpbPatchIssueType.Missing,
-                        RelativePath = reqPath,
-                        IsDirectory = false,
-                        IsRequired = true,
-                        Reason = "File not found",
-                        ExpectedSha = expectedShaMissing
-                    };
-                    continue;
-                }
-
-                if (shaByRelativePath.TryGetValue(reqPath, out var expectedSha))
-                {
-                    var localSha = ComputeGitBlobSha1Hex(destPath);
-                    if (!string.Equals(localSha, expectedSha, StringComparison.OrdinalIgnoreCase))
-                    {
-                        outdated.Add(reqPath);
-
-                        issuesByPath[reqPath] = new VpbPatchFileIssue
-                        {
-                            IssueType = VpbPatchIssueType.Outdated,
-                            RelativePath = reqPath,
                             IsDirectory = false,
                             IsRequired = true,
-                            Reason = "Checksum mismatch",
-                            ExpectedSha = expectedSha,
-                            LocalSha = localSha
-                        };
-                    }
-                }
-            }
-
-            foreach (var entry in manifest)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var relPath = NormalizeRelativePath(entry.RelativePath);
-                var destPath = GetDestinationPath(gameFolder, relPath);
-
-                if (!File.Exists(destPath))
-                {
-                    missing.Add(relPath);
-
-                    if (!issuesByPath.ContainsKey(relPath))
-                    {
-                        issuesByPath[relPath] = new VpbPatchFileIssue
-                        {
-                            IssueType = VpbPatchIssueType.Missing,
-                            RelativePath = relPath,
-                            IsDirectory = false,
-                            IsRequired = false,
                             Reason = "File not found",
                             ExpectedSha = entry.BlobSha
                         };
                     }
-                    continue;
+                    return;
                 }
 
-                var localSha = ComputeGitBlobSha1Hex(destPath);
-                if (!string.Equals(localSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
+                if (entry.BlobSha != "UNKNOWN")
                 {
-                    outdated.Add(relPath);
-
-                    if (!issuesByPath.ContainsKey(relPath))
+                    var localSha = await Task.Run(() => ComputeGitBlobSha1Hex(destPath), ct);
+                    if (!string.Equals(localSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
                     {
-                        issuesByPath[relPath] = new VpbPatchFileIssue
+                        lock (issuesByPath)
                         {
-                            IssueType = VpbPatchIssueType.Outdated,
-                            RelativePath = relPath,
-                            IsDirectory = false,
-                            IsRequired = false,
-                            Reason = "Checksum mismatch",
-                            ExpectedSha = entry.BlobSha,
-                            LocalSha = localSha
-                        };
+                            outdated.Add(reqPath);
+                            issuesByPath[reqPath] = new VpbPatchFileIssue
+                            {
+                                IssueType = VpbPatchIssueType.Outdated,
+                                RelativePath = reqPath,
+                                IsDirectory = false,
+                                IsRequired = true,
+                                Reason = "Checksum mismatch",
+                                ExpectedSha = entry.BlobSha,
+                                LocalSha = localSha
+                            };
+                        }
                     }
+                }
+            });
+
+            foreach(var req in RequiredItems.Where(x => x.IsDirectory))
+            {
+                var reqPath = NormalizeRelativePath(req.RelativePath);
+                var destPath = GetDestinationPath(gameFolder, reqPath);
+                if (!Directory.Exists(destPath))
+                {
+                     missing.Add(reqPath);
+                     issuesByPath[reqPath] = new VpbPatchFileIssue
+                     {
+                        IssueType = VpbPatchIssueType.Missing,
+                        RelativePath = reqPath,
+                        IsDirectory = true,
+                        IsRequired = true,
+                        Reason = "Directory not found"
+                     };
                 }
             }
 
@@ -297,60 +273,68 @@ namespace VPM.Services
 
             var updated = 0;
             var skipped = 0;
+            var current = 0;
 
-            for (var i = 0; i < manifest.Count; i++)
+            var parallelOptions = new ParallelOptions 
+            { 
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, 8) 
+            };
+
+            await Parallel.ForEachAsync(manifest, parallelOptions, async (entry, ct) =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var entry = manifest[i];
                 var destPath = GetDestinationPath(gameFolder, entry.RelativePath);
-
                 var needsWrite = force || !File.Exists(destPath);
-                if (!needsWrite)
+                
+                if (!needsWrite && entry.BlobSha != "UNKNOWN")
                 {
-                    var localSha = ComputeGitBlobSha1Hex(destPath);
+                    var localSha = await Task.Run(() => ComputeGitBlobSha1Hex(destPath), ct);
                     needsWrite = !string.Equals(localSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase);
                 }
 
                 if (!needsWrite)
                 {
-                    skipped++;
+                    Interlocked.Increment(ref skipped);
+                    var idx = Interlocked.Increment(ref current);
                     progress?.Report(new VpbPatcherProgress
                     {
-                        Index = i + 1,
+                        Index = idx,
                         Total = manifest.Count,
                         RelativePath = entry.RelativePath,
                         Message = "Up to date"
                     });
-                    continue;
+                    return;
                 }
 
+                var idxDownload = Interlocked.Increment(ref current);
                 progress?.Report(new VpbPatcherProgress
                 {
-                    Index = i + 1,
+                    Index = idxDownload,
                     Total = manifest.Count,
                     RelativePath = entry.RelativePath,
                     Message = "Downloading"
                 });
 
                 Directory.CreateDirectory(Path.GetDirectoryName(destPath) ?? gameFolder);
-
                 var tempPath = destPath + ".tmp_" + Guid.NewGuid().ToString("N");
 
                 try
                 {
-                    await DownloadFileAsync(GetRawUrl(usedGitRef, entry.RelativePath), tempPath, cancellationToken).ConfigureAwait(false);
+                    await DownloadFileAsync(GetRawUrl(usedGitRef, entry.RelativePath), tempPath, ct).ConfigureAwait(false);
 
-                    var downloadedSha = ComputeGitBlobSha1Hex(tempPath);
-                    if (!string.Equals(downloadedSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException($"Downloaded file checksum mismatch: {entry.RelativePath}");
+                    if (entry.BlobSha != "UNKNOWN")
+                    {
+                        var downloadedSha = await Task.Run(() => ComputeGitBlobSha1Hex(tempPath), ct);
+                        if (!string.Equals(downloadedSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidDataException($"Downloaded file checksum mismatch: {entry.RelativePath}");
+                    }
 
                     File.Move(tempPath, destPath, true);
-                    updated++;
+                    Interlocked.Increment(ref updated);
 
                     progress?.Report(new VpbPatcherProgress
                     {
-                        Index = i + 1,
+                        Index = idxDownload,
                         Total = manifest.Count,
                         RelativePath = entry.RelativePath,
                         Message = "Installed"
@@ -367,7 +351,7 @@ namespace VPM.Services
                     {
                     }
                 }
-            }
+            });
 
             return new VpbPatchApplyResult
             {
@@ -490,6 +474,11 @@ namespace VPM.Services
             };
         }
 
+        private string GetRawUrl(string gitRef, string relativePath)
+        {
+            return $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{gitRef}/{PatchRoot}{NormalizeRelativePath(relativePath)}";
+        }
+
         private async Task DownloadFileAsync(string url, string destinationPath, CancellationToken cancellationToken)
         {
             using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
@@ -520,146 +509,72 @@ namespace VPM.Services
             return relativePath.Replace('\\', '/').TrimStart('/');
         }
 
-        private static string GetRawUrl(string gitRef, string relativePath)
-        {
-            var rel = relativePath.Replace('\\', '/');
-            return $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{gitRef}/{PatchRoot}{rel}";
-        }
-
         private async Task<List<ManifestEntry>> GetManifestAsync(string gitRef, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(gitRef))
-                throw new ArgumentException("Git ref is required", nameof(gitRef));
-
-            var resolvedTreeSha = await ResolveTreeShaAsync(gitRef, cancellationToken).ConfigureAwait(false);
+            var url = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/trees/{gitRef}?recursive=1";
+            var manifest = new List<ManifestEntry>();
 
             try
             {
-                var entries = await GetManifestByTreeShaAsync(resolvedTreeSha, gitRef, cancellationToken).ConfigureAwait(false);
-                return entries;
-            }
-            catch when (!string.Equals(gitRef, "main", StringComparison.OrdinalIgnoreCase))
-            {
-                var mainTreeSha = await ResolveTreeShaAsync("main", cancellationToken).ConfigureAwait(false);
-                return await GetManifestByTreeShaAsync(mainTreeSha, "main", cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        private async Task<List<ManifestEntry>> GetManifestByTreeShaAsync(string treeSha, string gitRef, CancellationToken cancellationToken)
-        {
-            if (string.IsNullOrWhiteSpace(treeSha))
-                throw new ArgumentException("Tree SHA is required", nameof(treeSha));
-
-            var url = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/trees/{Uri.EscapeDataString(treeSha)}?recursive=1";
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            return await ParseManifestAsync(response, gitRef, cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<string> ResolveTreeShaAsync(string gitRef, CancellationToken cancellationToken)
-        {
-            var refUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/ref/{Uri.EscapeDataString(gitRef)}";
-            using (var refResponse = await _httpClient.GetAsync(refUrl, cancellationToken).ConfigureAwait(false))
-            {
-                if (refResponse.IsSuccessStatusCode)
+                // Use the API to get file metadata (SHAs) for checksum validation
+                using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+                if (response.IsSuccessStatusCode)
                 {
-                    await using var refStream = await refResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-                    using var refDoc = await JsonDocument.ParseAsync(refStream, cancellationToken: cancellationToken).ConfigureAwait(false);
+                    var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    var treeResponse = JsonSerializer.Deserialize<GitHubTreeResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                    if (refDoc.RootElement.TryGetProperty("object", out var obj) &&
-                        obj.ValueKind == JsonValueKind.Object &&
-                        obj.TryGetProperty("sha", out var shaEl) &&
-                        shaEl.ValueKind == JsonValueKind.String)
+                    var remoteFiles = treeResponse?.Tree
+                        .Where(x => x.Type == "blob" && x.Path.StartsWith(PatchRoot, StringComparison.OrdinalIgnoreCase))
+                        .ToDictionary(x => x.Path, x => x.Sha, StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var item in RequiredItems.Where(x => !x.IsDirectory))
                     {
-                        var sha = shaEl.GetString();
-                        if (!string.IsNullOrWhiteSpace(sha))
+                        var fullPath = PatchRoot + item.RelativePath;
+                        fullPath = fullPath.Replace('\\', '/');
+
+                        string sha = "UNKNOWN";
+                        if (remoteFiles != null && remoteFiles.TryGetValue(fullPath, out var foundSha))
                         {
-                            return await ResolveTreeShaFromCommitAsync(sha, cancellationToken).ConfigureAwait(false);
+                            sha = foundSha;
                         }
+
+                        manifest.Add(new ManifestEntry
+                        {
+                            RelativePath = item.RelativePath,
+                            BlobSha = sha,
+                            GitRef = gitRef
+                        });
+                    }
+                }
+                else
+                {
+                    // Fallback if API fails (e.g. rate limited): Assume UNKNOWN shas, only missing files will be detected
+                    foreach (var item in RequiredItems.Where(x => !x.IsDirectory))
+                    {
+                        manifest.Add(new ManifestEntry
+                        {
+                            RelativePath = item.RelativePath,
+                            BlobSha = "UNKNOWN",
+                            GitRef = gitRef
+                        });
                     }
                 }
             }
-
-            return await ResolveTreeShaFromCommitAsync(gitRef, cancellationToken).ConfigureAwait(false);
-        }
-
-        private async Task<string> ResolveTreeShaFromCommitAsync(string commitRef, CancellationToken cancellationToken)
-        {
-            var commitUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/commits/{Uri.EscapeDataString(commitRef)}";
-            using var commitResponse = await _httpClient.GetAsync(commitUrl, cancellationToken).ConfigureAwait(false);
-            commitResponse.EnsureSuccessStatusCode();
-
-            await using var commitStream = await commitResponse.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var commitDoc = await JsonDocument.ParseAsync(commitStream, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            if (!commitDoc.RootElement.TryGetProperty("commit", out var commitEl) || commitEl.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("Invalid GitHub commit response");
-
-            if (!commitEl.TryGetProperty("tree", out var treeEl) || treeEl.ValueKind != JsonValueKind.Object)
-                throw new InvalidDataException("Invalid GitHub commit response (missing tree)");
-
-            if (!treeEl.TryGetProperty("sha", out var shaEl) || shaEl.ValueKind != JsonValueKind.String)
-                throw new InvalidDataException("Invalid GitHub commit response (missing tree sha)");
-
-            var treeSha = shaEl.GetString();
-            if (string.IsNullOrWhiteSpace(treeSha))
-                throw new InvalidDataException("Invalid GitHub commit response (empty tree sha)");
-
-            return treeSha;
-        }
-
-        private static async Task<List<ManifestEntry>> ParseManifestAsync(HttpResponseMessage response, string gitRef, CancellationToken cancellationToken)
-        {
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            if (!doc.RootElement.TryGetProperty("tree", out var treeElement) || treeElement.ValueKind != JsonValueKind.Array)
-                throw new InvalidDataException("Invalid GitHub tree response");
-
-            var entries = new List<ManifestEntry>();
-
-            foreach (var item in treeElement.EnumerateArray())
+            catch
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (!item.TryGetProperty("type", out var typeEl) || typeEl.ValueKind != JsonValueKind.String)
-                    continue;
-
-                if (!string.Equals(typeEl.GetString(), "blob", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (!item.TryGetProperty("path", out var pathEl) || pathEl.ValueKind != JsonValueKind.String)
-                    continue;
-
-                var path = pathEl.GetString() ?? "";
-                if (!path.StartsWith(PatchRoot, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (!item.TryGetProperty("sha", out var shaEl) || shaEl.ValueKind != JsonValueKind.String)
-                    continue;
-
-                var sha = (shaEl.GetString() ?? "").Trim();
-                if (sha.Length == 0)
-                    continue;
-
-                var relativePath = path.Substring(PatchRoot.Length);
-                if (relativePath.Length == 0)
-                    continue;
-
-                entries.Add(new ManifestEntry
-                {
-                    RelativePath = relativePath,
-                    BlobSha = sha,
-                    GitRef = gitRef
-                });
+                // Fallback on error
+                 foreach (var item in RequiredItems.Where(x => !x.IsDirectory))
+                 {
+                     manifest.Add(new ManifestEntry
+                     {
+                         RelativePath = item.RelativePath,
+                         BlobSha = "UNKNOWN",
+                         GitRef = gitRef
+                     });
+                 }
             }
 
-            entries.Sort((a, b) => string.Compare(a.RelativePath, b.RelativePath, StringComparison.OrdinalIgnoreCase));
-
-            if (entries.Count == 0)
-                throw new InvalidDataException("No files found under vam_patch in GitHub tree");
-
-            return entries;
+            return manifest;
         }
 
         private static string ComputeGitBlobSha1Hex(string filePath)
@@ -707,5 +622,20 @@ namespace VPM.Services
         }
 
         private readonly record struct RequiredItem(string RelativePath, bool IsDirectory);
+
+        private sealed class GitHubTreeResponse
+        {
+            public List<GitHubTreeItem> Tree { get; set; }
+            public bool Truncated { get; set; }
+        }
+
+        private sealed class GitHubTreeItem
+        {
+            public string Path { get; set; }
+            public string Mode { get; set; }
+            public string Type { get; set; }
+            public string Sha { get; set; }
+            public long Size { get; set; }
+        }
     }
 }

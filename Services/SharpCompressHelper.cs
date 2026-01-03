@@ -85,6 +85,8 @@ namespace VPM.Services
     {
         private readonly string _archivePath;
         private readonly ConcurrentBag<IArchive> _availableHandles = new();
+        // Track ALL handles (both in pool and checked out) to ensure proper disposal
+        private readonly ConcurrentDictionary<IArchive, byte> _allHandles = new();
         private readonly int _maxHandles;
         private int _totalCreated = 0;
         private readonly object _creationLock = new();
@@ -130,6 +132,10 @@ namespace VPM.Services
                         fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
                         var archive = ZipArchive.Open(fileStream);
                         fileStream = null; // Archive now owns the stream
+                        
+                        // Track the handle
+                        _allHandles.TryAdd(archive, 0);
+                        
                         return archive;
                     }
                     catch
@@ -185,6 +191,10 @@ namespace VPM.Services
                         fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
                         var archive = ZipArchive.Open(fileStream);
                         fileStream = null; // Archive now owns the stream
+                        
+                        // Track the handle
+                        _allHandles.TryAdd(archive, 0);
+                        
                         return archive;
                     }
                     catch
@@ -217,8 +227,21 @@ namespace VPM.Services
         /// </summary>
         public void ReleaseHandle(IArchive handle)
         {
-            if (handle != null && !_disposed)
-                _availableHandles.Add(handle);
+            if (handle == null) return;
+            
+            if (_disposed)
+            {
+                // If pool is disposed, dispose the handle immediately
+                try 
+                { 
+                    handle.Dispose();
+                    _allHandles.TryRemove(handle, out _);
+                } 
+                catch { }
+                return;
+            }
+                
+            _availableHandles.Add(handle);
         }
 
         /// <summary>
@@ -235,10 +258,23 @@ namespace VPM.Services
             _disposed = true;
 
             // Dispose all archive handles to close file handles
+            // First clear the bag
             while (_availableHandles.TryTake(out var handle))
             {
-                handle?.Dispose();
+                // We'll dispose them in the loop below
             }
+            
+            // Dispose ALL handles, including those checked out
+            foreach (var handle in _allHandles.Keys)
+            {
+                try
+                {
+                    handle?.Dispose();
+                }
+                catch { }
+            }
+            
+            _allHandles.Clear();
             
             // Use optimized GC collection - non-blocking Gen 0 only
             // Full GC.Collect() causes UI stuttering and is rarely needed

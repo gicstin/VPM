@@ -60,6 +60,7 @@ namespace VPM
             if (!isSearchable)
             {
                 PreviewSearchPanel.Visibility = Visibility.Collapsed;
+                PreviewHeaderText.Visibility = Visibility.Visible;
                 return;
             }
 
@@ -67,6 +68,7 @@ namespace VPM
             PreviewSearchBox.Clear();
             PreviewMatchCounter.Text = "";
             PreviewSearchPanel.Visibility = Visibility.Visible;
+            PreviewHeaderText.Visibility = Visibility.Collapsed; // Hide header when search is visible
 
             // Wire up search events only once
             if (!_searchPanelInitialized)
@@ -81,7 +83,8 @@ namespace VPM
             }
 
             // Focus the search box for immediate typing
-            PreviewSearchBox.Focus();
+            // Removed automatic focus to allow arrow navigation in the list
+            // PreviewSearchBox.Focus();
         }
 
         /// <summary>
@@ -90,6 +93,7 @@ namespace VPM
         private void HideSearchPanel()
         {
             PreviewSearchPanel.Visibility = Visibility.Collapsed;
+            PreviewHeaderText.Visibility = Visibility.Visible; // Show header when search is hidden
             PreviewSearchBox.Clear();
             PreviewMatchCounter.Text = "";
             _currentSearchMatches.Clear();
@@ -143,6 +147,13 @@ namespace VPM
                 _currentPreviewFile = filePath;
                 _currentPreviewPackage = packageItem;
 
+                // Reset search panel state
+                HideSearchPanel();
+
+                // Reset scrollbars (ShowImagePreview may disable them)
+                PreviewContentScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Auto;
+                PreviewContentScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+
                 // Update header text
                 var fileName = Path.GetFileName(filePath);
                 PreviewHeaderText.Text = $"Preview: {fileName}";
@@ -172,6 +183,8 @@ namespace VPM
                     case ".json":
                     case ".vam":
                     case ".vaj":
+                    case ".vap":
+                    case ".vmi":
                         ShowJsonPreview(filePath, packageItem);
                         break;
                     
@@ -179,7 +192,6 @@ namespace VPM
                     case ".cs":
                     case ".xml":
                     case ".log":
-                    case ".vmi":
                         ShowTextPreview(filePath, packageItem);
                         break;
                     
@@ -220,9 +232,7 @@ namespace VPM
                         Source = bitmap,
                         Stretch = Stretch.Uniform,
                         HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        MaxWidth = 800,
-                        MaxHeight = 600
+                        VerticalAlignment = VerticalAlignment.Center
                     };
 
                     // Wrap image in border with rounded corners
@@ -239,12 +249,16 @@ namespace VPM
                         BorderThickness = new Thickness(1)
                     };
 
+                    // Disable horizontal scrolling to force fit width
+                    PreviewContentScrollViewer.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+                    PreviewContentScrollViewer.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
+
                     // Add image info
                     var infoPanel = new StackPanel { Orientation = Orientation.Vertical };
                     
                     var imageInfo = new TextBlock
                     {
-                        Text = $"Dimensions: {bitmap.PixelWidth} Ã— {bitmap.PixelHeight}\n" +
+                        Text = $"Dimensions: {bitmap.PixelWidth} × {bitmap.PixelHeight}\n" +
                                $"Size: {FormatHelper.FormatFileSize(imageBytes.Length)}\n" +
                                $"Format: {Path.GetExtension(filePath).ToUpperInvariant()}",
                         FontSize = 11,
@@ -376,7 +390,6 @@ namespace VPM
                 // Apply context menu styling for dark theme
                 ApplyRichTextBoxContextMenuStyling(richTextBox);
 
-                PreviewHeaderText.Text = $"JSON Preview - {Path.GetFileName(filePath)} ({FormatHelper.FormatFileSize(jsonBytes.Length)})";
                 PreviewContentPresenter.Content = richTextBox;
                 
                 // Initialize search panel with searchable content
@@ -439,9 +452,6 @@ namespace VPM
                 // Apply context menu styling for dark theme
                 ApplyRichTextBoxContextMenuStyling(richTextBox);
 
-                PreviewHeaderText.Text = $"Text Preview - {Path.GetFileName(filePath)} ({FormatHelper.FormatFileSize(textBytes.Length)})";
-                PreviewContentPresenter.Content = richTextBox;
-                
                 // Initialize search panel with searchable content
                 InitializeSearchPanel(richTextBox, true);
             }
@@ -731,7 +741,14 @@ namespace VPM
                 if (start != null)
                 {
                     var rect = start.GetCharacterRect(LogicalDirection.Forward);
-                    richTextBox.ScrollToVerticalOffset(Math.Max(0, rect.Top - 50)); // Offset for better visibility
+                    
+                    // Since RichTextBox is inside PreviewContentScrollViewer and grows to full height,
+                    // we need to scroll the ScrollViewer, not the RichTextBox.
+                    // Calculate offset to center the match in the viewport
+                    var viewportHeight = PreviewContentScrollViewer.ViewportHeight;
+                    var targetOffset = rect.Top - (viewportHeight / 2) + (rect.Height / 2);
+                    
+                    PreviewContentScrollViewer.ScrollToVerticalOffset(Math.Max(0, targetOffset));
                 }
             }
             catch

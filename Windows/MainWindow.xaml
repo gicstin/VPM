@@ -3506,6 +3506,39 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
+                    <!--  Loading Overlay for Main Table  -->
+                    <Border
+                        x:Name="MainTableLoadingOverlay"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Panel.ZIndex="100"
+                        Background="#AA1E1E1E"
+                        Visibility="Collapsed">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock
+                                x:Name="MainTableLoadingText"
+                                HorizontalAlignment="Center"
+                                FontSize="16"
+                                FontWeight="SemiBold"
+                                Foreground="White"
+                                Text="Processing packages..." />
+                            <ProgressBar
+                                x:Name="MainTableLoadingProgress"
+                                Width="300"
+                                Height="6"
+                                Margin="0,15,0,0"
+                                Maximum="100"
+                                Value="0" />
+                            <TextBlock
+                                x:Name="MainTableLoadingCount"
+                                Margin="0,8,0,0"
+                                HorizontalAlignment="Center"
+                                FontSize="14"
+                                Foreground="#CCCCCC"
+                                Text="0/0" />
+                        </StackPanel>
+                    </Border>
+
                     <!--  Package Action Button Bar  -->
                     <Border
                         x:Name="PackageButtonBar"
@@ -4314,6 +4347,38 @@
                                     </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
+                        </Border>
+
+                        <!--  Loading Overlay for Dependencies Table  -->
+                        <Border
+                            x:Name="DependenciesTableLoadingOverlay"
+                            Grid.Row="0"
+                            Panel.ZIndex="100"
+                            Background="#AA1E1E1E"
+                            Visibility="Collapsed">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock
+                                    x:Name="DependenciesTableLoadingText"
+                                    HorizontalAlignment="Center"
+                                    FontSize="14"
+                                    FontWeight="SemiBold"
+                                    Foreground="White"
+                                    Text="Processing..." />
+                                <ProgressBar
+                                    x:Name="DependenciesTableLoadingProgress"
+                                    Width="200"
+                                    Height="4"
+                                    Margin="0,10,0,0"
+                                    Maximum="100"
+                                    Value="0" />
+                                <TextBlock
+                                    x:Name="DependenciesTableLoadingCount"
+                                    Margin="0,6,0,0"
+                                    HorizontalAlignment="Center"
+                                    FontSize="12"
+                                    Foreground="#CCCCCC"
+                                    Text="0/0" />
+                            </StackPanel>
                         </Border>
 
                         <!--  Dependencies Action Button Bar  -->
@@ -5797,15 +5862,10 @@
                                 Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
                                 BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                                 BorderThickness="0,0,0,1">
-                                <Grid x:Name="PreviewSearchPanel" Visibility="Collapsed">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
@@ -5820,78 +5880,94 @@
                                         Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
                                         Text="Preview" />
 
-                                    <!--  Search label  -->
-                                    <TextBlock
+                                    <!--  Search Panel Container  -->
+                                    <Grid
+                                        x:Name="PreviewSearchPanel"
                                         Grid.Column="1"
-                                        Margin="0,0,9,0"
-                                        VerticalAlignment="Center"
-                                        FontSize="12"
-                                        FontWeight="SemiBold"
-                                        Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                        Text="📝 Search:" />
+                                        Visibility="Collapsed">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
 
-                                    <!--  Search textbox  -->
-                                    <TextBox
-                                        x:Name="PreviewSearchBox"
-                                        Grid.Column="2"
-                                        Height="27"
-                                        Margin="0,0,9,0"
-                                        Padding="6,3,6,3"
-                                        VerticalAlignment="Center"
-                                        VerticalContentAlignment="Center"
-                                        FontSize="12" />
+                                        <!--  Search label  -->
+                                        <TextBlock
+                                            Grid.Column="0"
+                                            Margin="0,0,9,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="12"
+                                            FontWeight="SemiBold"
+                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                            Text="Search:" />
 
-                                    <!--  Match counter  -->
-                                    <TextBlock
-                                        x:Name="PreviewMatchCounter"
-                                        Grid.Column="3"
-                                        MinWidth="81"
-                                        Margin="0,0,9,0"
-                                        VerticalAlignment="Center"
-                                        FontSize="12"
-                                        FontWeight="SemiBold"
-                                        Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                        TextAlignment="Right" />
+                                        <!--  Search textbox  -->
+                                        <TextBox
+                                            x:Name="PreviewSearchBox"
+                                            Grid.Column="1"
+                                            Height="27"
+                                            MinWidth="200"
+                                            Margin="0,0,9,0"
+                                            Padding="6,3,6,3"
+                                            VerticalAlignment="Center"
+                                            VerticalContentAlignment="Center"
+                                            FontSize="12" />
 
-                                    <!--  Case sensitivity toggle  -->
-                                    <CheckBox
-                                        x:Name="PreviewCaseToggle"
-                                        Grid.Column="4"
-                                        Margin="0,0,3,0"
-                                        VerticalAlignment="Center"
-                                        Content="Aa"
-                                        FontSize="9"
-                                        FontWeight="Bold"
-                                        ToolTip="Match case" />
+                                        <!--  Match counter  -->
+                                        <TextBlock
+                                            x:Name="PreviewMatchCounter"
+                                            Grid.Column="2"
+                                            MinWidth="81"
+                                            Margin="0,0,9,0"
+                                            VerticalAlignment="Center"
+                                            FontSize="12"
+                                            FontWeight="SemiBold"
+                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                            TextAlignment="Right" />
 
-                                    <!--  Previous button  -->
-                                    <Button
-                                        x:Name="PreviewPrevButton"
-                                        Grid.Column="5"
-                                        Width="27"
-                                        Height="27"
-                                        Margin="0,0,3,0"
-                                        Content="–²"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        ToolTip="Previous match (Shift+Enter)" />
+                                        <!--  Case sensitivity toggle  -->
+                                        <CheckBox
+                                            x:Name="PreviewCaseToggle"
+                                            Grid.Column="3"
+                                            Margin="0,0,3,0"
+                                            VerticalAlignment="Center"
+                                            Content="Aa"
+                                            FontSize="9"
+                                            FontWeight="Bold"
+                                            ToolTip="Match case" />
 
-                                    <!--  Next button  -->
-                                    <Button
-                                        x:Name="PreviewNextButton"
-                                        Grid.Column="6"
-                                        Width="27"
-                                        Height="27"
-                                        Margin="0,0,3,0"
-                                        Content="–¼"
-                                        FontSize="12"
-                                        FontWeight="Bold"
-                                        ToolTip="Next match (Enter)" />
+                                        <!--  Previous button  -->
+                                        <Button
+                                            x:Name="PreviewPrevButton"
+                                            Grid.Column="4"
+                                            Width="27"
+                                            Height="27"
+                                            Margin="0,0,3,0"
+                                            Content="▲"
+                                            FontSize="12"
+                                            FontWeight="Bold"
+                                            ToolTip="Previous match (Shift+Enter)" />
+
+                                        <!--  Next button  -->
+                                        <Button
+                                            x:Name="PreviewNextButton"
+                                            Grid.Column="5"
+                                            Width="27"
+                                            Height="27"
+                                            Margin="0,0,3,0"
+                                            Content="▼"
+                                            FontSize="12"
+                                            FontWeight="Bold"
+                                            ToolTip="Next match (Enter)" />
+                                    </Grid>
 
                                     <!--  Close button  -->
                                     <Button
                                         x:Name="ClosePreviewButton"
-                                        Grid.Column="7"
+                                        Grid.Column="2"
                                         Width="21"
                                         Height="21"
                                         Background="Transparent"

@@ -20,6 +20,7 @@ namespace VPM.Services
         private readonly ConcurrentDictionary<string, FileSystemWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, List<string>> _destinationPackages = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _scanLock = new();
+        private const int WatcherBufferSize = 64 * 1024;
         private bool _disposed;
 
         /// <summary>
@@ -191,7 +192,8 @@ namespace VPM.Services
                     {
                         Filter = "*.var",
                         IncludeSubdirectories = true,
-                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime
+                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                        InternalBufferSize = WatcherBufferSize
                     };
 
                     watcher.Created += (s, e) => OnFileCreated(dest, e);
@@ -310,7 +312,8 @@ namespace VPM.Services
                         {
                             Filter = "*.var",
                             IncludeSubdirectories = true,
-                            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime
+                            NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                            InternalBufferSize = WatcherBufferSize
                         };
 
                         watcher.Created += (s, ev) => OnFileCreated(destination, ev);

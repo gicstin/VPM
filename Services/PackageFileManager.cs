@@ -682,6 +682,22 @@ namespace VPM.Services
                         await _imageManager.CloseFileHandlesAsync(path);
                     }
 
+                    // Force wait for any active readers to finish or be cancelled
+                    // This ensures the file is truly free before we attempt to move/delete it
+                    try 
+                    {
+                         // Acquire a brief write lock to force readers to drain
+                         // We use a short timeout because we're inside a retry loop anyway
+                         using (await FileAccessController.Instance.AcquireWriteAccessAsync(path, TimeSpan.FromMilliseconds(500))) 
+                         { 
+                             // Just acquiring the lock is enough to ensure readers are gone
+                         }
+                    }
+                    catch 
+                    {
+                        // Ignore timeouts or lock failures - we tried our best, proceed to invalidation
+                    }
+
                     FileAccessController.Instance.InvalidateFile(path);
                 }
                 catch

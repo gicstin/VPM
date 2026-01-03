@@ -26,6 +26,74 @@ namespace VPM
 
         #endregion
 
+        #region Main Table Loading Overlay
+
+        private void ShowMainTableLoading(string message, int totalItems = 0)
+        {
+            MainTableLoadingText.Text = message;
+            MainTableLoadingProgress.Value = 0;
+            MainTableLoadingProgress.Maximum = totalItems > 0 ? totalItems : 100;
+            MainTableLoadingProgress.IsIndeterminate = totalItems <= 0;
+            MainTableLoadingCount.Text = totalItems > 0 ? $"0/{totalItems}" : "";
+            MainTableLoadingOverlay.Visibility = Visibility.Visible;
+            
+            // Grey out grids
+            PackageDataGrid.IsEnabled = false;
+            ScenesDataGrid.IsEnabled = false;
+        }
+
+        private void UpdateMainTableLoading(int current, int total, string currentItem)
+        {
+            MainTableLoadingProgress.IsIndeterminate = false;
+            MainTableLoadingProgress.Maximum = total;
+            MainTableLoadingProgress.Value = current;
+            MainTableLoadingCount.Text = $"{current}/{total}";
+        }
+
+        private void HideMainTableLoading()
+        {
+            MainTableLoadingOverlay.Visibility = Visibility.Collapsed;
+            
+            // Re-enable grids
+            PackageDataGrid.IsEnabled = true;
+            ScenesDataGrid.IsEnabled = true;
+        }
+
+        #endregion
+
+        #region Dependencies Table Loading Overlay
+
+        private void ShowDependenciesTableLoading(string message, int totalItems = 0)
+        {
+            DependenciesTableLoadingText.Text = message;
+            DependenciesTableLoadingProgress.Value = 0;
+            DependenciesTableLoadingProgress.Maximum = totalItems > 0 ? totalItems : 100;
+            DependenciesTableLoadingProgress.IsIndeterminate = totalItems <= 0;
+            DependenciesTableLoadingCount.Text = totalItems > 0 ? $"0/{totalItems}" : "";
+            DependenciesTableLoadingOverlay.Visibility = Visibility.Visible;
+            
+            // Grey out grid
+            DependenciesDataGrid.IsEnabled = false;
+        }
+
+        private void UpdateDependenciesTableLoading(int current, int total, string currentItem)
+        {
+            DependenciesTableLoadingProgress.IsIndeterminate = false;
+            DependenciesTableLoadingProgress.Maximum = total;
+            DependenciesTableLoadingProgress.Value = current;
+            DependenciesTableLoadingCount.Text = $"{current}/{total}";
+        }
+
+        private void HideDependenciesTableLoading()
+        {
+            DependenciesTableLoadingOverlay.Visibility = Visibility.Collapsed;
+            
+            // Re-enable grid
+            DependenciesDataGrid.IsEnabled = true;
+        }
+
+        #endregion
+
         #region Package Load/Unload Operations
 
         private async Task PrepareForPackageFileOperationsAsync(IEnumerable<string> names)
@@ -87,24 +155,26 @@ namespace VPM
                 // Disable UI during operation
                 LoadPackagesButton.IsEnabled = false;
 
+                var externalPackages = selectedPackages.Where(p => p.IsExternal).ToList();
+                var regularPackages = selectedPackages.Where(p => !p.IsExternal && p.Status == "Available").ToList();
+                var totalCount = externalPackages.Count + regularPackages.Count;
+
+                ShowMainTableLoading("Loading packages...", totalCount);
+
                 try
                 {
-                    // Separate external packages from regular available packages
-                    var externalPackages = selectedPackages.Where(p => p.IsExternal).ToList();
-                    var regularPackages = selectedPackages.Where(p => !p.IsExternal && p.Status == "Available").ToList();
-                    
                     var packageNames = selectedPackages.Select(p => p.Name).ToList();
 
                     await PrepareForPackageFileOperationsAsync(packageNames);
 
                     var results = new List<(string packageName, bool success, string error)>();
-                    var totalCount = externalPackages.Count + regularPackages.Count;
                     var completed = 0;
 
                     // Load external packages first using their file paths from metadata
                     foreach (var package in externalPackages)
                     {
                         completed++;
+                        UpdateMainTableLoading(completed, totalCount, package.Name);
                         SetStatus(totalCount > 1
                             ? $"Loading packages... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
                             : $"Loading {package.Name}...");
@@ -128,6 +198,7 @@ namespace VPM
                         var regularNames = regularPackages.Select(p => p.Name).ToList();
                         var progress = CreateStatusProgress(p =>
                         {
+                            UpdateMainTableLoading(completed + p.completed, totalCount, p.currentPackage);
                             SetStatus(totalCount > 1
                                 ? $"Loading packages... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
                                 : $"Loading {p.currentPackage}...");
@@ -226,6 +297,8 @@ namespace VPM
                 }
                 finally
                 {
+                    HideMainTableLoading();
+
                     // Re-enable UI if not already enabled
                     if (!LoadPackagesButton.IsEnabled)
                     {
@@ -396,6 +469,9 @@ namespace VPM
                 LoadPackagesButton.IsEnabled = false;
                 LoadPackagesWithDepsButton.IsEnabled = false;
 
+                if (interactive)
+                    ShowMainTableLoading("Loading packages and dependencies...", totalToLoad);
+
                 try
                 {
                     var allPackagesToLoad = new List<string>(packagesToLoad);
@@ -411,6 +487,7 @@ namespace VPM
                     foreach (var pkgName in externalPackages)
                     {
                         completed++;
+                        if (interactive) UpdateMainTableLoading(completed, totalCount, pkgName);
                         SetStatus(totalCount > 1
                             ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
                             : $"Loading {pkgName}...");
@@ -430,6 +507,7 @@ namespace VPM
                     foreach (var (depName, depMetadata) in externalDependencies)
                     {
                         completed++;
+                        if (interactive) UpdateMainTableLoading(completed, totalCount, depName);
                         SetStatus(totalCount > 1
                             ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
                             : $"Loading {depName}...");
@@ -443,6 +521,7 @@ namespace VPM
                     {
                         var progress = CreateStatusProgress(p =>
                         {
+                            if (interactive) UpdateMainTableLoading(completed + p.completed, totalCount, p.currentPackage);
                             SetStatus(totalCount > 1
                                 ? $"Loading packages and dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
                                 : $"Loading {p.currentPackage}...");
@@ -522,6 +601,9 @@ namespace VPM
                 }
                 finally
                 {
+                    if (interactive)
+                        HideMainTableLoading();
+
                     if (!LoadPackagesButton.IsEnabled)
                     {
                         LoadPackagesButton.IsEnabled = true;
@@ -612,6 +694,8 @@ namespace VPM
                 // Disable UI during operation
                 UnloadPackagesButton.IsEnabled = false;
 
+                ShowMainTableLoading("Unloading packages...", selectedPackages.Count);
+
                 try
                 {
                     // Use enhanced batch operation with progress reporting
@@ -621,6 +705,7 @@ namespace VPM
                     
                     var progress = CreateStatusProgress(p =>
                     {
+                        UpdateMainTableLoading(p.completed, p.total, p.currentPackage);
                         SetStatus(p.total > 1
                             ? $"Unloading packages... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
                             : $"Unloading {p.currentPackage}...");
@@ -703,6 +788,8 @@ namespace VPM
                 }
                 finally
                 {
+                    HideMainTableLoading();
+
                     // Re-enable UI if not already enabled
                     if (!UnloadPackagesButton.IsEnabled)
                     {
@@ -760,24 +847,28 @@ namespace VPM
                 // Disable UI during operation
                 LoadDependenciesButton.IsEnabled = false;
 
+                var externalDeps = selectedDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
+                var regularDeps = selectedDependencies.Where(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived").ToList();
+                var totalCount = externalDeps.Count + regularDeps.Count;
+
+                ShowDependenciesTableLoading("Loading dependencies...", totalCount);
+
                 try
                 {
                     // Separate external dependencies (hex color status) from regular available/outdated/archived dependencies
-                    var externalDeps = selectedDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
-                    var regularDeps = selectedDependencies.Where(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived").ToList();
                     
                     var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
 
                     await PrepareForPackageFileOperationsAsync(dependencyNames);
 
                     var results = new List<(string packageName, bool success, string error)>();
-                    var totalCount = externalDeps.Count + regularDeps.Count;
                     var completed = 0;
 
                     // Load external dependencies first using their file paths from metadata
                     foreach (var dep in externalDeps)
                     {
                         completed++;
+                        UpdateDependenciesTableLoading(completed, totalCount, dep.Name);
                         SetStatus(totalCount > 1
                             ? $"Loading dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
                             : $"Loading {dep.Name}...");
@@ -806,6 +897,7 @@ namespace VPM
                         var regularNames = regularDeps.Select(d => d.Name).ToList();
                         var progress = CreateStatusProgress(p =>
                         {
+                            UpdateDependenciesTableLoading(completed + p.completed, totalCount, p.currentPackage);
                             SetStatus(totalCount > 1
                                 ? $"Loading dependencies... {completed + p.completed}/{totalCount} ({(completed + p.completed) * 100 / totalCount}%)"
                                 : $"Loading {p.currentPackage}...");
@@ -897,6 +989,8 @@ namespace VPM
                 }
                 finally
                 {
+                    HideDependenciesTableLoading();
+
                     // Re-enable UI
                     LoadDependenciesButton.IsEnabled = true;
                     UpdateDependenciesButtonBar();
@@ -955,6 +1049,8 @@ namespace VPM
                 // Disable UI during operation
                 UnloadDependenciesButton.IsEnabled = false;
 
+                ShowDependenciesTableLoading("Unloading dependencies...", selectedDependencies.Count);
+
                 try
                 {
                     // Use enhanced batch operation with progress reporting
@@ -964,6 +1060,7 @@ namespace VPM
                     
                     var progress = CreateStatusProgress(p =>
                     {
+                        UpdateDependenciesTableLoading(p.completed, p.total, p.currentPackage);
                         SetStatus(p.total > 1
                             ? $"Unloading dependencies... {p.completed}/{p.total} ({p.completed * 100 / p.total}%)"
                             : $"Unloading {p.currentPackage}...");
@@ -1040,6 +1137,8 @@ namespace VPM
                 }
                 finally
                 {
+                    HideDependenciesTableLoading();
+
                     // Re-enable UI
                     UnloadDependenciesButton.IsEnabled = true;
                     UpdateDependenciesButtonBar();
@@ -1785,7 +1884,7 @@ namespace VPM
             try
             {
                 // Create a HashSet for O(1) lookup
-                var packageNameSet = new HashSet<string>(packageNames, StringComparer.OrdinalIgnoreCase);
+                var inputNameSet = new HashSet<string>(packageNames, StringComparer.OrdinalIgnoreCase);
 
                 await Dispatcher.InvokeAsync(() =>
                 {
@@ -1796,41 +1895,59 @@ namespace VPM
 
                     try
                     {
-                        // Update packages in main grid - just update the Status property
-                        // PackageItem.Status setter triggers PropertyChanged which updates StatusColor binding
+                        var affectedMetadataKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        var affectedBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                        // 1. Update PackageMetadata and collect affected keys/names
+                        // Iterate all metadata to ensure we catch all variations (BaseName, FullName, Filename)
+                        if (_packageManager?.PackageMetadata != null)
+                        {
+                            foreach (var kvp in _packageManager.PackageMetadata)
+                            {
+                                var metadata = kvp.Value;
+                                var metadataKey = kvp.Key;
+                                var fileNameNoExt = Path.GetFileNameWithoutExtension(metadataKey);
+                                var baseName = $"{metadata.CreatorName}.{metadata.PackageName}";
+
+                                // Check if this package matches any input name
+                                // Input names can be: "Creator.Package", "Creator.Package.Version", "Creator.Package.Version.var"
+                                if (inputNameSet.Contains(metadataKey) || 
+                                    inputNameSet.Contains(fileNameNoExt) || 
+                                    inputNameSet.Contains(baseName))
+                                {
+                                    // Update metadata status
+                                    metadata.Status = newStatus;
+                                    
+                                    // Track affected identifiers
+                                    affectedMetadataKeys.Add(metadataKey);
+                                    affectedBaseNames.Add(baseName);
+                                    
+                                    // Handle #archived counterpart if it exists
+                                    var archivedKey = metadataKey + "#archived";
+                                    if (_packageManager.PackageMetadata.TryGetValue(archivedKey, out var archivedMetadata))
+                                    {
+                                        archivedMetadata.Status = newStatus;
+                                        affectedMetadataKeys.Add(archivedKey);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 2. Update packages in main grid
                         foreach (var package in Packages)
                         {
-                            if (packageNameSet.Contains(package.Name))
+                            if (affectedMetadataKeys.Contains(package.MetadataKey))
                             {
                                 package.Status = newStatus;
                             }
                         }
 
-                        // Update dependencies in dependencies grid
+                        // 3. Update dependencies in dependencies/dependents grid
                         foreach (var dependency in Dependencies)
                         {
-                            if (packageNameSet.Contains(dependency.Name))
+                            if (affectedBaseNames.Contains(dependency.Name))
                             {
                                 dependency.Status = newStatus;
-                            }
-                        }
-
-                        // Update PackageMetadata status for reactive filtering
-                        if (_packageManager?.PackageMetadata != null)
-                        {
-                            foreach (var packageName in packageNameSet)
-                            {
-                                // Try both regular and archived keys
-                                if (_packageManager.PackageMetadata.TryGetValue(packageName, out var metadata))
-                                {
-                                    metadata.Status = newStatus;
-                                }
-                                
-                                var archivedKey = packageName + "#archived";
-                                if (_packageManager.PackageMetadata.TryGetValue(archivedKey, out var archivedMetadata))
-                                {
-                                    archivedMetadata.Status = newStatus;
-                                }
                             }
                         }
 
