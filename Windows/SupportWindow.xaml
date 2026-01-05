@@ -49,6 +49,8 @@
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <EventSetter Event="PreviewMouseLeftButtonUp" Handler="SupporterItem_Click"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -66,8 +68,17 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlLightBrushKey}}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF"/>
                             </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#44FFFFFF"/>
+                            </Trigger>
+                            <DataTrigger Binding="{Binding Link}" Value="">
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Link}" Value="{x:Null}">
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
@@ -146,7 +157,24 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding DisplayText}" FontSize="13" />
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Tier}" 
+                                               FontSize="14" 
+                                               VerticalAlignment="Center" 
+                                               Margin="0,0,4,0"/>
+                                    <TextBlock Text="{Binding Name}" 
+                                               FontSize="13" 
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding Tier}" 
+                                               FontSize="14" 
+                                               VerticalAlignment="Center" 
+                                               Margin="4,0,0,0"/>
+                                    <TextBlock Text="{Binding InfoText}" 
+                                               FontSize="13" 
+                                               Opacity="0.8"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

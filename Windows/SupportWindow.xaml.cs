@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using VPM.Services;
 
@@ -103,6 +104,23 @@ namespace VPM
         {
             // Use loaded link or fallback
             string url = _supportInfo?.PatreonLink ?? "https://www.patreon.com/gicstin";
+            OpenUrl(url);
+        }
+
+        private void SupporterItem_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (sender is FrameworkElement element && element.DataContext is SupporterItem item)
+            {
+                if (!string.IsNullOrEmpty(item.Link))
+                {
+                    OpenUrl(item.Link);
+                }
+            }
+        }
+
+        private void OpenUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return;
             
             try
             {

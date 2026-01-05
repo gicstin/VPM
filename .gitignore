@@ -29,3 +29,4 @@ Thumbs.db
 *.swo
 *~
 /VPM-TODO.md
+/generate_support_json.py
