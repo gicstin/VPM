@@ -205,6 +205,16 @@
                 DockPanel.Dock="Right"
                 Orientation="Horizontal">
                 <Button
+                    Width="Auto"
+                    Height="32"
+                    Margin="0,0,12,0"
+                    Padding="0,0"
+                    Click="SupportButton_Click"
+                    Content=" ❤️ Support "
+                    FontFamily="Segoe UI"
+                    Style="{StaticResource TitleBarButtonStyle}"
+                    ToolTip="Support VPM" />
+                <Button
                     Width="46"
                     Height="32"
                     Click="MinimizeWindow_Click"
@@ -361,12 +371,13 @@
 
                     <!--  About  -->
                     <Separator />
-                    <MenuItem Click="VpbPatchButton_Click" Header="_Patch VPB">
+                    <MenuItem Click="VpbPatchButton_Click" Header="🧩 _Patch VPB">
                         <MenuItem.Icon>
-                            <TextBlock FontSize="12" Text=" 🧩" />
+                            <TextBlock FontSize="12" Text="" />
                         </MenuItem.Icon>
                     </MenuItem>
 
+                    <Separator />
                     <MenuItem Click="SupportButton_Click" Header="❤️ _Support">
                         <MenuItem.Icon>
                             <TextBlock FontSize="12" Text="" />
@@ -5418,8 +5429,8 @@
                                                     LoadImageCallback="{Binding LoadImageCallback}"
                                                     Loaded="LazyLoadImage_Loaded"
                                                     PackageKey="{Binding PackageName}"
-                                                    ToolTipService.Placement="Bottom"
                                                     ToolTip="{Binding InternalPath}"
+                                                    ToolTipService.Placement="Bottom"
                                                     Unloaded="LazyLoadImage_Unloaded"
                                                     VarFilePath="{Binding VarFilePath}">
                                                     <windows:LazyLoadImage.Width>
