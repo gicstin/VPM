@@ -530,7 +530,7 @@ namespace VPM.Services
                                     }
                                     descriptionBuilder.AppendLine("[/VPM_TEXTURE_CONVERSION_DATA]");
                                     descriptionBuilder.AppendLine();
-                                    descriptionBuilder.AppendLine("─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                                    descriptionBuilder.AppendLine("────────────────────────────────────────────────────────────────");
                                     descriptionBuilder.AppendLine("ORIGINAL DESCRIPTION:");
                                     descriptionBuilder.Append(originalDescription);
                                     

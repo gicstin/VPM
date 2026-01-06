@@ -349,10 +349,27 @@ namespace VPM.Services
 
             public bool HasConversionSelected => _selectedDensityOption != HairDensityOption.None && _selectedDensityOption != HairDensityOption.Keep;
 
+            public bool HasActualConversion
+            {
+                get
+                {
+                    if (!HasConversionSelected) return false;
+                    int targetDensity = ConvertTo32 ? 32 : ConvertTo24 ? 24 : ConvertTo16 ? 16 : ConvertTo8 ? 8 : 0;
+                    return targetDensity != CurveDensity;
+                }
+            }
+
             private void UpdateDefaultSelection()
             {
-                // Default all hair to Keep (unchanged) - user must explicitly choose a density
-                _selectedDensityOption = HairDensityOption.Keep;
+                // Try to match current density if it's one of our standard options
+                _selectedDensityOption = CurveDensity switch
+                {
+                    32 => HairDensityOption.Density32,
+                    24 => HairDensityOption.Density24,
+                    16 => HairDensityOption.Density16,
+                    8 => HairDensityOption.Density8,
+                    _ => HairDensityOption.Keep // Default to Keep for non-standard densities
+                };
                 
                 // Notify all related properties
                 OnPropertyChanged(nameof(SelectedDensityOption));
@@ -362,6 +379,7 @@ namespace VPM.Services
                 OnPropertyChanged(nameof(ConvertTo16));
                 OnPropertyChanged(nameof(ConvertTo8));
                 OnPropertyChanged(nameof(HasConversionSelected));
+                OnPropertyChanged(nameof(HasActualConversion));
             }
 
             public void OnPropertyChanged(string propertyName)

@@ -46,9 +46,59 @@ namespace VPM.Services
             public bool Exists { get; set; }
             public string ErrorMessage { get; set; }
             
-            // Original texture info (before conversion)
-            public string OriginalResolution { get; set; }
-            public long OriginalFileSize { get; set; }
+            private string _originalResolution;
+            private long _originalFileSize;
+            private long _archiveFileSize;
+
+            public string OriginalResolution 
+            { 
+                get 
+                {
+                    // Prioritize manually set OriginalResolution (from metadata)
+                    if (!string.IsNullOrEmpty(_originalResolution)) return _originalResolution;
+                    
+                    // Fall back to archive resolution if available
+                    if (HasArchiveSource && ArchiveMaxDimension > 0)
+                        return TextureUtils.GetResolutionLabel(ArchiveMaxDimension);
+                    
+                    // Use OriginalWidth if set from metadata but label wasn't
+                    if (OriginalWidth > 0)
+                        return TextureUtils.GetResolutionLabel(OriginalWidth);
+                    
+                    return Resolution;
+                }
+                set
+                {
+                    if (_originalResolution == value) return;
+                    _originalResolution = value;
+                    OnPropertyChanged(nameof(OriginalResolution));
+                }
+            }
+
+            public long OriginalFileSize 
+            { 
+                get
+                {
+                    // Prioritize manually set OriginalFileSize (from metadata)
+                    if (_originalFileSize > 0) return _originalFileSize;
+                    
+                    // Fall back to archive size if available but no metadata
+                    // This was previously missing and caused optimized packages to show 0.0% saved
+                    if (HasArchiveSource && ArchiveMaxDimension > 0 && _archiveFileSize > 0)
+                        return _archiveFileSize;
+                    
+                    // Fall back to current FileSize as base if no metadata or archive
+                    return FileSize;
+                }
+                set
+                {
+                    if (_originalFileSize == value) return;
+                    _originalFileSize = value;
+                    OnPropertyChanged(nameof(OriginalFileSize));
+                    OnPropertyChanged(nameof(OriginalFileSizeFormatted));
+                    OnPropertyChanged(nameof(CompressionPercentage));
+                }
+            }
             
             /// <summary>
             /// Original dimensions (set once, never changes) - used for conversion capability checks
@@ -56,13 +106,26 @@ namespace VPM.Services
             public int OriginalWidth 
             { 
                 get => _originalWidth;
-                set => _originalWidth = value;
+                set 
+                {
+                    if (_originalWidth == value) return;
+                    _originalWidth = value;
+                    OnPropertyChanged(nameof(OriginalWidth));
+                    OnPropertyChanged(nameof(CanConvertTo8K));
+                    OnPropertyChanged(nameof(CanConvertTo4K));
+                    OnPropertyChanged(nameof(CanConvertTo2K));
+                }
             }
             
             public int OriginalHeight 
             { 
                 get => _originalHeight;
-                set => _originalHeight = value;
+                set 
+                {
+                    if (_originalHeight == value) return;
+                    _originalHeight = value;
+                    OnPropertyChanged(nameof(OriginalHeight));
+                }
             }
             
             public string OriginalFileSizeFormatted => TextureUtils.FormatFileSize(OriginalFileSize);
@@ -98,6 +161,7 @@ namespace VPM.Services
                     _fileSize = value;
                     OnPropertyChanged(nameof(FileSize));
                     OnPropertyChanged(nameof(FileSizeFormatted));
+                    OnPropertyChanged(nameof(CompressionPercentage));
                 }
             }
 
@@ -170,19 +234,11 @@ namespace VPM.Services
             public int ArchiveMaxDimension { get; set; }
             
             // Enabled states for conversion options
-            // Use ORIGINAL dimensions to determine conversion capabilities
-            // This ensures that after conversion, the texture can still be converted again
-            // If archive source exists: allow upscaling IF archive has it
-            // Otherwise: use original dimensions to determine available options
-            public bool CanConvertTo8K => HasArchiveSource 
-                ? (ArchiveMaxDimension >= 7680) 
-                : GetOriginalMaxDimension() >= 7680;
-            public bool CanConvertTo4K => HasArchiveSource 
-                ? (ArchiveMaxDimension >= 4096) 
-                : GetOriginalMaxDimension() >= 4096;
-            public bool CanConvertTo2K => HasArchiveSource 
-                ? (ArchiveMaxDimension >= 2048) 
-                : GetOriginalMaxDimension() >= 2048;
+            // 1. Target resolution is <= current resolution (Downscale - always allowed)
+            // 2. Target resolution is > current resolution (Upscale - ONLY allowed if original archive backup exists AND we have original high-res info)
+            public bool CanConvertTo8K => (GetMaxDimension() >= 7680) || (HasArchiveSource && Math.Max(ArchiveMaxDimension, OriginalWidth) >= 7680);
+            public bool CanConvertTo4K => (GetMaxDimension() >= 4096) || (HasArchiveSource && Math.Max(ArchiveMaxDimension, OriginalWidth) >= 4096);
+            public bool CanConvertTo2K => (GetMaxDimension() >= 2048) || (HasArchiveSource && Math.Max(ArchiveMaxDimension, OriginalWidth) >= 2048);
 
             public string FileSizeFormatted => TextureUtils.FormatFileSize(FileSize);
 
@@ -191,12 +247,30 @@ namespace VPM.Services
                 return Math.Max(Width, Height);
             }
             
+            /// <summary>
+            /// Returns true if an upscale is possible (has archive source with higher resolution)
+            /// </summary>
+            public bool HasUpscaleSource => HasArchiveSource && ArchiveMaxDimension > GetMaxDimension();
+
             private int GetOriginalMaxDimension()
             {
-                // Use original dimensions if set, otherwise fall back to current dimensions
+                // If we have an archive source, that is the TRUE original source
+                if (HasArchiveSource && ArchiveMaxDimension > 0)
+                    return ArchiveMaxDimension;
+
+                // If no archive source, we CANNOT upscale. 
+                // Metadata might say original was 8K, but if current is 2K and we have no backup, 
+                // the effective "original" for future operations is 2K.
+                int currentMax = GetMaxDimension();
+                
                 if (OriginalWidth > 0 && OriginalHeight > 0)
-                    return Math.Max(OriginalWidth, OriginalHeight);
-                return GetMaxDimension();
+                {
+                    int metaMax = Math.Max(OriginalWidth, OriginalHeight);
+                    // Only trust metadata if it doesn't imply an upscale we can't perform
+                    return Math.Min(currentMax, metaMax);
+                }
+
+                return currentMax;
             }
 
             public bool HasConversionSelected => ConvertTo8K || ConvertTo4K || ConvertTo2K;
@@ -211,9 +285,10 @@ namespace VPM.Services
                     if (!HasConversionSelected) return false;
                     
                     // Check if selected target is different from current resolution
-                    if (ConvertTo8K && Resolution != "8K") return true;
-                    if (ConvertTo4K && Resolution != "4K") return true;
-                    if (ConvertTo2K && Resolution != "2K") return true;
+                    // AND it's a valid/available conversion
+                    if (ConvertTo8K && Resolution != "8K" && CanConvertTo8K) return true;
+                    if (ConvertTo4K && Resolution != "4K" && CanConvertTo4K) return true;
+                    if (ConvertTo2K && Resolution != "2K" && CanConvertTo2K) return true;
                     
                     return false;
                 }
@@ -247,12 +322,13 @@ namespace VPM.Services
             public void SetDefaultConversionTarget()
             {
                 // Select the bubble that matches the texture's CURRENT resolution
+                // ONLY if that bubble is enabled (available)
                 _target = Resolution switch
                 {
-                    "8K" => ConversionTarget.To8K,
-                    "4K" => ConversionTarget.To4K,
-                    "2K" => ConversionTarget.To2K,
-                    _ => ConversionTarget.Keep // 1K or unknown - keep unchanged
+                    "8K" when CanConvertTo8K => ConversionTarget.To8K,
+                    "4K" when CanConvertTo4K => ConversionTarget.To4K,
+                    "2K" when CanConvertTo2K => ConversionTarget.To2K,
+                    _ => ConversionTarget.Keep // 1K, unknown, or bubble disabled
                 };
             }
         }
@@ -493,12 +569,37 @@ namespace VPM.Services
             string textureType = TextureUtils.GetTextureType(texturePath);
             string resolution = TextureUtils.GetResolutionLabel(width, height);
 
-            // Get archive dimensions if available
+            // Get archive dimensions and file sizes if available
+            int archiveWidth = 0;
+            int archiveHeight = 0;
             int archiveMaxDim = 0;
-            if (hasArchiveSource && archiveTextureDimensions != null &&
-                archiveTextureDimensions.TryGetValue(texturePath, out var archiveDims))
+            if (hasArchiveSource && archiveTextureDimensions != null)
             {
-                archiveMaxDim = Math.Max(archiveDims.width, archiveDims.height);
+                // Try exact path match first
+                if (archiveTextureDimensions.TryGetValue(texturePath, out var archiveDims))
+                {
+                    archiveWidth = archiveDims.width;
+                    archiveHeight = archiveDims.height;
+                }
+                else
+                {
+                    // Extension might have changed (e.g. .png -> .jpg)
+                    // Try matching by filename without extension in the same directory
+                    string dir = Path.GetDirectoryName(texturePath);
+                    string fileNameNoExt = Path.GetFileNameWithoutExtension(texturePath);
+                    
+                    var match = archiveTextureDimensions.FirstOrDefault(kvp => 
+                        Path.GetDirectoryName(kvp.Key).Equals(dir, StringComparison.OrdinalIgnoreCase) &&
+                        Path.GetFileNameWithoutExtension(kvp.Key).Equals(fileNameNoExt, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (match.Key != null)
+                    {
+                        archiveWidth = match.Value.width;
+                        archiveHeight = match.Value.height;
+                    }
+                }
+                
+                archiveMaxDim = Math.Max(archiveWidth, archiveHeight);
             }
 
             if (enableDebug)
@@ -515,19 +616,37 @@ namespace VPM.Services
                 FileSize = fileSize,
                 Width = width,
                 Height = height,
-                OriginalWidth = width,
-                OriginalHeight = height,
-                HasArchiveSource = hasArchiveSource,
-                ArchiveMaxDimension = archiveMaxDim
+                // Only set OriginalWidth/Height if we actually found them in the archive
+                OriginalWidth = archiveWidth,
+                OriginalHeight = archiveHeight,
+                HasArchiveSource = hasArchiveSource && archiveMaxDim > 0,
+                ArchiveMaxDimension = archiveMaxDim,
+                _archiveFileSize = 0 // Will be set below
             };
 
             // Set OriginalResolution and OriginalFileSize from archive if available
             if (hasArchiveSource && archiveMaxDim > 0)
             {
-                textureInfo.OriginalResolution = TextureUtils.GetResolutionLabel(archiveMaxDim);
-                if (archiveFileSizes != null && archiveFileSizes.TryGetValue(texturePath, out long archiveSize))
+                // Try to get archive file size (with fuzzy extension match if needed)
+                if (archiveFileSizes != null)
                 {
-                    textureInfo.OriginalFileSize = archiveSize;
+                    if (archiveFileSizes.TryGetValue(texturePath, out long archiveSize))
+                    {
+                        textureInfo._archiveFileSize = archiveSize;
+                    }
+                    else
+                    {
+                        string dir = Path.GetDirectoryName(texturePath);
+                        string fileNameNoExt = Path.GetFileNameWithoutExtension(texturePath);
+                        var match = archiveFileSizes.FirstOrDefault(kvp => 
+                            Path.GetDirectoryName(kvp.Key).Equals(dir, StringComparison.OrdinalIgnoreCase) &&
+                            Path.GetFileNameWithoutExtension(kvp.Key).Equals(fileNameNoExt, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (match.Key != null)
+                        {
+                            textureInfo._archiveFileSize = match.Value;
+                        }
+                    }
                 }
             }
 
@@ -588,12 +707,37 @@ namespace VPM.Services
             // Determine texture type using shared utility
             string textureType = TextureUtils.GetTextureType(texturePath);
 
-            // Get archive dimensions if available
+            // Get archive dimensions and file sizes if available
+            int archiveWidth = 0;
+            int archiveHeight = 0;
             int archiveMaxDim = 0;
-            if (hasArchiveSource && archiveTextureDimensions != null &&
-                archiveTextureDimensions.TryGetValue(texturePath, out var archiveDims))
+            if (hasArchiveSource && archiveTextureDimensions != null)
             {
-                archiveMaxDim = Math.Max(archiveDims.width, archiveDims.height);
+                // Try exact path match first
+                if (archiveTextureDimensions.TryGetValue(texturePath, out var archiveDims))
+                {
+                    archiveWidth = archiveDims.width;
+                    archiveHeight = archiveDims.height;
+                }
+                else
+                {
+                    // Extension might have changed (e.g. .png -> .jpg)
+                    // Try matching by filename without extension in the same directory
+                    string dir = Path.GetDirectoryName(texturePath);
+                    string fileNameNoExt = Path.GetFileNameWithoutExtension(texturePath);
+                    
+                    var match = archiveTextureDimensions.FirstOrDefault(kvp => 
+                        Path.GetDirectoryName(kvp.Key).Equals(dir, StringComparison.OrdinalIgnoreCase) &&
+                        Path.GetFileNameWithoutExtension(kvp.Key).Equals(fileNameNoExt, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (match.Key != null)
+                    {
+                        archiveWidth = match.Value.width;
+                        archiveHeight = match.Value.height;
+                    }
+                }
+                
+                archiveMaxDim = Math.Max(archiveWidth, archiveHeight);
             }
 
             if (enableDebug)
@@ -614,20 +758,42 @@ namespace VPM.Services
                 FileSize = fileSize,
                 Width = width,
                 Height = height,
-                OriginalWidth = width,
-                OriginalHeight = height,
-                HasArchiveSource = hasArchiveSource,
-                ArchiveMaxDimension = archiveMaxDim
+                // Only set OriginalWidth/Height if we actually found them in the archive
+                OriginalWidth = archiveWidth,
+                OriginalHeight = archiveHeight,
+                HasArchiveSource = hasArchiveSource && archiveMaxDim > 0,
+                ArchiveMaxDimension = archiveMaxDim,
+                _archiveFileSize = 0 // Will be set below
             };
 
             // Set OriginalResolution and OriginalFileSize from archive if available
             if (hasArchiveSource && archiveMaxDim > 0)
             {
-                textureInfo.OriginalResolution = TextureUtils.GetResolutionLabel(archiveMaxDim);
-
-                if (archiveFileSizes != null && archiveFileSizes.TryGetValue(texturePath, out long archiveSize))
+                // Try to get archive file size (with fuzzy extension match if needed)
+                if (archiveFileSizes != null)
                 {
-                    textureInfo.OriginalFileSize = archiveSize;
+                    if (archiveFileSizes.TryGetValue(texturePath, out long archiveSize))
+                    {
+                        textureInfo._archiveFileSize = archiveSize;
+                    }
+                    else
+                    {
+                        // Normalize directory separator for comparison
+                        string dir = Path.GetDirectoryName(texturePath)?.Replace("\\", "/");
+                        string fileNameNoExt = Path.GetFileNameWithoutExtension(texturePath);
+                        
+                        var match = archiveFileSizes.FirstOrDefault(kvp => 
+                        {
+                            string kvpDir = Path.GetDirectoryName(kvp.Key)?.Replace("\\", "/");
+                            return string.Equals(kvpDir, dir, StringComparison.OrdinalIgnoreCase) &&
+                                   Path.GetFileNameWithoutExtension(kvp.Key).Equals(fileNameNoExt, StringComparison.OrdinalIgnoreCase);
+                        });
+                        
+                        if (match.Key != null)
+                        {
+                            textureInfo._archiveFileSize = match.Value;
+                        }
+                    }
                 }
             }
 
@@ -947,6 +1113,8 @@ namespace VPM.Services
         private (int width, int height) ScanBufferForDimensions(byte[] buffer, int length, string filename)
         {
             string ext = System.IO.Path.GetExtension(filename).ToLowerInvariant();
+            int maxWidth = 0;
+            int maxHeight = 0;
             
             // For JPEG, scan for all SOF markers
             if (ext == ".jpg" || ext == ".jpeg")
@@ -960,9 +1128,16 @@ namespace VPM.Services
                         int width = (buffer[i + 7] << 8) | buffer[i + 8];
                         
                         if (width > 0 && height > 0 && width < 100000 && height < 100000)
-                            return (width, height);
+                        {
+                            if (width > maxWidth)
+                            {
+                                maxWidth = width;
+                                maxHeight = height;
+                            }
+                        }
                     }
                 }
+                return (maxWidth, maxHeight);
             }
             
             // For PNG, look for IHDR chunk anywhere
@@ -976,9 +1151,16 @@ namespace VPM.Services
                         int height = (buffer[i + 8] << 24) | (buffer[i + 9] << 16) | (buffer[i + 10] << 8) | buffer[i + 11];
                         
                         if (width > 0 && height > 0 && width < 100000 && height < 100000)
-                            return (width, height);
+                        {
+                            if (width > maxWidth)
+                            {
+                                maxWidth = width;
+                                maxHeight = height;
+                            }
+                        }
                     }
                 }
+                return (maxWidth, maxHeight);
             }
             
             return (0, 0);
@@ -1090,6 +1272,9 @@ namespace VPM.Services
                 else if (bytesRead >= 2 && buffer[0] == 0xFF && buffer[1] == 0xD8)
                 {
                     int pos = 2;
+                    int maxWidth = 0;
+                    int maxHeight = 0;
+                    
                     while (pos + 2 < bytesRead)
                     {
                         // Find next marker
@@ -1120,13 +1305,24 @@ namespace VPM.Services
                                 int width = (buffer[pos + 5] << 8) | buffer[pos + 6];
                                 
                                 if (width > 0 && height > 0 && width < 100000 && height < 100000)
-                                    return (width, height);
+                                {
+                                    // Store the largest dimensions found in the buffer
+                                    // Some JPEGs have thumbnails stored as separate markers before the main image
+                                    if (width > maxWidth)
+                                    {
+                                        maxWidth = width;
+                                        maxHeight = height;
+                                    }
+                                }
                             }
                         }
 
                         pos += length;
                         if (pos > bytesRead) break;
                     }
+                    
+                    if (maxWidth > 0 && maxHeight > 0)
+                        return (maxWidth, maxHeight);
                 }
                 // BMP: 42 4D
                 else if (bytesRead >= 26 && buffer[0] == 0x42 && buffer[1] == 0x4D)

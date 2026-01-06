@@ -530,39 +530,65 @@ namespace VPM
                     return;
                 }
                 
-                var lines = conversionData.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                // Use Regex.Matches on the entire block to handle both multi-line and single-line formats
+                var matches = System.Text.RegularExpressions.Regex.Matches(conversionData,
+                    @"(?:[•\*\-\s]+)?(.+?):\s*(\d+K|\d+px)\s*(?:→|-+>)\s*(\d+K|\d+px)\s*\(([0-9.]+\s*[KMG]B)\s*(?:→|-+>)\s*([0-9.]+\s*[KMG]B)\)",
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                 
-                foreach (var line in lines)
+                foreach (System.Text.RegularExpressions.Match match in matches)
                 {
-                    var trimmedLine = line.Trim();
-                    if (string.IsNullOrWhiteSpace(trimmedLine)) continue;
+                    string filename = match.Groups[1].Value.Trim();
+                    string origRez = match.Groups[2].Value.ToUpper();
+                    string origSize = match.Groups[4].Value;
                     
-                    var match = System.Text.RegularExpressions.Regex.Match(trimmedLine,
-                        @"[•\*\-]\s*(.+?):\s*(\d+K)\s*(?:→|-+>)\s*(\d+K)\s*\(([0-9.]+\s*[KMG]B)\s*(?:→|-+>)\s*([0-9.]+\s*[KMG]B)\)",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    
-                    if (match.Success)
+                    var matchingTexture = textures.FirstOrDefault(t => 
                     {
-                        string filename = match.Groups[1].Value.Trim();
-                        string origRez = match.Groups[2].Value.ToUpper();
-                        string origSize = match.Groups[4].Value;
+                        if (string.IsNullOrEmpty(t.ReferencedPath)) return false;
+                        var texFilename = Path.GetFileName(t.ReferencedPath);
+                        return texFilename.Equals(filename, StringComparison.OrdinalIgnoreCase);
+                    });
+                    
+                    if (matchingTexture != null)
+                    {
+                        // Priority: VPM Metadata tag is canonical for what the TRUE original was
+                        // even if the backup file was replaced or is missing
                         
-                        var matchingTexture = textures.FirstOrDefault(t => 
+                        // Parse resolution string back to dimensions for logic checks
+                        int metaDim = 0;
+                        if (origRez.EndsWith("K"))
                         {
-                            if (string.IsNullOrEmpty(t.ReferencedPath)) return false;
-                            var texFilename = Path.GetFileName(t.ReferencedPath);
-                            return texFilename.Equals(filename, StringComparison.OrdinalIgnoreCase);
-                        });
-                        
-                        if (matchingTexture != null)
-                        {
-                            if (string.IsNullOrEmpty(matchingTexture.OriginalResolution))
+                            if (int.TryParse(origRez.Replace("K", ""), out int k))
                             {
-                                matchingTexture.OriginalResolution = origRez;
+                                metaDim = k * 1024;
                             }
-                            if (matchingTexture.OriginalFileSize == 0)
+                        }
+                        else if (origRez.EndsWith("PX"))
+                        {
+                            int.TryParse(origRez.Replace("PX", ""), out metaDim);
+                        }
+
+                        // Trust metadata if it provides a LARGER resolution than what we currently have
+                        // or if we have no original resolution yet
+                        if (metaDim > matchingTexture.OriginalWidth || string.IsNullOrEmpty(matchingTexture.OriginalResolution))
+                        {
+                            matchingTexture.OriginalResolution = origRez;
+                            if (metaDim > 0)
                             {
-                                matchingTexture.OriginalFileSize = ParseFileSize(origSize);
+                                matchingTexture.OriginalWidth = metaDim;
+                                matchingTexture.OriginalHeight = metaDim;
+                            }
+                        }
+                        
+                        // Parse size
+                        long metaSize = ParseFileSize(origSize);
+
+                        // Trust metadata if it provides a LARGER size than what we currently have
+                        // or if we have no original size yet
+                        if (metaSize > matchingTexture.OriginalFileSize || matchingTexture.OriginalFileSize == matchingTexture.FileSize)
+                        {
+                            if (metaSize > 0)
+                            {
+                                matchingTexture.OriginalFileSize = metaSize;
                             }
                         }
                     }
@@ -595,6 +621,11 @@ namespace VPM
                 {
                     value = double.Parse(sizeStr.Replace("GB", "").Trim(), System.Globalization.CultureInfo.InvariantCulture);
                     multiplier = 1024 * 1024 * 1024;
+                }
+                else if (sizeStr.EndsWith("B"))
+                {
+                    value = double.Parse(sizeStr.Replace("B", "").Trim(), System.Globalization.CultureInfo.InvariantCulture);
+                    multiplier = 1;
                 }
                 
                 return (long)(value * multiplier);

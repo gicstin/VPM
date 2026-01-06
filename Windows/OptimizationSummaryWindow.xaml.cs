@@ -567,7 +567,8 @@ namespace VPM
             {
                 Margin = new Thickness(20),
                 Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(37, 37, 37)),
-                Padding = new Thickness(15)
+                Padding = new Thickness(15),
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
             };
 
             var textBox = new TextBox

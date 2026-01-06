@@ -860,8 +860,9 @@ namespace VPM.Services
                                     int currentMaxDim = Math.Max(conversionInfo.originalWidth, conversionInfo.originalHeight);
                                     bool needsUpscale = targetDimension > currentMaxDim;
                                     
-                                    // For upscaling, we need to read from archive (original high-res source)
-                                    bool useArchiveSource = needsUpscale && archiveExists && archivePoolForUpscale != null;
+                                    // ALWAYS use archive source if available for any texture conversion to ensure best quality
+                                    // (Prevents re-compressing already compressed textures from the .var)
+                                    bool useArchiveSource = archiveExists && archivePoolForUpscale != null;
 
                                     try
                                     {
@@ -2448,6 +2449,10 @@ namespace VPM.Services
             }
         }
         
+        // Separator for description updates
+        private const string VPM_DESCRIPTION_SEPARATOR = "────────────────────────────────────────────────────────────────";
+        private const string VPM_LEGACY_DESCRIPTION_SEPARATOR = "─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─";
+
         /// <summary>
         /// Updates the meta.json description with conversion details using text replacement
         /// This preserves the exact original JSON formatting
@@ -2490,7 +2495,14 @@ namespace VPM.Services
                     
                     // Extract the truly original description (before any VPM modifications)
                     string trulyOriginalDescription = originalDescription;
-                    int originalDescMarker = originalDescription.IndexOf("─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                    
+                    // Intelligent check for both new and legacy separators
+                    int originalDescMarker = originalDescription.IndexOf(VPM_DESCRIPTION_SEPARATOR);
+                    if (originalDescMarker == -1)
+                    {
+                        originalDescMarker = originalDescription.IndexOf(VPM_LEGACY_DESCRIPTION_SEPARATOR);
+                    }
+                    
                     if (originalDescMarker >= 0)
                     {
                         int originalDescStart = originalDescription.IndexOf("ORIGINAL DESCRIPTION:", originalDescMarker);
@@ -2639,7 +2651,7 @@ namespace VPM.Services
                         descriptionBuilder.AppendLine();
                     }
 
-                    descriptionBuilder.AppendLine("─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─”€─");
+                    descriptionBuilder.AppendLine(VPM_DESCRIPTION_SEPARATOR);
                     descriptionBuilder.AppendLine("ORIGINAL DESCRIPTION:");
                     descriptionBuilder.Append(trulyOriginalDescription);
                     

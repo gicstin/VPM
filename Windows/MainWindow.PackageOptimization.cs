@@ -1759,19 +1759,7 @@ namespace VPM
                             // Parse original texture data from metadata if available
                             if (packageMetadata != null && !string.IsNullOrEmpty(packageMetadata.Description))
                             {
-                                string descLower = packageMetadata.Description.ToLowerInvariant();
-                                bool hasCompressedTextures = descLower.Contains("texture") && 
-                                                             (descLower.Contains("compress") || 
-                                                              descLower.Contains("convert") || 
-                                                              descLower.Contains("4k") || 
-                                                              descLower.Contains("2k") || 
-                                                              descLower.Contains("8k") ||
-                                                              descLower.Contains("optimiz"));
-                                
-                                if (hasCompressedTextures)
-                                {
-                                    ParseOriginalTextureData(packageMetadata.Description, textureResult.Textures);
-                                }
+                                ParseOriginalTextureData(packageMetadata.Description, textureResult.Textures);
                             }
                             
                             // Add package name to each texture
@@ -2611,7 +2599,7 @@ namespace VPM
                 
                 // Group items by package (only actual conversions - different from current resolution)
                 var texturesByPackage = textureResult.Textures.Where(t => t.HasActualConversion).GroupBy(t => t.PackageName).ToDictionary(g => g.Key, g => g.ToList());
-                var hairsByPackage = hairResult.HairItems.Where(h => h.HasConversionSelected).GroupBy(h => h.PackageName).ToDictionary(g => g.Key, g => g.ToList());
+                var hairsByPackage = hairResult.HairItems.Where(h => h.HasActualConversion).GroupBy(h => h.PackageName).ToDictionary(g => g.Key, g => g.ToList());
                 var mirrorsByPackage = hairResult.MirrorItems.Where(m => m.Disable == m.IsCurrentlyOn).GroupBy(m => m.PackageName).ToDictionary(g => g.Key, g => g.ToList());
                 var lightsByPackage = hairResult.LightItems.Where(l => l.HasActualShadowConversion).GroupBy(l => l.PackageName).ToDictionary(g => g.Key, g => g.ToList());
                 
@@ -2745,7 +2733,7 @@ namespace VPM
                     
                     // Set Grid properties on buttonPanel to match optimizeButton's position
                     Grid.SetRow(buttonPanel, 1);
-                    Grid.SetColumn(buttonPanel, 2);
+                    Grid.SetColumn(buttonPanel, 3);
                     buttonPanel.VerticalAlignment = VerticalAlignment.Center;
                     
                     bottomGrid.Children.Insert(index, buttonPanel);
@@ -3296,10 +3284,10 @@ namespace VPM
                                       hasDependencyChanges || 
                                       minifyJson;
             
-            // Determine if we need to backup (copy to archive)
+            // Determine if we need to backup (copy to archive) or use existing archive
             // Backup if NOT already optimized AND any optimization is being applied
-            // This ensures first-time optimizations always create a backup, regardless of which optimizer features are used
-            bool needsBackup = !isAlreadyOptimized && hasAnyOptimizations;
+            // If ALREADY optimized, setting this to true triggers re-optimization from archive (Scenario 1B)
+            bool needsBackup = hasAnyOptimizations;
 
             // Get VAM root folder for ArchivedPackages - always use game root, not subfolder
             string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
