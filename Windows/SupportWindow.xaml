@@ -1,44 +1,47 @@
-<Window x:Class="VPM.SupportWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Support VPM"
-        Height="500"
-        Width="500"
-        MinHeight="400"
-        MinWidth="400"
-        WindowStartupLocation="CenterOwner"
-        ResizeMode="CanResize"
-        ShowInTaskbar="False"
-        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
-        Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}">
+<Window
+    x:Class="VPM.SupportWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Support VPM"
+    Width="500"
+    Height="500"
+    MinWidth="400"
+    MinHeight="400"
+    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+    ResizeMode="CanResize"
+    ShowInTaskbar="False"
+    WindowStartupLocation="CenterOwner">
 
     <Window.Resources>
-        <!-- Modern Button Style -->
-        <Style TargetType="Button" x:Key="ModernButton">
-            <Setter Property="Padding" Value="16,10"/>
-            <Setter Property="Margin" Value="0,10,0,0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Background" Value="#FF5865F2"/> <!-- Patreon-ish color or Discord-ish -->
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
+        <!--  Modern Button Style  -->
+        <Style x:Key="ModernButton" TargetType="Button">
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="Margin" Value="0,10,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="#FF5865F2" />
+            <!--  Patreon-ish color or Discord-ish  -->
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" 
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border
+                            x:Name="border"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#FF4752C4"/>
+                                <Setter TargetName="border" Property="Background" Value="#FF4752C4" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#FF3B43A3"/>
+                                <Setter TargetName="border" Property="Background" Value="#FF3B43A3" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -47,39 +50,41 @@
         </Style>
 
         <Style TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="10,8"/>
-            <Setter Property="HorizontalContentAlignment" Value="Center"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <EventSetter Event="PreviewMouseLeftButtonUp" Handler="SupporterItem_Click"/>
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <EventSetter Event="PreviewMouseLeftButtonUp" Handler="SupporterItem_Click" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
-                        <Border x:Name="Bd" 
-                                BorderBrush="{TemplateBinding BorderBrush}" 
-                                BorderThickness="{TemplateBinding BorderThickness}" 
-                                Background="{TemplateBinding Background}" 
-                                Padding="{TemplateBinding Padding}" 
-                                SnapsToDevicePixels="true"
-                                CornerRadius="4"
-                                Margin="2">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" 
-                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" 
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                        <Border
+                            x:Name="Bd"
+                            Margin="2"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4"
+                            SnapsToDevicePixels="true">
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#44FFFFFF"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#44FFFFFF" />
                             </Trigger>
                             <DataTrigger Binding="{Binding Link}" Value="">
-                                <Setter Property="Cursor" Value="Arrow"/>
+                                <Setter Property="Cursor" Value="Arrow" />
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Link}" Value="{x:Null}">
-                                <Setter Property="Cursor" Value="Arrow"/>
+                                <Setter Property="Cursor" Value="Arrow" />
                             </DataTrigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -90,112 +95,126 @@
 
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!--  Header  -->
         <Border Grid.Row="0" Padding="20">
             <Border.Background>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#FF962FBF" Offset="0"/> <!-- Patreon-ish Gradient -->
-                    <GradientStop Color="#FFD65DB1" Offset="1"/>
+                    <GradientStop Offset="0" Color="#FF962FBF" />
+                    <!--  Patreon-ish Gradient  -->
+                    <GradientStop Offset="1" Color="#FFD65DB1" />
                 </LinearGradientBrush>
             </Border.Background>
             <StackPanel>
-                <TextBlock Text="Support VPM" 
-                           FontSize="24" 
-                           FontWeight="Bold" 
-                           Foreground="White"
-                           HorizontalAlignment="Center"/>
-                <TextBlock Text="Help keep the project alive!" 
-                           FontSize="14" 
-                           Foreground="#FFE0E0E0"
-                           HorizontalAlignment="Center"
-                           Margin="0,5,0,0"/>
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    FontSize="24"
+                    FontWeight="Bold"
+                    Foreground="White"
+                    Text="Support VPM" />
+                <TextBlock
+                    Margin="0,5,0,0"
+                    HorizontalAlignment="Center"
+                    FontSize="14"
+                    Foreground="#FFE0E0E0"
+                    Text="Help keep the project alive!" />
             </StackPanel>
         </Border>
 
-        <!-- Patreon Link Section -->
-        <StackPanel Grid.Row="1" Margin="20" HorizontalAlignment="Center">
-            <TextBlock Text="Support us on Patreon" 
-                       FontSize="16" 
-                       FontWeight="SemiBold" 
-                       HorizontalAlignment="Center"/>
-            <Button x:Name="PatreonButton" 
-                    Style="{StaticResource ModernButton}" 
-                    Click="PatreonButton_Click">
+        <!--  Patreon Link Section  -->
+        <StackPanel
+            Grid.Row="1"
+            Margin="20"
+            HorizontalAlignment="Center">
+            <Button
+                x:Name="PatreonButton"
+                Click="PatreonButton_Click"
+                Style="{StaticResource ModernButton}">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Become a Patron" FontSize="14"/>
+                    <TextBlock FontSize="14" Text="Become a Patron" />
                 </StackPanel>
             </Button>
-            <TextBlock x:Name="PatreonLinkText" 
-                       Text="(Link will appear here)" 
-                       FontSize="10" 
-                       Foreground="Gray" 
-                       HorizontalAlignment="Center" 
-                       Margin="0,5,0,0"
-                       Visibility="Collapsed"/>
+            <TextBlock
+                x:Name="PatreonLinkText"
+                Margin="0,5,0,0"
+                HorizontalAlignment="Center"
+                FontSize="10"
+                Foreground="Gray"
+                Text="(Link will appear here)"
+                Visibility="Collapsed" />
         </StackPanel>
 
-        <!-- Supporters List -->
+        <!--  Supporters List  -->
         <DockPanel Grid.Row="2" Margin="20,0,20,20">
-            <TextBlock Text="Our Awesome Supporters" 
-                       DockPanel.Dock="Top"
-                       FontSize="14" 
-                       FontWeight="SemiBold" 
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,10"/>
-            
+            <TextBlock
+                Margin="0,0,0,10"
+                HorizontalAlignment="Center"
+                DockPanel.Dock="Top"
+                FontSize="14"
+                FontWeight="SemiBold"
+                Text="Our Awesome Supporters:" />
+
             <Grid>
-                <Border BorderThickness="1" 
-                        BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" 
-                        CornerRadius="4" 
-                        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}">
-                    <ListBox x:Name="SupportersList" 
-                             BorderThickness="0" 
-                             Background="Transparent"
-                             HorizontalContentAlignment="Center"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <Border
+                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                    <ListBox
+                        x:Name="SupportersList"
+                        HorizontalContentAlignment="Center"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" 
-                                               FontSize="14" 
-                                               FontWeight="SemiBold"
-                                               FontFamily="Segoe UI Emoji, Segoe UI Symbol, Segoe UI"
-                                               VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding InfoText}" 
-                                               FontSize="13" 
-                                               Opacity="0.8"
-                                               VerticalAlignment="Center"/>
+                                <StackPanel HorizontalAlignment="Center" Orientation="Horizontal">
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontFamily="Segoe UI Emoji, Segoe UI Symbol, Segoe UI"
+                                        FontSize="14"
+                                        FontWeight="SemiBold"
+                                        Text="{Binding Name}" />
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="13"
+                                        Opacity="0.8"
+                                        Text="{Binding InfoText}" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </Border>
-                
-                <Border x:Name="LoadingOverlay" 
-                        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}" 
-                        Opacity="0.8" 
-                        CornerRadius="4"
-                        Visibility="Visible">
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <TextBlock Text="Loading..." FontSize="16" Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+
+                <Border
+                    x:Name="LoadingOverlay"
+                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                    CornerRadius="4"
+                    Opacity="0.8"
+                    Visibility="Visible">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock
+                            FontSize="16"
+                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                            Text="Loading..." />
                     </StackPanel>
                 </Border>
             </Grid>
         </DockPanel>
-        
-        <!-- Close Button -->
-        <Button Grid.Row="3" 
-                Content="Close" 
-                Margin="0,0,0,20" 
-                Width="100" 
-                Height="30"
-                HorizontalAlignment="Center"
-                Click="CloseButton_Click"/>
+
+        <!--  Close Button  -->
+        <Button
+            Grid.Row="3"
+            Width="100"
+            Height="30"
+            Margin="0,0,0,20"
+            HorizontalAlignment="Center"
+            Click="CloseButton_Click"
+            Content="Close" />
     </Grid>
 </Window>

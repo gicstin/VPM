@@ -204,7 +204,7 @@
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                 DockPanel.Dock="Right"
                 Orientation="Horizontal">
-                <!--<Button
+                <Button
                     Width="Auto"
                     Height="32"
                     Margin="0,0,12,0"
@@ -213,7 +213,7 @@
                     Content=" ❤️ Support "
                     FontFamily="Segoe UI"
                     Style="{StaticResource TitleBarButtonStyle}"
-                    ToolTip="Support VPM" />-->
+                    ToolTip="Support VPM" />
                 <Button
                     Width="46"
                     Height="32"
@@ -389,11 +389,11 @@
                     </MenuItem>
 
                     <Separator />
-                    <!--<MenuItem Click="SupportButton_Click" Header="❤️ _Support">
+                    <MenuItem Click="SupportButton_Click" Header="❤️ _Support">
                         <MenuItem.Icon>
                             <TextBlock FontSize="12" Text="" />
                         </MenuItem.Icon>
-                    </MenuItem>-->
+                    </MenuItem>
 
 
                     <MenuItem Click="About_Click" Header="ℹ️ _About VPM" />
@@ -5781,8 +5781,8 @@
                                 <Border
                                     x:Name="HubOverviewLoadingBanner"
                                     Grid.Row="0"
-                                    Panel.ZIndex="20"
                                     Padding="12,10"
+                                    Panel.ZIndex="20"
                                     Background="{DynamicResource {x:Static SystemColors.ControlDarkDarkBrushKey}}"
                                     BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                                     BorderThickness="0,0,0,1"
