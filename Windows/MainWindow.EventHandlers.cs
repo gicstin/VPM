@@ -3453,7 +3453,7 @@ namespace VPM
 
                 // Check if the selection has actually changed
                 var currentPackageNames = selectedPackages.Select(p => p.Name).OrderBy(n => n).ToList();
-                var currentDependencyNames = selectedDependencies.Select(d => d.Name).OrderBy(n => n).ToList();
+                var currentDependencyNames = selectedDependencies.Select(d => d.DisplayName).OrderBy(n => n).ToList();
 
                 if (currentPackageNames.SequenceEqual(_currentlyDisplayedPackages) &&
                     currentDependencyNames.SequenceEqual(_currentlyDisplayedDependencies))
@@ -4317,7 +4317,7 @@ namespace VPM
                 // Get missing dependencies
                 var missingDeps = Dependencies
                     .Where(d => d.Status == "Missing" || d.Status == "Unknown")
-                    .Select(d => d.Name)
+                    .Select(d => d.DisplayName)
                     .ToList();
                 
                 if (missingDeps.Count == 0)
@@ -4849,7 +4849,7 @@ namespace VPM
                 // Get all missing dependencies from the Dependencies table
                 var missingDeps = Dependencies
                     .Where(d => d.Status == "Missing" || d.Status == "Unknown")
-                    .Select(d => d.Name)
+                    .Select(d => d.DisplayName)
                     .ToList();
                 
                 if (missingDeps.Count == 0)
@@ -5126,7 +5126,17 @@ namespace VPM
             LaunchVirtAMate("Config", "-show-screen-selector");
         }
 
-        private void LaunchLogMode_Click(object sender, RoutedEventArgs e)
+        private void LaunchLogModeDesktop_Click(object sender, RoutedEventArgs e)
+        {
+            LaunchVirtAMate("Log Mode (Desktop)", "-vrmode None -logFile log.txt");
+        }
+
+        private void LaunchLogModeVR_Click(object sender, RoutedEventArgs e)
+        {
+            LaunchVirtAMate("Log Mode (VR)", "-vrmode OpenVR -logFile log.txt");
+        }
+
+        private void LaunchLogModeCustom_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -5154,13 +5164,18 @@ namespace VPM
                 };
 
                 Process.Start(startInfo);
-                SetStatus("Launched VirtAMate in Log Mode");
+                SetStatus("Launched VirtAMate in Log Mode (Custom)");
             }
             catch (Exception ex)
             {
-                CustomMessageBox.Show($"Error launching VirtAMate (Log Mode):\n\n{ex.Message}",
+                CustomMessageBox.Show($"Error launching VirtAMate (Log Mode - Custom):\n\n{ex.Message}",
                     "Launch Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void LaunchLogMode_Click(object sender, RoutedEventArgs e)
+        {
+            LaunchLogModeCustom_Click(sender, e);
         }
         
         /// <summary>
@@ -6545,26 +6560,38 @@ namespace VPM
                 MenuItem moveToMenuItem = null;
                 MenuItem addToPlaylistMenuItem = null;
                 MenuItem restoreOriginalItem = null;
+                MenuItem loadContextMenuItem = null;
+                MenuItem unloadContextMenuItem = null;
+                MenuItem fixDuplicatesContextMenuItem = null;
                 
                 foreach (var item in contextMenu.Items)
                 {
                     if (item is MenuItem menuItem)
                     {
-                        var header = menuItem.Header?.ToString() ?? "";
-                        if (header == "📊 Show Dependency Graph")
-                            showDependencyItem = menuItem;
-                        else if (header == "📁 Open in Explorer")
-                            openInExplorerItem = menuItem;
-                        else if (header == "👤 Filter by Creator")
-                            filterByCreatorItem = menuItem;
-                        else if (header.StartsWith("🚀 Launch Scene in VaM", StringComparison.OrdinalIgnoreCase))
-                            launchSceneInVamMenuItem = menuItem;
-                        else if (header == "📦 Move To")
-                            moveToMenuItem = menuItem;
-                        else if (header == "🕹️ Add to Playlist")
-                            addToPlaylistMenuItem = menuItem;
-                        else if (header.StartsWith("🔄 Restore Original"))
-                            restoreOriginalItem = menuItem;
+                        if (menuItem.Name == "LoadContextMenuItem")
+                            loadContextMenuItem = menuItem;
+                        else if (menuItem.Name == "UnloadContextMenuItem")
+                            unloadContextMenuItem = menuItem;
+                        else if (menuItem.Name == "FixDuplicatesContextMenuItem")
+                            fixDuplicatesContextMenuItem = menuItem;
+                        else
+                        {
+                            var header = menuItem.Header?.ToString() ?? "";
+                            if (header == "📊 Show Dependency Graph")
+                                showDependencyItem = menuItem;
+                            else if (header == "📁 Open in Explorer")
+                                openInExplorerItem = menuItem;
+                            else if (header == "👤 Filter by Creator")
+                                filterByCreatorItem = menuItem;
+                            else if (header.StartsWith("🚀 Launch Scene in VaM", StringComparison.OrdinalIgnoreCase))
+                                launchSceneInVamMenuItem = menuItem;
+                            else if (header == "📦 Move To")
+                                moveToMenuItem = menuItem;
+                            else if (header == "🕹️ Add to Playlist")
+                                addToPlaylistMenuItem = menuItem;
+                            else if (header.StartsWith("🔄 Restore Original"))
+                                restoreOriginalItem = menuItem;
+                        }
                     }
                 }
                 
@@ -6576,6 +6603,47 @@ namespace VPM
 
                 if (filterByCreatorItem != null)
                     filterByCreatorItem.Visibility = selectedCount == 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+                // Handle Load/Unload/Fix Duplicates context menu items
+                if (_currentContentMode == "Scenes" || _currentContentMode == "Presets" || _currentContentMode == "Custom")
+                {
+                    if (loadContextMenuItem != null) loadContextMenuItem.Visibility = Visibility.Collapsed;
+                    if (unloadContextMenuItem != null) unloadContextMenuItem.Visibility = Visibility.Collapsed;
+                    if (fixDuplicatesContextMenuItem != null) fixDuplicatesContextMenuItem.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList() ?? new List<PackageItem>();
+                    if (selectedPackages.Count == 0)
+                    {
+                        if (loadContextMenuItem != null) loadContextMenuItem.Visibility = Visibility.Collapsed;
+                        if (unloadContextMenuItem != null) unloadContextMenuItem.Visibility = Visibility.Collapsed;
+                        if (fixDuplicatesContextMenuItem != null) fixDuplicatesContextMenuItem.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        int duplicateCount = selectedPackages.Count(p => p.IsDuplicate);
+                        var hasLoaded = selectedPackages.Any(p => p.Status == "Loaded");
+                        var hasAvailable = selectedPackages.Any(p => p.Status == "Available");
+                        var hasExternal = selectedPackages.Any(p => p.IsExternal);
+
+                        if (loadContextMenuItem != null)
+                        {
+                            loadContextMenuItem.Visibility = Visibility.Visible;
+                            loadContextMenuItem.IsEnabled = duplicateCount == 0 && (hasAvailable || hasExternal);
+                        }
+                        if (unloadContextMenuItem != null)
+                        {
+                            unloadContextMenuItem.Visibility = Visibility.Visible;
+                            unloadContextMenuItem.IsEnabled = duplicateCount == 0 && hasLoaded;
+                        }
+                        if (fixDuplicatesContextMenuItem != null)
+                        {
+                            fixDuplicatesContextMenuItem.Visibility = Visibility.Visible;
+                            fixDuplicatesContextMenuItem.IsEnabled = duplicateCount > 0;
+                        }
+                    }
+                }
 
                 if (launchSceneInVamMenuItem != null)
                 {

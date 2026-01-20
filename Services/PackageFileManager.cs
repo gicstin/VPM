@@ -1430,7 +1430,7 @@ namespace VPM.Services
                 }
             }
             
-            // Try exact match first (base name like "Creator.Package")
+            // Try exact match first (could be base name "Creator.Package" or full name "Creator.Package.Version")
             if (_packageStatusIndex.TryGetValue(packageName, out var status))
             {
                 return status;
@@ -1438,13 +1438,20 @@ namespace VPM.Services
             
             // Parse the dependency to handle .latest, .min[NUMBER], and exact versions
             var depInfo = DependencyVersionInfo.Parse(packageName);
-            var baseName = depInfo.BaseName;
             
-            // Try base name lookup
+            // If it's an exact version (e.g., Creator.Package.1) and it wasn't found in TryGetValue above,
+            // it means that specific version is not installed.
+            if (depInfo.VersionType == DependencyVersionType.Exact && depInfo.VersionNumber.HasValue)
+            {
+                return "Missing";
+            }
+            
+            // Try base name lookup for .latest, .min[NUMBER] or base-only references
+            var baseName = depInfo.BaseName;
             if (_packageStatusIndex.TryGetValue(baseName, out status))
             {
                 // For .latest and .min[NUMBER], any version on disk satisfies the dependency
-                // For exact versions, we still return the status if the base package exists
+                // We return the status of the base package (which will be Loaded, Available, or Archived)
                 return status;
             }
             
@@ -1519,10 +1526,16 @@ namespace VPM.Services
                     var loadedFiles = Directory.GetFiles(_addonPackagesFolder, "*.var", SearchOption.AllDirectories);
                     foreach (var file in loadedFiles)
                     {
-                        var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
-                        if (!string.IsNullOrEmpty(packageName))
+                        var filename = Path.GetFileNameWithoutExtension(file);
+                        var fullPackageName = ExtractFullPackageNameFromFilename(filename);
+                        if (!string.IsNullOrEmpty(fullPackageName))
                         {
-                            _packageStatusIndex[packageName] = "Loaded";
+                            // Index by full name (Creator.Package.Version)
+                            _packageStatusIndex[fullPackageName] = "Loaded";
+                            
+                            // Also index by base name (Creator.Package) for general status checks
+                            var depInfo = DependencyVersionInfo.Parse(fullPackageName);
+                            _packageStatusIndex.TryAdd(depInfo.BaseName, "Loaded");
                         }
                     }
                 }
@@ -1533,12 +1546,17 @@ namespace VPM.Services
                     var availableFiles = Directory.GetFiles(_allPackagesFolder, "*.var", SearchOption.AllDirectories);
                     foreach (var file in availableFiles)
                     {
-                        var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
-                        if (!string.IsNullOrEmpty(packageName))
+                        var filename = Path.GetFileNameWithoutExtension(file);
+                        var fullPackageName = ExtractFullPackageNameFromFilename(filename);
+                        if (!string.IsNullOrEmpty(fullPackageName))
                         {
                             // Only add as Available if not already marked as Loaded
                             // Use TryAdd to avoid overwriting Loaded status
-                            _packageStatusIndex.TryAdd(packageName, "Available");
+                            _packageStatusIndex.TryAdd(fullPackageName, "Available");
+                            
+                            // Also index by base name
+                            var depInfo = DependencyVersionInfo.Parse(fullPackageName);
+                            _packageStatusIndex.TryAdd(depInfo.BaseName, "Available");
                         }
                     }
                 }
@@ -1551,11 +1569,16 @@ namespace VPM.Services
                     var archivedFiles = Directory.GetFiles(_archivedPackagesFolder, "*.var", SearchOption.AllDirectories);
                     foreach (var file in archivedFiles)
                     {
-                        var packageName = ExtractPackageNameFromFilename(Path.GetFileNameWithoutExtension(file));
-                        if (!string.IsNullOrEmpty(packageName))
+                        var filename = Path.GetFileNameWithoutExtension(file);
+                        var fullPackageName = ExtractFullPackageNameFromFilename(filename);
+                        if (!string.IsNullOrEmpty(fullPackageName))
                         {
                             // Only add as Archived if not already marked as Loaded or Available
-                            _packageStatusIndex.TryAdd(packageName, "Archived");
+                            _packageStatusIndex.TryAdd(fullPackageName, "Archived");
+                            
+                            // Also index by base name
+                            var depInfo = DependencyVersionInfo.Parse(fullPackageName);
+                            _packageStatusIndex.TryAdd(depInfo.BaseName, "Archived");
                         }
                     }
                 }
@@ -1648,14 +1671,14 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Extracts package name from filename (removes version number)
+        /// Extracts full package name from filename (includes creator, package name, and version number)
         /// </summary>
-        private string ExtractPackageNameFromFilename(string filename)
+        private string ExtractFullPackageNameFromFilename(string filename)
         {
             var match = _varPattern.Match(filename + ".var");
             if (match.Success)
             {
-                return $"{match.Groups[1].Value}.{match.Groups[2].Value}";
+                return $"{match.Groups[1].Value}.{match.Groups[2].Value}.{match.Groups[3].Value}";
             }
             return null;
         }

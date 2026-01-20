@@ -334,7 +334,7 @@ namespace VPM
                 return [];
                 
             return [.. DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
-                .Select(d => d.Name)];
+                .Select(d => d.DisplayName)];
         }
         
         /// <summary>
@@ -355,10 +355,10 @@ namespace VPM
                 
                 foreach (var item in DependenciesDataGrid.Items)
                 {
-                    if (item is DependencyItem dependency && selectedNamesSet.Contains(dependency.Name))
+                    if (item is DependencyItem dependency && selectedNamesSet.Contains(dependency.DisplayName))
                     {
                         DependenciesDataGrid.SelectedItems.Add(dependency);
-                        selectedNamesSet.Remove(dependency.Name);
+                        selectedNamesSet.Remove(dependency.DisplayName);
                         
                         if (selectedNamesSet.Count == 0)
                             break;

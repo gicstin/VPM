@@ -125,7 +125,7 @@ namespace VPM
                 // Get missing dependencies from the current view
                 var missingDeps = Dependencies?
                     .Where(d => d.Status == "Missing" || d.Status == "Not Found")
-                    .Select(d => d.Name)
+                    .Select(d => d.DisplayName)
                     .Distinct()
                     .ToList();
                 

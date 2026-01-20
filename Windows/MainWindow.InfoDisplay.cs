@@ -802,7 +802,7 @@ namespace VPM
                         }
                     }
                     
-                    var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
+                    var status = _packageFileManager?.GetPackageStatus(dependencyName) ?? "Unknown";
                     
                     // Check if dependency exists in external destinations
                     var externalDestinationColor = CheckDependencyInExternalDestinations(baseName);

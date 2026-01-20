@@ -2586,6 +2586,171 @@
                             </Grid>
                         </Grid>
 
+                        <!--  Sub-dependencies Button  -->
+                        <Button
+                            x:Name="LoadSubDependenciesButton"
+                            Margin="0,12,0,6"
+                            Padding="10,6"
+                            Click="LoadSubDependenciesButton_Click"
+                            Content="🔍 Find Sub-Dependencies"
+                            FontSize="12"
+                            FontWeight="SemiBold"
+                            Visibility="Visible" />
+
+                        <!--  Sub-dependencies Header  -->
+                        <Border
+                            x:Name="IndirectDependenciesHeader"
+                            Margin="0,6,0,0"
+                            Padding="0,0,0,6"
+                            BorderBrush="{StaticResource DarkBorder}"
+                            BorderThickness="0,0,0,1"
+                            Visibility="Visible">
+                            <TextBlock
+                                x:Name="IndirectDependenciesHeaderText"
+                                FontSize="13"
+                                FontWeight="SemiBold"
+                                Foreground="{StaticResource DarkText}"
+                                Text="🔗 Sub-dependencies (0)" />
+                        </Border>
+
+                        <!--  Sub-dependencies List  -->
+                        <ItemsControl x:Name="DetailIndirectDependenciesControl" Margin="0,6,0,12">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border
+                                        Margin="0,2"
+                                        Padding="6,4"
+                                        Background="{StaticResource DarkControlBackground}"
+                                        BorderBrush="{StaticResource DarkBorder}"
+                                        BorderThickness="1"
+                                        CornerRadius="3"
+                                        Visibility="{Binding Filename, Converter={StaticResource NullToVis}}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock
+                                                    FontSize="12"
+                                                    Foreground="{StaticResource DarkText}"
+                                                    Text="{Binding Filename}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                                <TextBlock
+                                                    Margin="0,1,0,0"
+                                                    FontSize="10"
+                                                    Foreground="{Binding StatusColor}"
+                                                    Text="{Binding Status}" />
+                                            </StackPanel>
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                Margin="6,0,0,0"
+                                                Orientation="Horizontal">
+                                                <Button
+                                                    Width="28"
+                                                    Height="28"
+                                                    Padding="0"
+                                                    Click="DownloadFile_Click"
+                                                    Content="{Binding ButtonText}"
+                                                    FontSize="14"
+                                                    Tag="{Binding}">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Background" Value="#FF333333" />
+                                                            <Setter Property="Foreground" Value="#FFE0E0E0" />
+                                                            <Setter Property="BorderBrush" Value="#FF4A4A4A" />
+                                                            <Setter Property="ToolTip" Value="Download" />
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border
+                                                                            x:Name="bd"
+                                                                            Background="{TemplateBinding Background}"
+                                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                                            BorderThickness="1"
+                                                                            CornerRadius="3">
+                                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <ControlTemplate.Triggers>
+                                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                                <Setter TargetName="bd" Property="BorderBrush" Value="#FFFFFFFF" />
+                                                                                <Setter TargetName="bd" Property="Background" Value="#FF454545" />
+                                                                            </Trigger>
+                                                                        </ControlTemplate.Triggers>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CanDownload}" Value="False">
+                                                                    <Setter Property="Background" Value="#FF2A2A2A" />
+                                                                    <Setter Property="Foreground" Value="#FF888888" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding HasUpdate}" Value="True">
+                                                                    <Setter Property="Background" Value="#FFFF8C00" />
+                                                                    <Setter Property="Foreground" Value="White" />
+                                                                    <Setter Property="ToolTip" Value="Download Update" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsDownloading}" Value="True">
+                                                                    <Setter Property="Background" Value="#FFCC3333" />
+                                                                    <Setter Property="Foreground" Value="White" />
+                                                                    <Setter Property="Content" Value="✕" />
+                                                                    <Setter Property="ToolTip" Value="Cancel Download" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                                <Button
+                                                    Width="28"
+                                                    Height="28"
+                                                    Margin="6,0,0,0"
+                                                    Padding="0"
+                                                    Click="OpenFile_Click"
+                                                    Content="📂"
+                                                    FontSize="12"
+                                                    Tag="{Binding}"
+                                                    ToolTip="Open in Explorer"
+                                                    Visibility="Collapsed">
+                                                    <Button.Style>
+                                                        <Style TargetType="Button">
+                                                            <Setter Property="Background" Value="#FF2E7D32" />
+                                                            <Setter Property="Foreground" Value="White" />
+                                                            <Setter Property="BorderBrush" Value="#FF1B5E20" />
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Button">
+                                                                        <Border
+                                                                            x:Name="bd"
+                                                                            Background="{TemplateBinding Background}"
+                                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                                            BorderThickness="1"
+                                                                            CornerRadius="3">
+                                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                        </Border>
+                                                                        <ControlTemplate.Triggers>
+                                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                                <Setter TargetName="bd" Property="Background" Value="#FF3FA34D" />
+                                                                            </Trigger>
+                                                                        </ControlTemplate.Triggers>
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsInstalled}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Button.Style>
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
                         <!--  Files List Header and Filter  -->
                         <Grid Margin="0,12,0,4">
                             <Grid.ColumnDefinitions>
@@ -2786,8 +2951,9 @@
                             FontSize="13"
                             FontWeight="SemiBold"
                             Foreground="{StaticResource DarkText}"
-                            Text="🔗 Dependencies"
-                            Visibility="Collapsed" />
+                            Visibility="Collapsed">
+                            <Run x:Name="DependenciesHeaderText" Text="🔗 Dependencies" />
+                        </TextBlock>
 
                         <ItemsControl x:Name="DetailDependenciesControl" Margin="0,6,0,0">
                             <ItemsControl.ItemTemplate>

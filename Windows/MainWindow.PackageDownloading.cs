@@ -266,7 +266,7 @@ namespace VPM
                 // Get all missing dependencies
                 var missingDeps = Dependencies
                     .Where(d => d.Status == "Missing" || d.Status == "Unknown")
-                    .Select(d => d.Name)
+                    .Select(d => d.DisplayName)
                     .ToList();
                 
                 if (missingDeps.Count == 0)
@@ -303,7 +303,7 @@ namespace VPM
                 var selectedMissingDeps = DependenciesDataGrid.SelectedItems
                     .Cast<DependencyItem>()
                     .Where(d => d.Status == "Missing" || d.Status == "Unknown")
-                    .Select(d => d.Name)
+                    .Select(d => d.DisplayName)
                     .ToList();
                 
                 if (selectedMissingDeps.Count == 0)

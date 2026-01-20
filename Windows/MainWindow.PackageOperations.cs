@@ -362,18 +362,7 @@ namespace VPM
                                 dependencyName = Path.GetFileNameWithoutExtension(dependency);
                             }
 
-                            string baseName = dependencyName;
-                            var lastDotIndex = dependencyName.LastIndexOf('.');
-                            if (lastDotIndex > 0)
-                            {
-                                var potentialVersion = dependencyName.Substring(lastDotIndex + 1);
-                                if (int.TryParse(potentialVersion, out _) || potentialVersion.Equals("latest", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    baseName = dependencyName.Substring(0, lastDotIndex);
-                                }
-                            }
-
-                            allDependencies.Add(baseName);
+                            allDependencies.Add(dependencyName);
                         }
                     }
                 }
@@ -391,8 +380,10 @@ namespace VPM
                 var externalDependencies = new List<(string name, VarMetadata metadata)>();
                 foreach (var depName in allDependencies.Where(d => !packagesToLoad.Contains(d) && !availableDependencies.Contains(d)))
                 {
+                    var depInfo = VPM.Models.DependencyVersionInfo.Parse(depName);
                     var depMetadata = _packageManager?.PackageMetadata?.Values
-                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
+                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depInfo.BaseName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
+                        .Where(p => depInfo.IsSatisfiedBy(p.Version))
                         .OrderByDescending(p => p.Version)
                         .FirstOrDefault();
                     
@@ -827,7 +818,7 @@ namespace VPM
                 // Enhanced confirmation dialog with better information
                 if (selectedDependencies.Count >= 100)
                 {
-                    var dependencyNames = selectedDependencies.Take(5).Select(d => d.Name).ToList();
+                    var dependencyNames = selectedDependencies.Take(5).Select(d => d.DisplayName).ToList();
                     var displayNames = string.Join("\n", dependencyNames);
                     if (selectedDependencies.Count > 5)
                     {
@@ -857,7 +848,7 @@ namespace VPM
                 {
                     // Separate external dependencies (hex color status) from regular available/outdated/archived dependencies
                     
-                    var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
+                    var dependencyNames = selectedDependencies.Select(d => d.DisplayName).ToList();
 
                     await PrepareForPackageFileOperationsAsync(dependencyNames);
 
@@ -868,10 +859,10 @@ namespace VPM
                     foreach (var dep in externalDeps)
                     {
                         completed++;
-                        UpdateDependenciesTableLoading(completed, totalCount, dep.Name);
+                        UpdateDependenciesTableLoading(completed, totalCount, dep.DisplayName);
                         SetStatus(totalCount > 1
                             ? $"Loading dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {dep.Name}...");
+                            : $"Loading {dep.DisplayName}...");
 
                         // Find metadata for this dependency by matching Creator.PackageName
                         // Get the highest version if multiple versions exist
@@ -882,19 +873,19 @@ namespace VPM
 
                         if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
                         {
-                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(dep.Name, depMetadata.FilePath);
-                            results.Add((dep.Name, success, error));
+                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(dep.DisplayName, depMetadata.FilePath);
+                            results.Add((dep.DisplayName, success, error));
                         }
                         else
                         {
-                            results.Add((dep.Name, false, "External dependency file path not found in metadata"));
+                            results.Add((dep.DisplayName, false, "External dependency file path not found in metadata"));
                         }
                     }
 
                     // Load regular available dependencies
                     if (regularDeps.Count > 0)
                     {
-                        var regularNames = regularDeps.Select(d => d.Name).ToList();
+                        var regularNames = regularDeps.Select(d => d.DisplayName).ToList();
                         var progress = CreateStatusProgress(p =>
                         {
                             UpdateDependenciesTableLoading(completed + p.completed, totalCount, p.currentPackage);
@@ -912,7 +903,7 @@ namespace VPM
 
                     // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
                     var dependencyLookup = selectedDependencies.ToDictionary(
-                        d => d.Name, 
+                        d => d.DisplayName, 
                         d => d, 
                         StringComparer.OrdinalIgnoreCase);
 
@@ -1028,7 +1019,7 @@ namespace VPM
                 // Only show confirmation for large batches (100+ dependencies)
                 if (selectedDependencies.Count >= 100)
                 {
-                    var dependencyNames = selectedDependencies.Take(10).Select(d => d.Name).ToList();
+                    var dependencyNames = selectedDependencies.Take(10).Select(d => d.DisplayName).ToList();
                     var displayNames = string.Join("\n", dependencyNames);
                     if (selectedDependencies.Count > 10)
                     {
@@ -1055,7 +1046,7 @@ namespace VPM
                 try
                 {
                     // Use enhanced batch operation with progress reporting
-                    var dependencyNames = selectedDependencies.Select(d => d.Name).ToList();
+                    var dependencyNames = selectedDependencies.Select(d => d.DisplayName).ToList();
 
                     await PrepareForPackageFileOperationsAsync(dependencyNames);
                     
@@ -1077,7 +1068,7 @@ namespace VPM
 
                     // PERFORMANCE FIX: Pre-build lookup dictionary for O(1) access instead of O(n) FirstOrDefault
                     var dependencyLookup = selectedDependencies.ToDictionary(
-                        d => d.Name, 
+                        d => d.DisplayName, 
                         d => d, 
                         StringComparer.OrdinalIgnoreCase);
 
@@ -1275,7 +1266,7 @@ namespace VPM
                 }
 
                 // Copy dependency names to clipboard (one per line)
-                var dependencyNames = selectedDependencies.Select(d => d.Name);
+                var dependencyNames = selectedDependencies.Select(d => d.DisplayName);
                 var clipboardText = string.Join("\n", dependencyNames);
 
                 Clipboard.SetText(clipboardText);
@@ -1310,7 +1301,7 @@ namespace VPM
                 // Enhanced confirmation dialog with better information
                 if (allAvailableDependencies.Count >= 100)
                 {
-                    var sampleDependencyNames = allAvailableDependencies.Take(5).Select(d => d.Name).ToList();
+                    var sampleDependencyNames = allAvailableDependencies.Take(5).Select(d => d.DisplayName).ToList();
                     var displayNames = string.Join("\n", sampleDependencyNames);
                     if (allAvailableDependencies.Count > 5)
                     {
@@ -1330,7 +1321,7 @@ namespace VPM
                 // Disable UI during operation
                 LoadAllDependenciesButton.IsEnabled = false;
 
-                var dependencyNames = allAvailableDependencies.Select(d => d.Name).ToList();
+                var dependencyNames = allAvailableDependencies.Select(d => d.DisplayName).ToList();
 
                 ShowDependenciesTableLoading("Loading dependencies...", dependencyNames.Count);
 
@@ -1354,7 +1345,7 @@ namespace VPM
 
                     foreach ((string packageName, bool success, string error) in results)
                     {
-                        var dependency = allAvailableDependencies.FirstOrDefault(d => d.Name == packageName);
+                        var dependency = allAvailableDependencies.FirstOrDefault(d => d.DisplayName == packageName);
                         if (dependency != null && success)
                         {
                             dependency.Status = "Loaded";

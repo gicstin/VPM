@@ -236,6 +236,11 @@ namespace VPM.Models
         /// </summary>
         public bool HasTags => TagsList.Count > 0;
 
+        /// <summary>
+        /// Package name derived from the first hub file
+        /// </summary>
+        public string PackageName => HubFiles?.Count > 0 ? HubFiles[0].PackageName : Title;
+
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged(string name) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -313,6 +318,15 @@ namespace VPM.Models
         public string DiscussionUrl => !string.IsNullOrEmpty(DiscussionThreadId) 
             ? $"https://hub.virtamate.com/threads/{DiscussionThreadId}/discussion-panel" 
             : null;
+    }
+
+    /// <summary>
+    /// Direct and indirect dependency resolution results.
+    /// </summary>
+    public sealed class HubDependencyResolution
+    {
+        public Dictionary<string, List<HubFile>> DirectDependencies { get; set; }
+        public Dictionary<string, List<HubFile>> IndirectDependencies { get; set; }
     }
 
     /// <summary>

@@ -25,7 +25,7 @@ namespace VPM.Windows
 
         // Pre-computed lookups for fast library status checking
         private HashSet<string> _localPackageNames;
-        private Dictionary<string, int> _localPackageVersions;
+        private Dictionary<string, HashSet<int>> _localPackageVersions;
 
         private readonly ConcurrentDictionary<string, HubResourceDetail> _resourceDetailCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -752,12 +752,13 @@ namespace VPM.Windows
 
                     var cleanName = hubFile.PackageName.Replace(".var", "", StringComparison.OrdinalIgnoreCase);
                     var pkgGroupName = GetPackageGroupName(cleanName);
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var localVersion) && localVersion > 0)
+                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var localVersions) && localVersions.Count > 0)
                     {
-                        if (_hubService.HasUpdate(pkgGroupName, localVersion))
+                        var latestLocal = localVersions.Max();
+                        
+                        if (_hubService.HasUpdate(pkgGroupName, latestLocal))
                         {
                             updateFromMainOnly = true;
-                            break;
                         }
                     }
                 }
@@ -813,10 +814,20 @@ namespace VPM.Windows
                 if (hubVersion > 0)
                 {
                     // Versioned requirement: accept any local version in the group as long as it's >= required.
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var lv) && lv > 0)
+                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var versions) && versions.Count > 0)
                     {
-                        localVersion = lv;
-                        hasLocal = localVersion >= hubVersion;
+                        // Relaxed check: if we have any version of this package, consider it "In Library"
+                        // The update check later will handle flagging if it's outdated.
+                        hasLocal = true;
+
+                        if (versions.Contains(hubVersion))
+                        {
+                            localVersion = hubVersion;
+                        }
+                        else
+                        {
+                            localVersion = versions.Max();
+                        }
                     }
                 }
                 else
@@ -826,8 +837,8 @@ namespace VPM.Windows
                         hasLocal = true;
 
                     // Still capture a local version (if any) for update detection, but it should not satisfy the requirement.
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var lv) && lv > 0)
-                        localVersion = lv;
+                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var versions) && versions.Count > 0)
+                        localVersion = versions.Max();
                 }
 
                 if (!hasLocal)
@@ -875,7 +886,7 @@ namespace VPM.Windows
         private void BuildLocalPackageLookups()
         {
             _localPackageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            _localPackageVersions = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            _localPackageVersions = new Dictionary<string, HashSet<int>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var kvp in _localPackagePaths)
             {
@@ -898,8 +909,12 @@ namespace VPM.Windows
                     var versionPart = name.Substring(lastDot + 1);
                     if (int.TryParse(versionPart, out var version))
                     {
-                        if (!_localPackageVersions.TryGetValue(groupName, out var existing) || version > existing)
-                            _localPackageVersions[groupName] = version;
+                        if (!_localPackageVersions.TryGetValue(groupName, out var versions))
+                        {
+                            versions = new HashSet<int>();
+                            _localPackageVersions[groupName] = versions;
+                        }
+                        versions.Add(version);
                     }
                 }
             }

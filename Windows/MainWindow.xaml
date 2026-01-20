@@ -2841,6 +2841,20 @@
                                     <MenuItem Click="ShowDependencyGraph_Click" Header="📊 Show Dependency Graph" />
                                     <MenuItem Click="OpenInExplorer_Click" Header="📁 Open in Explorer" />
                                     <MenuItem Click="CopyPackageName_Click" Header="📋 Copy Package Name" />
+                                    <Separator />
+                                    <MenuItem
+                                        x:Name="LoadContextMenuItem"
+                                        Click="LoadPackages_Click"
+                                        Header="📥 Load" />
+                                    <MenuItem
+                                        x:Name="UnloadContextMenuItem"
+                                        Click="UnloadPackages_Click"
+                                        Header="📤 Unload" />
+                                    <MenuItem
+                                        x:Name="FixDuplicatesContextMenuItem"
+                                        Click="FixSelectedDuplicates_Click"
+                                        Header="🔧 Fix Duplicates" />
+                                    <Separator />
                                     <MenuItem Click="FilterByCreator_Click" Header="👤 Filter by Creator" />
                                     <Separator />
                                     <MenuItem x:Name="MoveToMenuItem" Header="📦 Move To">
@@ -4998,7 +5012,11 @@
                                             <MenuItem Click="LaunchVR_Click" Header="🥽 VR" />
                                             <MenuItem Click="LaunchConfig_Click" Header="⚙️ Config" />
                                             <Separator />
-                                            <MenuItem Click="LaunchLogMode_Click" Header="📄 Log Mode" />
+                                            <MenuItem Header="📄 Log Mode">
+                                                <MenuItem Click="LaunchLogModeDesktop_Click" Header="Log Mode (Desktop)" />
+                                                <MenuItem Click="LaunchLogModeVR_Click" Header="Log Mode (VR)" />
+                                                <MenuItem Click="LaunchLogModeCustom_Click" Header="Log Mode (Custom)" />
+                                            </MenuItem>
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Button.Style>

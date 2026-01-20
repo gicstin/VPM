@@ -6,8 +6,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -51,9 +53,14 @@ namespace VPM.Windows
         private bool _isPanelExpanded = false;
         private const double PanelWidth = 480;  // Wider panel for WebView
         private HubResourceDetail _currentDetail;
+        private CancellationTokenSource _dependencyInspectionCts;
         private HubResource _currentResource;  // Track the resource being viewed
         private ObservableCollection<HubFileViewModel> _currentFiles;
         private ObservableCollection<HubFileViewModel> _currentDependencies;
+        private ObservableCollection<HubFileViewModel> _currentIndirectDependencies;
+        private bool _hasLoadedSubDependencies;
+        private bool _isSubDependencyLoading;
+        private bool _allowDependencyPlaceholderUpdate;
         
         // WebView2 state
         private bool _webViewInitialized = false;
@@ -100,7 +107,8 @@ namespace VPM.Windows
                 _allTags = new List<string>();
             }
         }
-        
+
+
         // Download queue state
         private ObservableCollection<QueuedDownload> _downloadQueue = new ObservableCollection<QueuedDownload>();
         
@@ -323,6 +331,7 @@ namespace VPM.Windows
                 // Refresh views to apply filtering
                 CollectionViewSource.GetDefaultView(_currentFiles)?.Refresh();
                 CollectionViewSource.GetDefaultView(_currentDependencies)?.Refresh();
+                CollectionViewSource.GetDefaultView(_currentIndirectDependencies)?.Refresh();
             }
             catch (Exception ex)
             {
@@ -355,6 +364,7 @@ namespace VPM.Windows
         private bool _loadPackageAndDependenciesAfterDownload = false;
         private bool _hideInstalledPackages = false;
         private string _detailSearchText = "";
+        private bool _includeIndirectDependenciesInDownloadAll = true;
         
         // Pre-computed lookups for fast library status checking
         private HashSet<string> _localPackageNames;  // All package names (without .var)
@@ -501,6 +511,7 @@ namespace VPM.Windows
             
             _currentFiles = new ObservableCollection<HubFileViewModel>();
             _currentDependencies = new ObservableCollection<HubFileViewModel>();
+            _currentIndirectDependencies = new ObservableCollection<HubFileViewModel>();
             
             // Set up sorting for files and dependencies
             var filesView = CollectionViewSource.GetDefaultView(_currentFiles);
@@ -564,11 +575,52 @@ namespace VPM.Windows
                     depsLive.IsLiveFiltering = true;
                 }
             }
+
+            var indirectView = CollectionViewSource.GetDefaultView(_currentIndirectDependencies);
+            indirectView.SortDescriptions.Add(new SortDescription(nameof(HubFileViewModel.StatusPriority), ListSortDirection.Ascending));
+            indirectView.SortDescriptions.Add(new SortDescription(nameof(HubFileViewModel.Filename), ListSortDirection.Ascending));
+            indirectView.Filter = (item) =>
+            {
+                if (item is HubFileViewModel vm)
+                {
+                    if (_hideInstalledPackages && (vm.AlreadyHave || vm.IsInstalled)) return false;
+                    if (!string.IsNullOrWhiteSpace(_detailSearchText))
+                    {
+                        return vm.Filename?.Contains(_detailSearchText, StringComparison.OrdinalIgnoreCase) == true;
+                    }
+                }
+                return true;
+            };
+
+            if (indirectView is ICollectionViewLiveShaping indirectLive)
+            {
+                if (indirectLive.CanChangeLiveSorting)
+                {
+                    indirectLive.LiveSortingProperties.Add(nameof(HubFileViewModel.StatusPriority));
+                    indirectLive.IsLiveSorting = true;
+                }
+                if (indirectLive.CanChangeLiveFiltering)
+                {
+                    indirectLive.LiveFilteringProperties.Add(nameof(HubFileViewModel.AlreadyHave));
+                    indirectLive.LiveFilteringProperties.Add(nameof(HubFileViewModel.IsInstalled));
+                    indirectLive.IsLiveFiltering = true;
+                }
+            }
             
             // Subscribe to download queue events
             _hubService.DownloadQueued += HubService_DownloadQueued;
             _hubService.DownloadStarted += HubService_DownloadStarted;
             _hubService.DownloadCompleted += HubService_DownloadCompleted;
+
+            // Load persisted settings
+            try
+            {
+                _includeIndirectDependenciesInDownloadAll = _settingsManager.GetSetting("HubBrowserIncludeIndirectDependencies", true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to load IncludeIndirectDependencies setting: {ex}");
+            }
 
             SourceInitialized += HubBrowserWindow_SourceInitialized;
             Loaded += HubBrowserWindow_Loaded;
@@ -915,7 +967,7 @@ namespace VPM.Windows
             WebViewErrorPanel.Visibility = Visibility.Collapsed;
         }
         
-        private void WebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
+        private async void WebView_NavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
             WebViewLoadingOverlay.Visibility = Visibility.Collapsed;
             
@@ -929,6 +981,43 @@ namespace VPM.Windows
                 
                 // Inject CSS to improve dark theme appearance
                 InjectDarkThemeStyles();
+
+                // Sync cookies to HubService so that API requests (like sub-dependency search) work for paid resources
+                await SyncCookiesToHubService();
+            }
+        }
+
+        private async Task SyncCookiesToHubService()
+        {
+            if (OverviewWebView?.CoreWebView2 == null) return;
+            
+            try
+            {
+                var cookieManager = OverviewWebView.CoreWebView2.CookieManager;
+                var webViewCookies = await cookieManager.GetCookiesAsync("https://hub.virtamate.com");
+                
+                var netCookies = new List<System.Net.Cookie>();
+                foreach (var wvCookie in webViewCookies)
+                {
+                    try 
+                    {
+                        // Ensure domain is set correctly for CookieContainer
+                        var domain = wvCookie.Domain;
+                        if (domain.StartsWith(".")) domain = domain.Substring(1);
+
+                        var netCookie = new System.Net.Cookie(wvCookie.Name, wvCookie.Value, wvCookie.Path, domain);
+                        netCookie.Secure = wvCookie.IsSecure;
+                        netCookie.HttpOnly = wvCookie.IsHttpOnly;
+                        netCookies.Add(netCookie);
+                    }
+                    catch (Exception) { /* ignore invalid cookies */ }
+                }
+                
+                _hubService.UpdateCookies(netCookies);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Failed to sync cookies: {ex}");
             }
         }
         
@@ -1980,14 +2069,58 @@ namespace VPM.Windows
                     _currentDetail = detail;
                     _currentResource = resource;  // Store the resource for later updates
                     _currentResourceId = resource.ResourceId;  // Store for WebView navigation
+
+                    _currentDependencies.Clear();
+                    _currentIndirectDependencies.Clear();
+                    _hasLoadedSubDependencies = false;
+                    _isSubDependencyLoading = false;
+                    _allowDependencyPlaceholderUpdate = true;
                     
                     PopulateDetailPanel(detail);
                     ExpandPanel();
                     
+                    // Start background dependency inspection
+                    _dependencyInspectionCts?.Cancel();
+                    _dependencyInspectionCts = new CancellationTokenSource();
+                    var token = _dependencyInspectionCts.Token;
+                    
+                    _ = Task.Run(async () => 
+                    {
+                        try 
+                        {
+                            // Short delay to prioritize UI rendering
+                            await Task.Delay(200, token);
+                            
+                            var includeIndirect = _hubService.HasCachedIndirectDependencies(detail);
+                            var resolution = await _hubService.InspectPackageDependenciesTwoLevelAsync(detail, includeIndirect: includeIndirect, token);
+                            
+                            if (token.IsCancellationRequested) return;
+
+                            await Dispatcher.InvokeAsync(() => 
+                            {
+                                if (token.IsCancellationRequested) return;
+                                
+                                // Only update if we are still viewing this detail object
+                                if (_currentDetail == detail)
+                                {
+                                    if (includeIndirect) _hasLoadedSubDependencies = true;
+                                    _allowDependencyPlaceholderUpdate = false;
+                                    UpdateDependenciesPanel(detail, resolution);
+                                }
+                            });
+                        }
+                        catch (OperationCanceledException) { }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[HubBrowserWindow] Dependency inspection failed: {ex}");
+                        }
+                    }, token);
+                    
                     // Push new state to stack (this is the new current item)
                     PushToDetailStack(detail, resource,
                         new ObservableCollection<HubFileViewModel>(_currentFiles),
-                        new ObservableCollection<HubFileViewModel>(_currentDependencies));
+                        new ObservableCollection<HubFileViewModel>(_currentDependencies),
+                        new ObservableCollection<HubFileViewModel>(_currentIndirectDependencies));
 
                     // Show + navigate the Overview panel when selecting a resource
                     if (!_isOverviewPanelVisible)
@@ -2011,6 +2144,135 @@ namespace VPM.Windows
             }
         }
 
+        private void UpdateDependenciesPanel(HubResourceDetail detail, HubDependencyResolution resolution)
+        {
+            if (LoadSubDependenciesButton != null)
+            {
+                LoadSubDependenciesButton.IsEnabled = !_isSubDependencyLoading && !_hasLoadedSubDependencies;
+                
+                if (_hasLoadedSubDependencies)
+                {
+                    LoadSubDependenciesButton.Content = "Sub-dependencies Loaded";
+                }
+                else if (!_isSubDependencyLoading)
+                {
+                    LoadSubDependenciesButton.Content = "Find Sub-Dependencies";
+                }
+                // If _isSubDependencyLoading is true, we leave the content alone 
+                // so it can show progress or "Initializing..." from the click handler
+                
+                LoadSubDependenciesButton.Visibility = Visibility.Visible;
+            }
+
+            if (_allowDependencyPlaceholderUpdate == false &&
+                (resolution?.DirectDependencies == null || resolution.DirectDependencies.Count == 0) &&
+                (resolution?.IndirectDependencies == null || resolution.IndirectDependencies.Count == 0))
+            {
+                return;
+            }
+
+            if (_allowDependencyPlaceholderUpdate == false &&
+                (resolution?.DirectDependencies == null || resolution.DirectDependencies.Count == 0) &&
+                _currentDependencies.Any())
+            {
+                return;
+            }
+
+            var directCount = resolution?.DirectDependencies?.Count ?? 0;
+            var indirectCount = resolution?.IndirectDependencies?.Count ?? 0;
+
+            // Stats - Update dependency count display (direct deps only)
+            if (directCount > 0)
+            {
+                DetailDependencies.Text = $"📦 {directCount} dep{(directCount > 1 ? "s" : "")}";
+                DetailDependencies.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                DetailDependencies.Visibility = Visibility.Collapsed;
+            }
+
+            // Direct dependencies
+            _currentDependencies.Clear();
+            if (resolution?.DirectDependencies != null)
+            {
+                foreach (var depGroup in resolution.DirectDependencies.Values)
+                {
+                    foreach (var file in depGroup)
+                    {
+                        // Skip files with null or empty filenames
+                        if (!string.IsNullOrEmpty(file.Filename))
+                        {
+                            _currentDependencies.Add(CreateFileViewModel(file, true));
+                        }
+                    }
+                }
+            }
+            
+            if (_currentDependencies.Any())
+            {
+                DependenciesHeader.Visibility = Visibility.Visible;
+                DependenciesHeaderText.Text = $"🔗 Dependencies ({_currentDependencies.Count})";
+                DetailDependenciesControl.ItemsSource = CollectionViewSource.GetDefaultView(_currentDependencies);
+            }
+            else
+            {
+                DependenciesHeader.Visibility = Visibility.Collapsed;
+                DetailDependenciesControl.ItemsSource = null;
+            }
+
+            // Indirect dependencies
+            if (_hasLoadedSubDependencies)
+            {
+                _currentIndirectDependencies.Clear();
+                if (resolution?.IndirectDependencies != null)
+                {
+                    foreach (var depGroup in resolution.IndirectDependencies.Values)
+                    {
+                        foreach (var file in depGroup)
+                        {
+                            if (!string.IsNullOrEmpty(file.Filename))
+                            {
+                                _currentIndirectDependencies.Add(CreateFileViewModel(file, true));
+                            }
+                        }
+                    }
+                }
+
+                if (_currentIndirectDependencies.Any() || _currentDependencies.Any())
+                {
+                    IndirectDependenciesHeader.Visibility = Visibility.Visible;
+                    if (_currentIndirectDependencies.Any())
+                        IndirectDependenciesHeaderText.Text = $"🔗 Sub-dependencies ({indirectCount})";
+                    else
+                        IndirectDependenciesHeaderText.Text = "🔗 Sub-dependencies";
+                    DetailIndirectDependenciesControl.ItemsSource = _currentIndirectDependencies.Any() ? CollectionViewSource.GetDefaultView(_currentIndirectDependencies) : null;
+                }
+                else
+                {
+                    IndirectDependenciesHeader.Visibility = Visibility.Collapsed;
+                    DetailIndirectDependenciesControl.ItemsSource = null;
+                }
+            }
+            else
+            {
+                _currentIndirectDependencies.Clear();
+                IndirectDependenciesHeader.Visibility = _currentDependencies.Any()
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+                IndirectDependenciesHeaderText.Text = "🔗 Sub-dependencies";
+                DetailIndirectDependenciesControl.ItemsSource = null;
+            }
+
+            if (LoadSubDependenciesButton != null)
+            {
+                LoadSubDependenciesButton.Visibility = Visibility.Visible;
+            }
+            
+            UpdateDownloadAllButton();
+            UpdateCancelAllButtonVisibility();
+        }
+
         private void PopulateDetailPanel(HubResourceDetail detail)
         {
             // Reset search filter
@@ -2018,6 +2280,23 @@ namespace VPM.Windows
             {
                 DetailSearchBox.Text = "";
                 _detailSearchText = "";
+            }
+
+            // Reset sub-dependency button state
+            if (LoadSubDependenciesButton != null)
+            {
+                LoadSubDependenciesButton.IsEnabled = !_isSubDependencyLoading && !_hasLoadedSubDependencies;
+                
+                if (_hasLoadedSubDependencies)
+                {
+                    LoadSubDependenciesButton.Content = "Sub-dependencies Loaded";
+                }
+                else
+                {
+                    LoadSubDependenciesButton.Content = _isSubDependencyLoading ? "Searching sub-dependencies..." : "Find Sub-Dependencies";
+                }
+                
+                LoadSubDependenciesButton.Visibility = Visibility.Visible;
             }
 
             // Set basic info
@@ -2085,16 +2364,9 @@ namespace VPM.Windows
             DetailDownloads.Text = $"⬇ {detail.DownloadCount}";
             DetailRating.Text = $"⭐ {detail.RatingDisplay}";
             
-            // Dependencies
-            if (detail.HasDependencies)
-            {
-                DetailDependencies.Text = $"📦 {detail.DependencyDisplay}";
-                DetailDependencies.Visibility = Visibility.Visible;
-            }
-            else
-            {
-                DetailDependencies.Visibility = Visibility.Collapsed;
-            }
+            
+            // Dependencies stats handled by UpdateDependenciesPanel
+
             
             // File size
             if (!string.IsNullOrEmpty(detail.FileSizeDisplay))
@@ -2195,38 +2467,95 @@ namespace VPM.Windows
                 }
             }
             
-            // Dependencies
-            _currentDependencies.Clear();
-            if (detail.Dependencies != null)
-            {
-                foreach (var depGroup in detail.Dependencies.Values)
-                {
-                    foreach (var file in depGroup)
-                    {
-                        // Skip files with null or empty filenames
-                        if (!string.IsNullOrEmpty(file.Filename))
-                        {
-                            _currentDependencies.Add(CreateFileViewModel(file, true));
-                        }
-                    }
-                }
-            }
-            
             DetailFilesControl.ItemsSource = CollectionViewSource.GetDefaultView(_currentFiles);
-            
-            if (_currentDependencies.Any())
+
+            if (detail.Dependencies != null && detail.Dependencies.Count > 0)
             {
-                DependenciesHeader.Visibility = Visibility.Visible;
-                DetailDependenciesControl.ItemsSource = CollectionViewSource.GetDefaultView(_currentDependencies);
+                _allowDependencyPlaceholderUpdate = false;
+                UpdateDependenciesPanel(detail, BuildResolutionFromDetailDependencies(detail));
             }
             else
             {
-                DependenciesHeader.Visibility = Visibility.Collapsed;
-                DetailDependenciesControl.ItemsSource = null;
+                _allowDependencyPlaceholderUpdate = true;
+                UpdateDependenciesPanel(detail, new HubDependencyResolution
+                {
+                    DirectDependencies = new Dictionary<string, List<HubFile>>(),
+                    IndirectDependencies = new Dictionary<string, List<HubFile>>()
+                });
             }
-            
-            UpdateDownloadAllButton();
-            UpdateCancelAllButtonVisibility();
+        }
+
+        private HubDependencyResolution BuildResolutionFromDetailDependencies(HubResourceDetail detail)
+        {
+            var direct = new Dictionary<string, List<HubFile>>(StringComparer.OrdinalIgnoreCase);
+            if (detail?.Dependencies != null)
+            {
+                foreach (var kvp in detail.Dependencies)
+                {
+                    if (kvp.Value == null || kvp.Value.Count == 0)
+                        continue;
+
+                    direct[kvp.Key] = kvp.Value;
+                }
+            }
+
+            return new HubDependencyResolution
+            {
+                DirectDependencies = direct,
+                IndirectDependencies = new Dictionary<string, List<HubFile>>()
+            };
+        }
+
+        private async void LoadSubDependenciesButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentDetail == null || _isSubDependencyLoading || _hasLoadedSubDependencies)
+                return;
+
+            _dependencyInspectionCts?.Cancel();
+            _dependencyInspectionCts = new CancellationTokenSource();
+            var token = _dependencyInspectionCts.Token;
+
+            try
+            {
+                _isSubDependencyLoading = true;
+                if (LoadSubDependenciesButton != null)
+                {
+                    LoadSubDependenciesButton.IsEnabled = false;
+                    LoadSubDependenciesButton.Content = "Initializing...";
+                }
+
+                var progress = new Progress<string>(status =>
+                {
+                    if (LoadSubDependenciesButton != null)
+                    {
+                        LoadSubDependenciesButton.Content = status;
+                    }
+                });
+
+                var resolution = await _hubService.InspectPackageDependenciesTwoLevelAsync(_currentDetail, includeIndirect: true, token, progress);
+                if (token.IsCancellationRequested) return;
+
+                _isSubDependencyLoading = false;
+                _hasLoadedSubDependencies = true;
+                _allowDependencyPlaceholderUpdate = false;
+                UpdateDependenciesPanel(_currentDetail, resolution);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] Sub-dependency inspection failed: {ex}");
+            }
+            finally
+            {
+                _isSubDependencyLoading = false;
+                if (LoadSubDependenciesButton != null)
+                {
+                    LoadSubDependenciesButton.IsEnabled = !_hasLoadedSubDependencies;
+                    LoadSubDependenciesButton.Content = _hasLoadedSubDependencies ? "Sub-dependencies Loaded" : "Find Sub-Dependencies";
+                }
+            }
         }
 
         private HubFileViewModel CreateFileViewModel(HubFile file, bool isDependency)
@@ -2549,7 +2878,10 @@ namespace VPM.Windows
                 
             var downloadableFiles = _currentFiles.Count(f => f.CanDownload);
             var downloadableDeps = _currentDependencies.Count(f => f.CanDownload);
-            var totalDownloadable = downloadableFiles + downloadableDeps;
+            var downloadableIndirect = _includeIndirectDependenciesInDownloadAll
+                ? _currentIndirectDependencies.Count(f => f.CanDownload)
+                : 0;
+            var totalDownloadable = downloadableFiles + downloadableDeps + downloadableIndirect;
             
             // Make sure button is visible and progress is hidden
             DownloadAllButton.Visibility = Visibility.Visible;
@@ -2819,7 +3151,9 @@ namespace VPM.Windows
             // Collect all files to download
             var toDownload = _currentFiles.Where(f => f.CanDownload).ToList();
             var depsToDownload = _currentDependencies.Where(f => f.CanDownload).ToList();
-            var allToDownload = toDownload.Concat(depsToDownload).ToList();
+            var allToDownload = _includeIndirectDependenciesInDownloadAll
+                ? toDownload.Concat(depsToDownload).Concat(_currentIndirectDependencies.Where(f => f.CanDownload)).ToList()
+                : toDownload.Concat(depsToDownload).ToList();
             
             if (allToDownload.Count == 0)
                 return;
@@ -2852,6 +3186,10 @@ namespace VPM.Windows
             {
                 CancelFileDownload(file);
             }
+            foreach (var file in _currentIndirectDependencies.Where(f => f.IsDownloading))
+            {
+                CancelFileDownload(file);
+            }
             
             // Also cancel any queued downloads
             _hubService.CancelAllDownloads();
@@ -2875,7 +3213,8 @@ namespace VPM.Windows
         {
             // Cancel button is now inside progress container, so we control visibility via the container
             var hasActiveDownloads = (_currentFiles?.Any(f => f.IsDownloading) ?? false) || 
-                                     (_currentDependencies?.Any(f => f.IsDownloading) ?? false);
+                                     (_currentDependencies?.Any(f => f.IsDownloading) ?? false) ||
+                                     (_currentIndirectDependencies?.Any(f => f.IsDownloading) ?? false);
             // Show progress container if there are active downloads (it contains the cancel button)
             if (!hasActiveDownloads && _totalDownloadsInBatch == 0)
             {
@@ -3500,7 +3839,8 @@ namespace VPM.Windows
         #region Stack-Based Detail Navigation
         
         private void PushToDetailStack(HubResourceDetail detail, HubResource resource, 
-            ObservableCollection<HubFileViewModel> files, ObservableCollection<HubFileViewModel> dependencies)
+            ObservableCollection<HubFileViewModel> files, ObservableCollection<HubFileViewModel> dependencies,
+            ObservableCollection<HubFileViewModel> indirectDependencies)
         {
             var resourceId = resource?.ResourceId;
             
@@ -3515,6 +3855,7 @@ namespace VPM.Windows
                     top.Resource = resource;
                     top.Files = new ObservableCollection<HubFileViewModel>(files);
                     top.Dependencies = new ObservableCollection<HubFileViewModel>(dependencies);
+                    top.IndirectDependencies = new ObservableCollection<HubFileViewModel>(indirectDependencies);
                     return;
                 }
             }
@@ -3524,8 +3865,9 @@ namespace VPM.Windows
             {
                 Detail = detail,
                 Resource = resource,
-                Files = new ObservableCollection<HubFileViewModel>(files),
-                Dependencies = new ObservableCollection<HubFileViewModel>(dependencies),
+                Files = files,
+                Dependencies = dependencies,
+                IndirectDependencies = indirectDependencies,
                 ResourceId = resourceId
             };
             
@@ -3551,6 +3893,15 @@ namespace VPM.Windows
                         return true;
                 }
             }
+
+            if (entry.IndirectDependencies != null)
+            {
+                foreach (var dep in entry.IndirectDependencies)
+                {
+                    if (dep.IsDownloading || dep.Status == "Queued..." || dep.Status?.Contains("Downloading") == true)
+                        return true;
+                }
+            }
             
             return false;
         }
@@ -3569,6 +3920,13 @@ namespace VPM.Windows
             _currentDependencies.Clear();
             foreach (var dep in entry.Dependencies)
                 _currentDependencies.Add(dep);
+
+            _currentIndirectDependencies.Clear();
+            if (entry.IndirectDependencies != null)
+            {
+                foreach (var dep in entry.IndirectDependencies)
+                    _currentIndirectDependencies.Add(dep);
+            }
             
             // Update UI
             PopulateDetailPanel(entry.Detail);
@@ -4158,6 +4516,7 @@ namespace VPM.Windows
         public HubResource Resource { get; set; }
         public ObservableCollection<HubFileViewModel> Files { get; set; }
         public ObservableCollection<HubFileViewModel> Dependencies { get; set; }
+        public ObservableCollection<HubFileViewModel> IndirectDependencies { get; set; }
         public string ResourceId { get; set; }
     }
 

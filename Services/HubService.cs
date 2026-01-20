@@ -47,6 +47,7 @@ namespace VPM.Services
         private const string CookieHost = "hub.virtamate.com";
 
         private readonly HttpClient _httpClient;
+        private readonly CookieContainer _cookieContainer;
         private readonly SemaphoreSlim _requestThrottle = new SemaphoreSlim(4, 4); // Allow up to 4 concurrent API requests
         private bool _disposed;
         
@@ -71,7 +72,14 @@ namespace VPM.Services
 
         // Binary cache for packages.json with HTTP conditional request support
         private readonly HubResourcesCache _hubResourcesCache;
+        private readonly RemotePackageInspector _remoteInspector;
         private bool _cacheInitialized = false;
+
+        // Dependency resolution cache (on-demand, short-lived)
+        private readonly Dictionary<string, (HubDependencyResolution Resolution, DateTime CacheTime)> _dependencyResolutionCache =
+            new Dictionary<string, (HubDependencyResolution Resolution, DateTime CacheTime)>(StringComparer.OrdinalIgnoreCase);
+        private readonly TimeSpan _dependencyResolutionCacheExpiry = TimeSpan.FromMinutes(10);
+        private readonly object _dependencyResolutionCacheLock = new object();
         
         // In-memory cache references (delegated to HubResourcesCache)
         private readonly TimeSpan _packagesCacheExpiry = TimeSpan.FromMinutes(30); // Reduced since we use conditional requests
@@ -98,13 +106,20 @@ namespace VPM.Services
             PropertyNameCaseInsensitive = true
         };
 
+        // Persistent Dependency Cache
+        private Dictionary<string, HubDependencyResolution> _persistentDependencyCache = new Dictionary<string, HubDependencyResolution>(StringComparer.OrdinalIgnoreCase);
+        private readonly string _persistentDependencyCachePath;
+        private readonly object _persistentCacheLock = new object();
+        private bool _persistentCacheDirty = false;
+
         public HubService()
         {
+            _cookieContainer = new CookieContainer();
             var handler = new HttpClientHandler
             {
                 AllowAutoRedirect = true,
                 UseCookies = true,
-                CookieContainer = new CookieContainer()
+                CookieContainer = _cookieContainer
             };
 
             // Add the Hub consent cookie
@@ -118,6 +133,8 @@ namespace VPM.Services
 
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "VPM/1.0");
             
+            _remoteInspector = new RemotePackageInspector(_httpClient);
+
             // Initialize the binary cache for Hub resources
             _hubResourcesCache = new HubResourcesCache(_httpClient);
 
@@ -128,7 +145,20 @@ namespace VPM.Services
             Task.Run(() => _detailCache.LoadFromDisk());
 
             _cacheDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VPM", "Cache");
-            
+            Directory.CreateDirectory(_cacheDirectory);
+            _persistentDependencyCachePath = Path.Combine(_cacheDirectory, "DependencyResolution.json");
+            LoadPersistentDependencyCache();
+
+            // Periodic save task
+            Task.Run(async () =>
+            {
+                while (!_disposed)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30));
+                    SavePersistentDependencyCache();
+                }
+            });
+
             // Clean up legacy HubResourceDetails folder if it exists
             Task.Run(() =>
             {
@@ -142,6 +172,435 @@ namespace VPM.Services
                 }
                 catch (Exception) { /* ignore cleanup errors */ }
             });
+        }
+
+        private void LoadPersistentDependencyCache()
+        {
+            try
+            {
+                if (File.Exists(_persistentDependencyCachePath))
+                {
+                    var json = File.ReadAllText(_persistentDependencyCachePath);
+                    var cache = JsonSerializer.Deserialize<Dictionary<string, HubDependencyResolution>>(json, _jsonOptions);
+                    if (cache != null)
+                    {
+                        lock (_persistentCacheLock)
+                        {
+                            _persistentDependencyCache = new Dictionary<string, HubDependencyResolution>(cache, StringComparer.OrdinalIgnoreCase);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubService] Failed to load persistent dependency cache: {ex}");
+            }
+        }
+
+        private void SavePersistentDependencyCache()
+        {
+            if (!_persistentCacheDirty) return;
+            
+            try
+            {
+                Dictionary<string, HubDependencyResolution> cacheSnapshot;
+                lock (_persistentCacheLock)
+                {
+                    cacheSnapshot = new Dictionary<string, HubDependencyResolution>(_persistentDependencyCache, StringComparer.OrdinalIgnoreCase);
+                    _persistentCacheDirty = false;
+                }
+
+                var json = JsonSerializer.Serialize(cacheSnapshot, _jsonOptions);
+                File.WriteAllText(_persistentDependencyCachePath, json);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubService] Failed to save persistent dependency cache: {ex}");
+            }
+        }
+
+        public void UpdateCookies(IEnumerable<Cookie> cookies)
+        {
+            foreach (var cookie in cookies)
+            {
+                try
+                {
+                    _cookieContainer.Add(cookie);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubService] Failed to add cookie {cookie.Name}: {ex.Message}");
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            
+            // Save caches
+            SavePersistentDependencyCache();
+            PerformImageCacheSave();
+            
+            // Dispose resources
+            _imageCacheSaveTimer?.Dispose();
+            _httpClient?.Dispose();
+            _requestThrottle?.Dispose();
+            _hubResourcesCache?.Dispose();
+            _detailCache?.Dispose();
+            
+            _disposed = true;
+        }
+
+
+        public bool HasCachedIndirectDependencies(HubResourceDetail detail)
+        {
+            if (detail == null)
+                return false;
+
+            var downloadUrl = detail.HubFiles?.Count > 0 ? detail.HubFiles[0].EffectiveDownloadUrl : null;
+            
+            // If no download URL AND no API dependencies, we can't have cached indirects
+            if ((string.IsNullOrEmpty(downloadUrl) || downloadUrl == "null") && 
+                (detail.Dependencies == null || detail.Dependencies.Count == 0))
+                return false;
+
+            var cacheKey = !string.IsNullOrEmpty(detail.ResourceId)
+                ? $"id:{detail.ResourceId}|indirect"
+                : $"url:{downloadUrl}|indirect";
+
+            lock (_persistentCacheLock)
+            {
+                return _persistentDependencyCache.ContainsKey(cacheKey);
+            }
+        }
+
+        /// <summary>
+        /// Inspect dependencies up to 2 levels deep and return direct + indirect lists.
+        /// This is intended for on-demand use when showing detail pane.
+        /// </summary>
+        public async Task<HubDependencyResolution> InspectPackageDependenciesTwoLevelAsync(
+            HubResourceDetail detail,
+            bool includeIndirect,
+            CancellationToken cancellationToken = default,
+            IProgress<string> statusReporter = null)
+        {
+            if (detail == null)
+            {
+                return new HubDependencyResolution
+                {
+                    DirectDependencies = new Dictionary<string, List<HubFile>>(),
+                    IndirectDependencies = new Dictionary<string, List<HubFile>>()
+                };
+            }
+
+            var mainPackageName = detail.PackageName;
+            var downloadUrl = detail.HubFiles?.Count > 0 ? detail.HubFiles[0].EffectiveDownloadUrl : null;
+            
+            // If no download URL AND no API dependencies, we can't do anything
+            if ((string.IsNullOrEmpty(downloadUrl) || downloadUrl == "null") && 
+                (detail.Dependencies == null || detail.Dependencies.Count == 0))
+            {
+                return new HubDependencyResolution
+                {
+                    DirectDependencies = new Dictionary<string, List<HubFile>>(),
+                    IndirectDependencies = new Dictionary<string, List<HubFile>>()
+                };
+            }
+
+            var cacheKey = !string.IsNullOrEmpty(detail.ResourceId)
+                ? $"id:{detail.ResourceId}"
+                : $"url:{downloadUrl}";
+            cacheKey += includeIndirect ? "|indirect" : "|direct";
+
+            // Check persistent cache first
+            lock (_persistentCacheLock)
+            {
+                if (_persistentDependencyCache.TryGetValue(cacheKey, out var cached))
+                {
+                    return cached;
+                }
+            }
+
+            if (TryGetDependencyResolutionCache(cacheKey, out var cachedResolution))
+            {
+                return cachedResolution;
+            }
+
+            var directPackages = new Dictionary<string, HubPackageInfo>(StringComparer.OrdinalIgnoreCase);
+            var indirectPackages = new Dictionary<string, HubPackageInfo>(StringComparer.OrdinalIgnoreCase);
+
+            if (detail.Dependencies != null && detail.Dependencies.Count > 0)
+            {
+                var apiFilesTotal = 0;
+                foreach (var v in detail.Dependencies.Values)
+                    apiFilesTotal += v?.Count ?? 0;
+
+                Trace.WriteLine($"[HubService] Using API dependencies for {detail.PackageName ?? detail.ResourceId}. Keys={detail.Dependencies.Count}, Files={apiFilesTotal}");
+
+                foreach (var kvp in detail.Dependencies)
+                {
+                    if (kvp.Value == null || kvp.Value.Count == 0)
+                        continue;
+
+                    foreach (var file in kvp.Value)
+                    {
+                        if (file == null)
+                            continue;
+
+                        var packageName = file.PackageName;
+                        if (string.IsNullOrWhiteSpace(packageName))
+                            packageName = kvp.Key;
+
+                        if (string.IsNullOrWhiteSpace(packageName))
+                            continue;
+
+                        directPackages[packageName] = new HubPackageInfo
+                        {
+                            PackageName = packageName,
+                            DownloadUrl = file.EffectiveDownloadUrl,
+                            LatestUrl = file.LatestUrl,
+                            FileSize = file.FileSize,
+                            LicenseType = file.LicenseType
+                        };
+                    }
+                }
+            }
+            else if (!string.IsNullOrEmpty(downloadUrl) && downloadUrl != "null")
+            {
+                Trace.WriteLine($"[HubService] API dependencies missing for {detail.PackageName ?? detail.ResourceId}. Falling back to remote inspector.");
+                statusReporter?.Report("Inspecting direct dependencies...");
+                List<string> directNames = null;
+                try
+                {
+                    directNames = await _remoteInspector.GetPackageDependenciesAsync(downloadUrl, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[HubService] Failed to inspect direct dependencies: {ex.Message}");
+                }
+
+                Trace.WriteLine($"[HubService] Remote inspector returned {directNames?.Count ?? 0} direct dependencies for {detail.PackageName ?? detail.ResourceId}.");
+
+                if (directNames == null || directNames.Count == 0)
+                {
+                    return new HubDependencyResolution
+                    {
+                        DirectDependencies = new Dictionary<string, List<HubFile>>(),
+                        IndirectDependencies = new Dictionary<string, List<HubFile>>()
+                    };
+                }
+
+                var resolvedDirect = await FindPackagesAsync(directNames, cancellationToken);
+                Trace.WriteLine($"[HubService] Resolved {resolvedDirect?.Count ?? 0} direct packages for {detail.PackageName ?? detail.ResourceId}.");
+                foreach (var kvp in resolvedDirect)
+                {
+                    directPackages[kvp.Key] = kvp.Value;
+                }
+            }
+
+            if (includeIndirect)
+            {
+                var nextLevelNames = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+                var checkedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                // Use slightly higher concurrency for checking many files
+                using var throttle = new SemaphoreSlim(20, 20);
+                var tasks = new List<Task>();
+                
+                int totalItems = 0;
+                int processedItems = 0;
+
+                // Create a linked CTS for internal cancellation (timeout)
+                using var internalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+                foreach (var info in directPackages.Values)
+                {
+                    if (info.NotOnHub || string.IsNullOrEmpty(info.DownloadUrl) || info.DownloadUrl == "null")
+                    {
+                        continue;
+                    }
+
+                    if (!checkedUrls.Add(info.DownloadUrl))
+                    {
+                        continue;
+                    }
+
+                    totalItems++;
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await throttle.WaitAsync(internalCts.Token);
+                            try
+                            {
+                                var subDeps = await _remoteInspector.GetPackageDependenciesAsync(info.DownloadUrl, internalCts.Token);
+                                if (subDeps == null)
+                                {
+                                    return;
+                                }
+
+                                foreach (var dep in subDeps)
+                                {
+                                    if (directPackages.ContainsKey(dep))
+                                    {
+                                        continue;
+                                    }
+
+                                    if (!string.IsNullOrEmpty(mainPackageName) && string.Equals(dep, mainPackageName, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        continue;
+                                    }
+
+                                    nextLevelNames.TryAdd(dep, 0);
+                                }
+                            }
+                            finally
+                            {
+                                try { throttle.Release(); } catch (ObjectDisposedException) { }
+                            }
+                        }
+                        catch (OperationCanceledException) { }
+                        catch (Exception ex)
+                        {
+                            Trace.WriteLine($"[HubService] Error inspecting {info.PackageName}: {ex.Message}");
+                        }
+                        finally
+                        {
+                            var current = Interlocked.Increment(ref processedItems);
+                            statusReporter?.Report($"Scanning {current}/{totalItems} dependencies...");
+                        }
+                    }, internalCts.Token));
+                }
+
+                if (tasks.Count > 0)
+                {
+                    statusReporter?.Report($"Scanning 0/{totalItems} dependencies...");
+                    // Dynamic timeout: 5s per item or minimum 45s, max 5 minutes
+                    var timeoutMs = Math.Min(300000, Math.Max(45000, totalItems * 5000));
+                    
+                    var allTasks = Task.WhenAll(tasks);
+                    var delayTask = Task.Delay(timeoutMs, internalCts.Token);
+                    
+                    var finishedTask = await Task.WhenAny(allTasks, delayTask);
+                    
+                    if (finishedTask == delayTask)
+                    {
+                        Trace.WriteLine("[HubService] Dependency inspection timed out.");
+                        internalCts.Cancel();
+                    }
+                }
+
+                if (!nextLevelNames.IsEmpty)
+                {
+                    statusReporter?.Report($"Resolving {nextLevelNames.Count} sub-dependencies...");
+                    var resolvedIndirect = await FindPackagesAsync(nextLevelNames.Keys, cancellationToken);
+                    foreach (var kvp in resolvedIndirect)
+                    {
+                        if (!directPackages.ContainsKey(kvp.Key))
+                        {
+                            indirectPackages[kvp.Key] = kvp.Value;
+                        }
+                    }
+                }
+            }
+
+            var result = new HubDependencyResolution
+            {
+                DirectDependencies = BuildDependencyFiles(directPackages),
+                IndirectDependencies = BuildDependencyFiles(indirectPackages)
+            };
+
+            StoreDependencyResolutionCache(cacheKey, result);
+            
+            // Update persistent cache
+            lock (_persistentCacheLock)
+            {
+                _persistentDependencyCache[cacheKey] = result;
+                _persistentCacheDirty = true;
+            }
+            
+            return result;
+        }
+
+        private bool TryGetDependencyResolutionCache(string cacheKey, out HubDependencyResolution resolution)
+        {
+            resolution = null;
+            lock (_dependencyResolutionCacheLock)
+            {
+                if (_dependencyResolutionCache.TryGetValue(cacheKey, out var entry))
+                {
+                    if (DateTime.UtcNow - entry.CacheTime <= _dependencyResolutionCacheExpiry)
+                    {
+                        resolution = entry.Resolution;
+                        return true;
+                    }
+
+                    _dependencyResolutionCache.Remove(cacheKey);
+                }
+            }
+
+            return false;
+        }
+
+        private void StoreDependencyResolutionCache(string cacheKey, HubDependencyResolution resolution)
+        {
+            if (resolution == null)
+            {
+                return;
+            }
+
+            lock (_dependencyResolutionCacheLock)
+            {
+                _dependencyResolutionCache[cacheKey] = (resolution, DateTime.UtcNow);
+
+                if (_dependencyResolutionCache.Count > 200)
+                {
+                    var expiredKeys = _dependencyResolutionCache
+                        .Where(kvp => DateTime.UtcNow - kvp.Value.CacheTime > _dependencyResolutionCacheExpiry)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+
+                    foreach (var key in expiredKeys)
+                    {
+                        _dependencyResolutionCache.Remove(key);
+                    }
+                }
+            }
+        }
+
+        private static Dictionary<string, List<HubFile>> BuildDependencyFiles(Dictionary<string, HubPackageInfo> packages)
+        {
+            var deps = new Dictionary<string, List<HubFile>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in packages)
+            {
+                var info = kvp.Value;
+                var packageName = info?.PackageName;
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    packageName = kvp.Key;
+                }
+
+                if (string.IsNullOrWhiteSpace(packageName))
+                {
+                    continue;
+                }
+
+                var hubFile = new HubFile
+                {
+                    Filename = packageName + ".var",
+                    FileSizeStr = info?.FileSize.ToString(),
+                    DownloadUrl = info?.DownloadUrl,
+                    LatestUrl = info?.LatestUrl,
+                    LicenseType = info?.LicenseType,
+                    Version = info?.Version > 0 ? info.Version.ToString() : null,
+                    LatestVersion = info?.LatestVersion > 0 ? info.LatestVersion.ToString() : null,
+                };
+
+                deps[packageName] = new List<HubFile> { hubFile };
+            }
+
+            return deps;
         }
 
         #region Search & Browse
@@ -397,6 +856,8 @@ namespace VPM.Services
                 // Deserialize directly as HubResourceDetail since fields are at root
                 var detail = JsonSerializer.Deserialize<HubResourceDetail>(jsonResponse, _jsonOptions);
 
+                // Note: dependency inspection is performed on-demand when the detail panel is shown.
+
                 // Cache the result
                 if (detail != null)
                 {
@@ -415,46 +876,244 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Perform recursive dependency inspection for a specific package details object.
+        /// This should be called by the UI when displaying details.
+        /// </summary>
+        public async Task<HubResourceDetail> InspectPackageDependenciesAsync(HubResourceDetail detail, CancellationToken cancellationToken = default)
+        {
+            if (detail == null || !detail.HubDownloadable || detail.HubFiles == null || detail.HubFiles.Count == 0)
+                return detail;
+
+            try
+            {
+                var mainFile = detail.HubFiles[0];
+                var downloadUrl = mainFile.EffectiveDownloadUrl;
+
+                if (string.IsNullOrEmpty(downloadUrl) || downloadUrl == "null")
+                    return detail;
+
+                // Start with existing dependencies if we have them (from initial shallow check)
+                var existingDeps = new Dictionary<string, HubPackageInfo>(StringComparer.OrdinalIgnoreCase);
+                
+                if (detail.Dependencies != null)
+                {
+                    foreach (var kvp in detail.Dependencies)
+                    {
+                        if (kvp.Value != null && kvp.Value.Count > 0)
+                        {
+                            var f = kvp.Value[0];
+                            existingDeps[kvp.Key] = new HubPackageInfo 
+                            { 
+                                PackageName = kvp.Key,
+                                DownloadUrl = f.EffectiveDownloadUrl,
+                                LatestUrl = f.LatestUrl,
+                                FileSize = f.FileSize,
+                                LicenseType = f.LicenseType
+                            };
+                        }
+                    }
+                }
+
+                // RECURSIVE CHECK (Multi-level): Check dependencies of dependencies up to a limit
+                // API doesn't provide this, so we use RemotePackageInspector recursively.
+                var allResolvedDeps = new System.Collections.Concurrent.ConcurrentDictionary<string, HubPackageInfo>(existingDeps, StringComparer.OrdinalIgnoreCase);
+                var checkedUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
+                Trace.WriteLine($"[HubService] Starting recursive dependency check for {detail.PackageName}. Initial deps: {existingDeps.Count}");
+
+                // Start with Level 1 dependencies
+                var currentBatch = existingDeps.Values.ToList();
+                int depth = 0;
+                const int MaxDepth = 3; // Go up to 3 levels deep (Main -> Dep -> Dep -> Dep)
+                
+                // Throttle concurrent remote inspections to avoid network congestion/timeouts
+                using var throttle = new SemaphoreSlim(8, 8);
+
+                while (depth < MaxDepth && currentBatch.Count > 0)
+                {
+                    Trace.WriteLine($"[HubService] Processing Depth {depth}, Batch Size: {currentBatch.Count}");
+                    
+                    var nextBatchNames = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
+                    var tasks = new List<Task>();
+                    
+                    // Process current batch in parallel with throttling
+                    foreach (var info in currentBatch)
+                    {
+                        if (info.NotOnHub || string.IsNullOrEmpty(info.DownloadUrl) || info.DownloadUrl == "null")
+                        {
+                            continue;
+                        }
+                        if (checkedUrls.Contains(info.DownloadUrl))
+                        {
+                            continue;
+                        }
+
+                        checkedUrls.Add(info.DownloadUrl);
+
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            await throttle.WaitAsync(cancellationToken);
+                            try
+                            {
+                                var subDeps = await _remoteInspector.GetPackageDependenciesAsync(info.DownloadUrl, cancellationToken);
+                                if (subDeps != null)
+                                {
+                                    foreach (var dep in subDeps)
+                                    {
+                                        // Only add if not already in the main list and not the package itself
+                                        if (!allResolvedDeps.ContainsKey(dep) && 
+                                            !string.Equals(dep, detail.HubFiles[0].PackageName, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            nextBatchNames.TryAdd(dep, 0);
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Trace.WriteLine($"[HubService] Error inspecting {info.PackageName}: {ex.Message}");
+                            }
+                            finally
+                            {
+                                throttle.Release();
+                            }
+                        }));
+                    }
+
+                    // Wait for batch to complete (with timeout per level)
+                    if (tasks.Count > 0)
+                    {
+                        await Task.WhenAny(Task.WhenAll(tasks), Task.Delay(45000, cancellationToken));
+                    }
+
+                    if (nextBatchNames.IsEmpty) 
+                    {
+                        break;
+                    }
+
+                    // Resolve newly found dependencies
+                    var resolvedNext = await FindPackagesAsync(nextBatchNames.Keys, cancellationToken);
+                    
+                    // Update currentBatch for next iteration (only new valid packages)
+                    currentBatch.Clear();
+                    foreach (var kvp in resolvedNext)
+                    {
+                        if (!allResolvedDeps.ContainsKey(kvp.Key))
+                        {
+                            allResolvedDeps[kvp.Key] = kvp.Value;
+                            currentBatch.Add(kvp.Value);
+                        }
+                    }
+
+                    depth++;
+                }
+                
+                Trace.WriteLine($"[HubService] Total resolved dependencies after recursive check: {allResolvedDeps.Count}");
+
+                var newDeps = new Dictionary<string, List<HubFile>>();
+                
+                foreach (var kvp in allResolvedDeps)
+                {
+                    var info = kvp.Value;
+                    var hubFile = new HubFile
+                    {
+                        Filename = info.PackageName + ".var",
+                        FileSizeStr = info.FileSize.ToString(),
+                        DownloadUrl = info.DownloadUrl,
+                        LatestUrl = info.LatestUrl,
+                        LicenseType = info.LicenseType,
+                        Version = info.Version > 0 ? info.Version.ToString() : null,
+                        LatestVersion = info.LatestVersion > 0 ? info.LatestVersion.ToString() : null,
+                    };
+                    
+                    newDeps[kvp.Key] = new List<HubFile> { hubFile };
+                }
+                
+                detail.Dependencies = newDeps;
+                detail.DependencyCount = allResolvedDeps.Count;
+                
+                // Update cache with full dependencies
+                if (!string.IsNullOrEmpty(detail.ResourceId))
+                {
+                    _detailCache.Store($"id:{detail.ResourceId}", detail);
+                }
+                
+                return detail;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubService] Error in InspectPackageDependenciesAsync: {ex}");
+                return detail;
+            }
+        
+        }
+
+        /// <summary>
         /// Find packages by name (for missing dependencies or updates)
         /// </summary>
         public async Task<Dictionary<string, HubPackageInfo>> FindPackagesAsync(IEnumerable<string> packageNames, CancellationToken cancellationToken = default)
         {
-            var namesList = packageNames.ToList();
+            var namesList = packageNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             if (!namesList.Any())
                 return new Dictionary<string, HubPackageInfo>();
 
-            var request = new JsonObject
-            {
-                ["source"] = "VaM",
-                ["action"] = "findPackages",
-                ["packages"] = string.Join(",", namesList)
-            };
-
-            var response = await PostRequestAsync<HubFindPackagesResponse>(request.ToJsonString(), cancellationToken);
+            Trace.WriteLine($"[HubService] FindPackagesAsync called for {namesList.Count} packages");
+            Debug.WriteLine($"[HubService] FindPackagesAsync called for {namesList.Count} packages");
 
             var result = new Dictionary<string, HubPackageInfo>(StringComparer.OrdinalIgnoreCase);
-
-            if (response?.Packages != null)
+            
+            // Batch requests to avoid API limits (e.g. 50 packages per request)
+            const int BatchSize = 50;
+            
+            for (int i = 0; i < namesList.Count; i += BatchSize)
             {
-                foreach (var kvp in response.Packages)
+                var batch = namesList.Skip(i).Take(BatchSize).ToList();
+                
+                try 
                 {
-                    var file = kvp.Value;
-                    var info = new HubPackageInfo
+                    Trace.WriteLine($"[HubService] Requesting batch {i/BatchSize + 1} ({batch.Count} items)...");
+                    Debug.WriteLine($"[HubService] Requesting batch {i/BatchSize + 1} ({batch.Count} items)...");
+
+                    var request = new JsonObject
                     {
-                        PackageName = file.PackageName,
-                        DownloadUrl = file.EffectiveDownloadUrl,
-                        LatestUrl = file.LatestUrl,
-                        FileSize = file.FileSize,
-                        LicenseType = file.LicenseType,
-                        NotOnHub = string.IsNullOrEmpty(file.EffectiveDownloadUrl) || file.EffectiveDownloadUrl == "null"
+                        ["source"] = "VaM",
+                        ["action"] = "findPackages",
+                        ["packages"] = string.Join(",", batch)
                     };
 
-                    if (int.TryParse(file.Version, out var ver))
-                        info.Version = ver;
-                    if (int.TryParse(file.LatestVersion, out var latestVer))
-                        info.LatestVersion = latestVer;
+                    var response = await PostRequestAsync<HubFindPackagesResponse>(request.ToJsonString(), cancellationToken);
 
-                    result[kvp.Key] = info;
+                    if (response?.Packages != null)
+                    {
+                        Trace.WriteLine($"[HubService] Batch {i/BatchSize + 1} received {response.Packages.Count} results");
+                        Debug.WriteLine($"[HubService] Batch {i/BatchSize + 1} received {response.Packages.Count} results");
+
+                        foreach (var kvp in response.Packages)
+                        {
+                            var file = kvp.Value;
+                            var info = new HubPackageInfo
+                            {
+                                PackageName = file.PackageName,
+                                DownloadUrl = file.EffectiveDownloadUrl,
+                                LatestUrl = file.LatestUrl,
+                                FileSize = file.FileSize,
+                                LicenseType = file.LicenseType,
+                                NotOnHub = string.IsNullOrEmpty(file.EffectiveDownloadUrl) || file.EffectiveDownloadUrl == "null"
+                            };
+
+                            if (int.TryParse(file.Version, out var ver))
+                                info.Version = ver;
+                            if (int.TryParse(file.LatestVersion, out var latestVer))
+                                info.LatestVersion = latestVer;
+
+                            result[kvp.Key] = info;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubService] FindPackagesAsync batch failed: {ex.Message}");
+                    // Continue with next batch
                 }
             }
 
@@ -1237,20 +1896,5 @@ namespace VPM.Services
             return result;
         }
         
-        public void Dispose()
-        {
-            if (!_disposed)
-            {
-                // Perform final image cache save before disposing
-                PerformImageCacheSave();
-                
-                _imageCacheSaveTimer?.Dispose();
-                _httpClient?.Dispose();
-                _requestThrottle?.Dispose();
-                _hubResourcesCache?.Dispose();
-                _detailCache?.Dispose();
-                _disposed = true;
-            }
-        }
     }
 }

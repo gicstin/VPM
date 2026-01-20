@@ -708,16 +708,35 @@ namespace VPM
                         var baseName = ExtractBaseName(packageName);
                         if (baseNameLookup.TryGetValue(baseName, out var matchingFiles) && matchingFiles.Count > 0)
                         {
-                            // Pick the HIGHEST version (not just first match)
+                            // Pick the HIGHEST version
                             foundFile = matchingFiles
                                 .OrderByDescending(f => ExtractVersionFromPackageName(Path.GetFileNameWithoutExtension(f.FullName)))
                                 .First();
                             
-                            result.IsLocal = true;
-                            result.Location = foundFile.FullName;
-                            result.Size = foundFile.Length;
-                            result.SizeFormatted = FormatHelper.FormatFileSize(foundFile.Length);
-                            result.LocalPackageName = Path.GetFileNameWithoutExtension(foundFile.FullName);
+                            var foundPackageName = Path.GetFileNameWithoutExtension(foundFile.FullName);
+                            
+                            // It's only considered "Local" if:
+                            // 1. The requested name didn't specify a version (base name match is fine)
+                            // 2. OR the found version is actually the same (should have been caught by exactMatchLookup though)
+                            bool requestedHasVersion = PackageSearchResult.HasVersion(packageName);
+                            
+                            if (!requestedHasVersion)
+                            {
+                                result.IsLocal = true;
+                                result.IsVersionMismatch = false;
+                                result.Location = foundFile.FullName;
+                                result.Size = foundFile.Length;
+                                result.SizeFormatted = FormatHelper.FormatFileSize(foundFile.Length);
+                                result.LocalPackageName = foundPackageName;
+                            }
+                            else
+                            {
+                                // Version mismatch - requested a specific version but found a different one
+                                result.IsLocal = false; 
+                                result.IsVersionMismatch = true;
+                                result.Location = "Version mismatch (local: " + ExtractVersionFromPackageName(foundPackageName) + ")";
+                                result.LocalPackageName = foundPackageName;
+                            }
                         }
                         else
                         {
@@ -839,15 +858,33 @@ namespace VPM
                     else
                     {
                         // Check Hub - get resource ID to verify package exists
-                        var baseName = ExtractBaseName(packageName);
-                        var hubLatestVersion = _hubService.GetLatestVersion(baseName);
-                        
-                        if (hubLatestVersion > 0)
+                        bool requestedHasVersion = PackageSearchResult.HasVersion(packageName);
+                        if (requestedHasVersion)
                         {
-                            onlinePackageName = $"{baseName}.{hubLatestVersion}";
-                            onlineVersion = hubLatestVersion;
-                            // Hub download URL will be fetched when actually downloading
-                            downloadUrl = "hub"; // Placeholder to indicate available on Hub
+                            // Try exact version match on Hub first
+                            var resourceId = _hubService.GetResourceId(packageName);
+                            if (!string.IsNullOrEmpty(resourceId))
+                            {
+                                onlinePackageName = packageName;
+                                var versionStr = ExtractVersionFromPackageName(packageName);
+                                int.TryParse(versionStr.Split('.').FirstOrDefault() ?? "0", out onlineVersion);
+                                downloadUrl = "hub";
+                            }
+                        }
+                        
+                        if (string.IsNullOrEmpty(downloadUrl))
+                        {
+                            // Fallback to latest version
+                            var baseName = ExtractBaseName(packageName);
+                            var hubLatestVersion = _hubService.GetLatestVersion(baseName);
+                            
+                            if (hubLatestVersion > 0)
+                            {
+                                onlinePackageName = $"{baseName}.{hubLatestVersion}";
+                                onlineVersion = hubLatestVersion;
+                                // Hub download URL will be fetched when actually downloading
+                                downloadUrl = "hub"; // Placeholder to indicate available on Hub
+                            }
                         }
                     }
                     
@@ -1556,11 +1593,29 @@ namespace VPM
     /// <summary>
     /// Represents a search result for a package
     /// </summary>
-    public class PackageSearchResult : INotifyPropertyChanged
-    {
-        private string _packageName;
+        public class PackageSearchResult : INotifyPropertyChanged
+        {
+            /// <summary>
+            /// Checks if a package name includes a version number at the end
+            /// </summary>
+            public static bool HasVersion(string packageName)
+            {
+                if (string.IsNullOrEmpty(packageName))
+                    return false;
+
+                var lastDotIndex = packageName.LastIndexOf('.');
+                if (lastDotIndex > 0 && lastDotIndex < packageName.Length - 1)
+                {
+                    var lastPart = packageName.Substring(lastDotIndex + 1);
+                    return int.TryParse(lastPart, out _);
+                }
+                return false;
+            }
+
+            private string _packageName;
         private string _localPackageName;
         private bool _isLocal;
+        private bool _isVersionMismatch;
         private bool _isAvailableOnline;
         private bool _isDownloading;
         private bool _hasNewerVersionOnline;
@@ -1596,6 +1651,18 @@ namespace VPM
         {
             get
             {
+                // Version mismatch - requested one version but found another locally
+                if (IsVersionMismatch && !string.IsNullOrEmpty(_localPackageName))
+                {
+                    var baseName = GetBaseNameWithoutVersion(_packageName);
+                    var requestedVer = ExtractVersion(_packageName);
+                    var localVer = ExtractVersion(_localPackageName);
+                    
+                    // If also available online, show that too? 
+                    // No, keep it simple for now: "Package v1 (Local: v4)"
+                    return $"{baseName} v{requestedVer} (Local: v{localVer})";
+                }
+
                 // For local packages, show the actual local version
                 if (IsLocal && !string.IsNullOrEmpty(_localPackageName))
                 {
@@ -1618,6 +1685,17 @@ namespace VPM
                 {
                     var baseName = GetBaseNameWithoutVersion(_onlineVersion);
                     var onlineVer = ExtractVersion(_onlineVersion);
+                    
+                    // If requested a specific version but found a different one online
+                    if (HasVersion(_packageName))
+                    {
+                        var requestedVer = ExtractVersion(_packageName);
+                        if (!requestedVer.Equals(onlineVer, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return $"{baseName} v{requestedVer} (Online: v{onlineVer})";
+                        }
+                    }
+                    
                     return $"{baseName} v{onlineVer}";
                 }
                 
@@ -1692,6 +1770,20 @@ namespace VPM
                 OnPropertyChanged(nameof(StatusDotColor));
                 OnPropertyChanged(nameof(StatusTooltip));
                 OnPropertyChanged(nameof(CanDownload));
+                OnPropertyChanged(nameof(DisplayName));
+            }
+        }
+
+        public bool IsVersionMismatch
+        {
+            get => _isVersionMismatch;
+            set 
+            { 
+                _isVersionMismatch = value; 
+                OnPropertyChanged(nameof(IsVersionMismatch));
+                OnPropertyChanged(nameof(StatusDotColor));
+                OnPropertyChanged(nameof(StatusTooltip));
+                OnPropertyChanged(nameof(DisplayName));
             }
         }
 
@@ -1789,6 +1881,7 @@ namespace VPM
                 if (HasNewerVersionOnline) return "#FFA500"; // Orange - update available
                 if (IsLocal) return "#4CAF50"; // Green - found locally
                 if (IsAvailableOnline) return "#2196F3"; // Blue - available online for download
+                if (IsVersionMismatch) return "#FFD700"; // Gold/Yellow - version mismatch
                 return "#F44336"; // Red - not found anywhere
             }
         }
@@ -1800,6 +1893,7 @@ namespace VPM
                 if (IsLocal && HasNewerVersionOnline) return "Local (newer version available)";
                 if (IsLocal) return "Found locally";
                 if (IsAvailableOnline) return "Available online";
+                if (IsVersionMismatch) return "Version mismatch (requested version not found)";
                 return "Not found";
             }
         }

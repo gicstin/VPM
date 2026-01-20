@@ -5300,7 +5300,7 @@ namespace VPM
                     // Get disabled dependencies
                     var disabledDependencies = dependencyItems
                         .Where(d => !d.IsEnabled)
-                        .Select(d => d.Name)
+                        .Select(d => d.DisplayName)
                         .ToList();
 
                     // Get Force .latest setting from global checkbox in Dependencies tab
@@ -5312,7 +5312,7 @@ namespace VPM
                     bool globalForceLatest = forceLatestCheckbox?.IsChecked ?? true;
                     
                     var forceLatestDependencies = globalForceLatest ? 
-                        dependencyItems.Where(d => d.IsEnabled).Select(d => d.Name).ToList() : 
+                        dependencyItems.Where(d => d.IsEnabled).Select(d => d.DisplayName).ToList() : 
                         new List<string>();
 
                     // Get minification setting from Misc tab (should be at index 1)
