@@ -37,7 +37,7 @@ namespace VPM.Models
 
         // Regex patterns for parsing dependency strings
         private static readonly Regex MinVersionPattern = new(@"\.min(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        private static readonly Regex ExactVersionPattern = new(@"\.(\d+)$", RegexOptions.Compiled);
+        private static readonly Regex ExactVersionPattern = new(@"\.([A-Za-z0-9_]+)$", RegexOptions.Compiled);
 
         /// <summary>
         /// Parses a dependency string into its components
@@ -91,7 +91,26 @@ namespace VPM.Models
             {
                 info.BaseName = name[..exactMatch.Index];
                 info.VersionType = DependencyVersionType.Exact;
-                info.VersionNumber = int.Parse(exactMatch.Groups[1].Value);
+                
+                var versionText = exactMatch.Groups[1].Value;
+                
+                // Try to parse leading integer
+                var firstSegment = versionText.Split('_')[0];
+                var i = 0;
+                while (i < firstSegment.Length && char.IsDigit(firstSegment[i]))
+                    i++;
+
+                if (i > 0 && int.TryParse(firstSegment.Substring(0, i), out var version))
+                {
+                    info.VersionNumber = version;
+                }
+                else
+                {
+                    // For purely alphanumeric versions like "latest" or "v1", 
+                    // we treat it as an exact match for that string, but since VersionNumber is int,
+                    // we default to 1 to match VarMetadata behavior.
+                    info.VersionNumber = 1;
+                }
                 return info;
             }
 

@@ -90,7 +90,8 @@ namespace VPM.Services
             _archivedPackagesFolder = Path.Combine(_rootFolder, "ArchivedPackages");
             
             // Enhanced pattern to parse VAR filenames with better error handling
-            _varPattern = new Regex(@"^([^.]+)\.(.+?)\.(\d+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            // Allows alphanumeric versions like '1', '1_fixed', 'latest', etc.
+            _varPattern = new Regex(@"^([^.]+)\.(.+?)\.([A-Za-z0-9_]+)\.var$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
             
             // Semaphore to prevent concurrent file operations
             _fileLock = new SemaphoreSlim(1, 1);
@@ -129,19 +130,44 @@ namespace VPM.Services
             var match = _varPattern.Match(filename);
             if (match.Success)
             {
-                if (int.TryParse(match.Groups[3].Value, out int version))
+                var versionText = match.Groups[3].Value;
+                int version = 0;
+
+                // Try to parse leading integer like PackageManager does
+                var firstSegment = versionText.Split('_')[0];
+                var i = 0;
+                while (i < firstSegment.Length && char.IsDigit(firstSegment[i]))
+                    i++;
+
+                if (i > 0 && int.TryParse(firstSegment.Substring(0, i), out version))
                 {
                     return (match.Groups[1].Value, match.Groups[2].Value, version);
                 }
+
+                // Default to version 1 for non-numeric versions to match VarMetadata behavior
+                return (match.Groups[1].Value, match.Groups[2].Value, 1);
             }
 
             // Fallback parsing for edge cases
             if (filename.ToLower().EndsWith(".var"))
             {
                 var parts = filename[..^4].Split('.');
-                if (parts.Length >= 3 && int.TryParse(parts[^1], out int version))
+                if (parts.Length >= 3)
                 {
-                    return (parts[0], string.Join(".", parts[1..^1]), version);
+                    var versionText = parts[^1];
+                    int version = 0;
+
+                    var firstSegment = versionText.Split('_')[0];
+                    var i = 0;
+                    while (i < firstSegment.Length && char.IsDigit(firstSegment[i]))
+                        i++;
+
+                    if (i > 0 && int.TryParse(firstSegment.Substring(0, i), out version))
+                    {
+                        return (parts[0], string.Join(".", parts[1..^1]), version);
+                    }
+
+                    return (parts[0], string.Join(".", parts[1..^1]), 1);
                 }
             }
 
@@ -890,44 +916,30 @@ namespace VPM.Services
                 var depInfo = DependencyVersionInfo.Parse(packageName);
                 var baseName = depInfo.BaseName;
                 
-                // First, check if already loaded (in AddonPackages)
-                var loadedFile = FindMinimumVersionPackage(baseName, depInfo.VersionNumber ?? 0, _addonPackagesFolder);
-                if (string.IsNullOrEmpty(loadedFile))
-                {
-                    loadedFile = FindLatestPackageVersion(baseName, _addonPackagesFolder);
-                }
+                // Determine the best version available across BOTH folders
+                string targetFile;
+                var searchDirs = new[] { _addonPackagesFolder, _allPackagesFolder };
                 
-                if (!string.IsNullOrEmpty(loadedFile))
+                if (depInfo.VersionType == DependencyVersionType.Exact)
                 {
-                    // Package is already loaded
-                    OperationCompleted?.Invoke(this, new PackageOperationEventArgs
-                    {
-                        PackageName = packageName,
-                        Operation = "Load",
-                        Success = true,
-                        ErrorMessage = ""
-                    });
-                    return (true, "");
+                    targetFile = FindExactPackagePath(packageName, searchDirs);
                 }
-                
-                // Find the package in AllPackages (available but not loaded)
-                string sourceFile;
-                if (depInfo.VersionType == DependencyVersionType.Minimum)
+                else if (depInfo.VersionType == DependencyVersionType.Minimum)
                 {
-                    sourceFile = FindMinimumVersionPackage(baseName, depInfo.VersionNumber ?? 0, _allPackagesFolder);
+                    targetFile = FindMinimumVersionPackage(baseName, depInfo.VersionNumber ?? 0, searchDirs);
                 }
                 else
                 {
-                    sourceFile = FindLatestPackageVersion(baseName, _allPackagesFolder);
+                    targetFile = FindLatestPackageVersion(baseName, searchDirs);
                 }
                 
-                // Fallback: try the original package name
-                if (string.IsNullOrEmpty(sourceFile))
+                // Fallback: try the original package name if nothing found by base name
+                if (string.IsNullOrEmpty(targetFile))
                 {
-                    sourceFile = FindLatestPackageVersion(packageName, _allPackagesFolder);
+                    targetFile = FindExactPackagePath(packageName, searchDirs);
                 }
 
-                if (string.IsNullOrEmpty(sourceFile))
+                if (string.IsNullOrEmpty(targetFile))
                 {
                     var errorMsg = $"Package '{packageName}' not found in available locations";
                     
@@ -942,8 +954,33 @@ namespace VPM.Services
                     return (false, errorMsg);
                 }
 
+                // If the target file is already in AddonPackages, it's already loaded
+                if (targetFile.StartsWith(_addonPackagesFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    OperationCompleted?.Invoke(this, new PackageOperationEventArgs
+                    {
+                        PackageName = packageName,
+                        Operation = "Load",
+                        Success = true,
+                        ErrorMessage = ""
+                    });
+                    return (true, "");
+                }
+
+                string sourceFile = targetFile;
+                
                 // Preserve subfolder structure when moving from AllPackages to AddonPackages
-                var relativePath = Path.GetRelativePath(_allPackagesFolder, sourceFile);
+                string relativePath;
+                if (sourceFile.StartsWith(_allPackagesFolder, StringComparison.OrdinalIgnoreCase))
+                {
+                    relativePath = Path.GetRelativePath(_allPackagesFolder, sourceFile);
+                }
+                else
+                {
+                    // If it's from some other location, just use the filename
+                    relativePath = Path.GetFileName(sourceFile);
+                }
+                
                 var destinationFile = Path.Combine(_addonPackagesFolder, relativePath);
 
                 // Double-check if already loaded (race condition protection)
@@ -1149,13 +1186,25 @@ namespace VPM.Services
                 var depInfo = DependencyVersionInfo.Parse(packageName);
                 var baseName = depInfo.BaseName;
 
-                // Find the package file in AddonPackages using base name
-                var sourceFile = FindLatestPackageVersion(baseName, _addonPackagesFolder);
+                // Find the specific package file in AddonPackages
+                string sourceFile;
+                if (depInfo.VersionType == DependencyVersionType.Exact)
+                {
+                    sourceFile = FindExactPackagePath(packageName, new[] { _addonPackagesFolder });
+                }
+                else if (depInfo.VersionType == DependencyVersionType.Minimum)
+                {
+                    sourceFile = FindMinimumVersionPackage(baseName, depInfo.VersionNumber ?? 0, _addonPackagesFolder);
+                }
+                else
+                {
+                    sourceFile = FindLatestPackageVersion(baseName, _addonPackagesFolder);
+                }
                 
-                // If not found by base name, try the original package name
+                // Fallback: try the original package name
                 if (string.IsNullOrEmpty(sourceFile))
                 {
-                    sourceFile = FindLatestPackageVersion(packageName, _addonPackagesFolder);
+                    sourceFile = FindExactPackagePath(packageName, new[] { _addonPackagesFolder });
                 }
 
                 if (string.IsNullOrEmpty(sourceFile))
@@ -1678,7 +1727,27 @@ namespace VPM.Services
             var match = _varPattern.Match(filename + ".var");
             if (match.Success)
             {
-                return $"{match.Groups[1].Value}.{match.Groups[2].Value}.{match.Groups[3].Value}";
+                var creator = match.Groups[1].Value;
+                var package = match.Groups[2].Value;
+                var versionText = match.Groups[3].Value;
+                int version = 0;
+
+                // Try to parse leading integer like PackageManager does
+                var firstSegment = versionText.Split('_')[0];
+                var i = 0;
+                while (i < firstSegment.Length && char.IsDigit(firstSegment[i]))
+                    i++;
+
+                if (i > 0 && int.TryParse(firstSegment.Substring(0, i), out version))
+                {
+                    // Success
+                }
+                else
+                {
+                    version = 1; // Default to 1 like VarMetadata behavior
+                }
+
+                return $"{creator}.{package}.{version}";
             }
             return null;
         }
