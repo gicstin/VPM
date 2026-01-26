@@ -161,13 +161,10 @@ namespace VPM.Services
             // Create error log file for debugging
             string errorLogPath = Path.Combine(Path.GetTempPath(), "VPM_OptimizationErrors.log");
             
-            // CRITICAL FIX: Use custom archive path if configured, otherwise use the provided default
-            // This ensures external packages use the correct archive location
+            // Use configured archive path when available.
             archivedFolder = GetEffectiveArchiveFolder(archivedFolder);
             
-            // CRITICAL FIX: Acquire exclusive write access at the START of optimization
-            // This blocks ALL image loading operations from opening the file while we work on it.
-            // The lock is held for the entire duration of the optimization process.
+            // Acquire exclusive write access for the full optimization to avoid file locks.
             IDisposable writeLock = null;
             string tempOutputPath = null; // Track temp file for cleanup in finally block
             
@@ -183,20 +180,17 @@ namespace VPM.Services
                 if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                 await ReleaseFileHandlesAsync(100);
                 
-                // CRITICAL: We must acquire write access to BOTH sourceVarPath and the final output location
-                // because finalOutputPath may differ from sourceVarPath in many scenarios (archive, re-optimization, etc.)
-                // Without locking finalOutputPath, image loaders can still hold handles to it, causing File.Delete to fail
+                // Lock any additional output path if it differs from the source.
                 var filesToLock = new List<string> { sourceVarPath };
                 
-                // Pre-determine finalOutputPath to include it in the lock
-                // We need to check all scenarios to know where the output will go
+                // Pre-determine output path to include it in the lock set.
                 string archiveFilePath = Path.Combine(archivedFolder, filename);
                 
                 string predictedFinalOutputPath = sourceVarPath; // Default
                 
                 if (isSourceInArchive && createBackup)
                 {
-                    // SCENARIO 3: Output goes to AddonPackages or AllPackages
+                    // Archived source: output goes to AddonPackages/AllPackages.
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
                     string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
                     if (Directory.Exists(addonPackagesFolder))
@@ -214,7 +208,7 @@ namespace VPM.Services
                 }
                 else if (isSourceInArchive && !createBackup)
                 {
-                    // SCENARIO 3B: Output goes to AddonPackages or AllPackages
+                    // Archived source: output goes to AddonPackages/AllPackages.
                     string gameRoot = Path.GetDirectoryName(archivedFolder);
                     string addonPackagesFolder = Path.Combine(gameRoot, "AddonPackages");
                     if (Directory.Exists(addonPackagesFolder))
@@ -230,7 +224,7 @@ namespace VPM.Services
                         }
                     }
                 }
-                // For other scenarios, finalOutputPath == sourceVarPath, so no additional lock needed
+                // Otherwise output path matches source path.
                 
                 // Only add to lock list if it's different from sourceVarPath
                 if (!predictedFinalOutputPath.Equals(sourceVarPath, StringComparison.OrdinalIgnoreCase))
@@ -238,8 +232,7 @@ namespace VPM.Services
                     filesToLock.Add(predictedFinalOutputPath);
                 }
                 
-                // Now acquire exclusive write access for all files that might be modified
-                // Use a longer timeout (60 seconds) for archived packages since image loaders may take time to release handles
+                // Acquire exclusive write access for all files that might be modified.
                 var lockTimeout = isSourceInArchive ? TimeSpan.FromSeconds(60) : TimeSpan.FromSeconds(30);
                 
                 if (filesToLock.Count > 1)
@@ -272,14 +265,9 @@ namespace VPM.Services
                 string archiveFilePath = Path.Combine(archivedFolder, filename); // Path where archive will be stored
                 long originalFileSize = new FileInfo(sourceVarPath).Length; // Capture original size before any processing
                 
-                Directory.CreateDirectory(archivedFolder);
-                
-                // Note: isSourceInArchive was already determined during lock acquisition
-                
                 if (isSourceInArchive && createBackup)
                 {
-                    // SCENARIO 3: Optimizing old version package from archive folder
-                    // Old version packages are preserved in archive with original name and date
+                    // Archived source with backup: optimize and preserve original.
                     progressCallback?.Invoke("Backing up old version and optimizing...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -340,8 +328,7 @@ namespace VPM.Services
                 }
                 else if (isSourceInArchive)
                 {
-                    // SCENARIO 3B: Optimizing from archive folder without backup (re-optimization)
-                    // Read from archive (keep original), write to loaded folder
+                    // Archived source: optimize without creating a new backup.
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -374,18 +361,14 @@ namespace VPM.Services
                 }
                 else if (File.Exists(archiveFilePath) && config.TextureConversions.Count > 0)
                 {
-                    // SCENARIO 2: Re-optimizing already optimized package in loaded folder WITH TEXTURE CHANGES
-                    // Read from CURRENT package to preserve previous optimizations
-                    // Only textures in TextureConversions will be re-converted from archive for better quality
-                    // Non-converted textures stay at their current resolution (preserving previous work)
-                    progressCallback?.Invoke("Re-optimizing selected textures...", 0, totalOperations);
+                    // Re-optimize: preserve prior non-texture work; reconvert selected textures from archive.
+                    progressCallback?.Invoke("Re-optimizing with texture changes...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(archiveFilePath);
                     await ReleaseFileHandlesAsync(100);
                     
-                    // CRITICAL: Copy source to temp file to avoid file lock when we need to delete/replace
-                    // This ensures we don't hold a lock on the file we're trying to overwrite
+                    // Copy source to temp to avoid holding a lock on the overwrite target.
                     string tempSourcePath = Path.Combine(Path.GetTempPath(), $"vpm_source_{Guid.NewGuid()}.var");
                     File.Copy(sourceVarPath, tempSourcePath, true);
                     sourcePathForProcessing = tempSourcePath; // Read from temp copy
@@ -396,15 +379,13 @@ namespace VPM.Services
                 }
                 else if (!createBackup && File.Exists(archiveFilePath) && (config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload))
                 {
-                    // SCENARIO 2B: Re-optimizing already optimized package WITH METADATA-ONLY CHANGES (dependencies, etc.)
-                    // For metadata-only updates on already-optimized packages, modify current file in-place
-                    // This preserves previous optimizations (textures, hair, etc.) while applying new metadata changes
+                    // Re-optimize: metadata-only changes, preserving existing optimization output.
                     progressCallback?.Invoke("Applying metadata optimizations...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     await ReleaseFileHandlesAsync(100);
                     
-                    // CRITICAL: Copy source to temp file to avoid file lock when we need to delete/replace
+                    // Copy source to temp to avoid holding a lock on the overwrite target.
                     string tempSourcePath = Path.Combine(Path.GetTempPath(), $"vpm_source_{Guid.NewGuid()}.var");
                     File.Copy(sourceVarPath, tempSourcePath, true);
                     sourcePathForProcessing = tempSourcePath; // Read from temp copy
@@ -414,8 +395,7 @@ namespace VPM.Services
                 }
                 else if (createBackup && !File.Exists(archiveFilePath))
                 {
-                    // SCENARIO 1: First-time optimization (backup doesn't exist yet)
-                    // Move original to archive, then optimize
+                    // First-time optimization: archive original, then optimize.
                     progressCallback?.Invoke("Moving original to archive...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -428,8 +408,7 @@ namespace VPM.Services
                     var originalCreationTime = sourceFileInfo.CreationTime;
                     var originalLastWriteTime = sourceFileInfo.LastWriteTime;
                     
-                    // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
-                    // File.Move can fail even with write lock if any stale handle exists
+                    // Copy+Delete is more reliable than Move for locked files.
                     for (int moveAttempt = 1; moveAttempt <= 10; moveAttempt++)
                     {
                         try
@@ -446,7 +425,6 @@ namespace VPM.Services
                             {
                                 // If we can't set dates, continue anyway - the copy succeeded
                             }
-                            
                             File.Delete(sourceVarPath);
                             break;
                         }
@@ -467,11 +445,8 @@ namespace VPM.Services
                 }
                 else if (createBackup && File.Exists(archiveFilePath) && !filename.EndsWith("#archived.var", StringComparison.OrdinalIgnoreCase))
                 {
-                    // SCENARIO 1B: Re-optimization of already-backed-up package
-                    // The archive exists, meaning this package was already optimized before
-                    // Just read from archive and write back to current location (no new backup needed)
-                    // This avoids creating unnecessary #archived copies on re-optimization
-                    progressCallback?.Invoke("Re-optimizing from original archive...", 0, totalOperations);
+                    // Re-optimize: backup already exists, reuse archive as source.
+                    progressCallback?.Invoke("Re-optimizing from archive (backup already exists)...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(archiveFilePath);
@@ -483,9 +458,7 @@ namespace VPM.Services
                 }
                 else
                 {
-                    // SCENARIO 4: Re-optimize without backup - original archive not available
-                    // This happens when the original was deleted or never archived
-                    // Quality will be limited by current package resolution
+                    // Re-optimize without archive source available.
                     progressCallback?.Invoke("Re-optimizing from current version (archive not found)...", 0, totalOperations);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -709,7 +682,7 @@ namespace VPM.Services
                     }
 
                     // Full re-packaging path for content modifications
-                    progressCallback?.Invoke("📦 Reading package archive...", 0, totalOperations);
+                    progressCallback?.Invoke("Reading package archive...", 0, totalOperations);
                     _performanceTimer.Start("Package Analysis");
                     
                     // Open source VAR (from archive or original location)
@@ -727,7 +700,7 @@ namespace VPM.Services
                         object archiveLock = new object();
                         
                         // First pass: collect entry metadata ONLY (not data) to avoid OOM
-                        progressCallback?.Invoke("🔍 Analyzing package contents...", 0, totalOperations);
+                        progressCallback?.Invoke("Analyzing package contents...", 0, totalOperations);
                         var entriesToProcess = new List<(IArchiveEntry entry, bool needsTextureConversion, bool needsHairModification, bool needsSceneModification)>();
                         int entryIndex = 0;
                         int totalEntries = sourceArchive.Archive.Entries.Count();
@@ -749,7 +722,7 @@ namespace VPM.Services
                                 using (var stream = entry.OpenEntryStream())
                                 using (var reader = new StreamReader(stream))
                                 {
-                                    originalMetaJson = reader.ReadToEnd();
+                                    originalMetaJson = await reader.ReadToEndAsync();
                                 }
                                 // Capture the original meta.json creation date
                                 originalMetaJsonDate = entry.LastModifiedTime ?? DateTime.Now;
@@ -768,20 +741,20 @@ namespace VPM.Services
                                            entry.Key.EndsWith(".vap", StringComparison.OrdinalIgnoreCase);
 
                             // Check if this is a scene file that needs mirror disabling
-                            bool isSceneFile = entry.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase) && 
-                                             !entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase);
+                            bool isSceneFile = entry.Key.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                                             entry.Key.EndsWith(".vac", StringComparison.OrdinalIgnoreCase) ||
+                                             entry.Key.EndsWith(".vaj", StringComparison.OrdinalIgnoreCase);
                             bool needsMirrorDisabling = config.DisableMirrors && isSceneFile;
                             bool needsSceneModification = needsHairModification || needsLightModification || isVapFile || needsMirrorDisabling;
 
-                            // CRITICAL FIX: Don't load entry data here - load it on-demand during processing
-                            // This prevents OOM when processing large packages with many textures
+                            // Load entry data on-demand during processing.
                             entriesToProcess.Add((entry, needsTextureConversion, needsHairModification || isVapFile, needsSceneModification));
                             
                             // Update progress every 50 entries to avoid too many UI updates
                             entryIndex++;
                             if (entryIndex % 50 == 0)
                             {
-                                progressCallback?.Invoke($"🔍 Reading files... ({entryIndex}/{totalEntries})", 0, totalOperations);
+                                progressCallback?.Invoke($"Reading files... ({entryIndex}/{totalEntries})", 0, totalOperations);
                             }
                         }
 
@@ -795,14 +768,10 @@ namespace VPM.Services
                         
                         if (textureEntries.Count > 0)
                         {
-                            progressCallback?.Invoke($"⚡ Starting texture conversion...", 0, totalOperations);
+                            progressCallback?.Invoke("Starting texture conversion...", 0, totalOperations);
                         }
 
-                        // Use adaptive memory-aware parallelism with proper async I/O
-                        // The adaptive optimizer scales concurrency based on available memory
-                        
-                        // OPTIMIZATION: Use full CPU cores for texture conversion (CPU-bound operation)
-                        // Texture resizing is CPU-intensive, not I/O-bound, so we can use all cores
+                        // Use adaptive parallelism; texture conversion uses CPU cores.
                         int maxConcurrentTextures = Math.Max(2, Environment.ProcessorCount); // Full parallelism for CPU-bound work
                         _performanceTimer.Start("Texture Conversion (All)");
                         
@@ -831,7 +800,7 @@ namespace VPM.Services
                                     var (entry, _, _, _) = item;
                                     
                                     // Update progress with current texture name
-                                    progressCallback?.Invoke($"⚡ Converting: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
+                                    progressCallback?.Invoke($"Converting: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
 
                                     var conversionInfo = config.TextureConversions[entry.Key];
                                     
@@ -912,7 +881,7 @@ namespace VPM.Services
                                         {
                                             // Only skip on actual decompression errors
                                             int procCount = Interlocked.Increment(ref processedCount);
-                                            progressCallback?.Invoke($"⚠️  [{procCount}/{totalOperations}] Skipping corrupted file: {Path.GetFileName(entry.Key)}", procCount, totalOperations);
+                                            progressCallback?.Invoke($"Skipping corrupted file: {Path.GetFileName(entry.Key)}", procCount, totalOperations);
                                             return;
                                         }
 
@@ -941,11 +910,11 @@ namespace VPM.Services
                                             textureConversionDetails.Add(detail);
                                             
                                             convertedTextures[entry.Key] = (convertedData, entry.LastModifiedTime ?? DateTimeOffset.Now);
-                                            progressCallback?.Invoke($"⚡ [{currentProcessed}/{totalOperations}] ✓ Converted: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                            progressCallback?.Invoke($"Converted: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         }
                                         else if (useArchiveSource && actualSourceDimension == targetDimension)
                                         {
-                                            // RESTORATION: Archive has exact resolution we want, use archive data directly
+                                            // Archive has exact resolution we want, use archive data directly
                                             // This happens when restoring from 2K back to 4K - archive already has 4K
                                             Interlocked.Add(ref newTotalSize, sourceData.Length);
                                             
@@ -957,12 +926,12 @@ namespace VPM.Services
                                             
                                             // Use archive data directly (no resize needed, already at target resolution)
                                             convertedTextures[entry.Key] = (sourceData, entry.LastModifiedTime ?? DateTimeOffset.Now);
-                                            progressCallback?.Invoke($"⚡ [{currentProcessed}/{totalOperations}] ✓ Restored: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                            progressCallback?.Invoke($"Restored: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         }
                                         else
                                         {
                                             Interlocked.Add(ref newTotalSize, sourceData.Length);
-                                            progressCallback?.Invoke($"⚡ [{currentProcessed}/{totalOperations}] ⊘ Skipped: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                            progressCallback?.Invoke($"Skipped: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         }
                                         
                                         // Explicitly clear sourceData to help GC
@@ -970,14 +939,9 @@ namespace VPM.Services
                                     }
                                     catch (InvalidDataException ex) when (ex.Message.Contains("unsupported compression"))
                                     {
-                                        // Skip entries with unsupported compression methods (Bzip2, LZMA, PPMd, etc.)
-                                        // These will be copied as-is without conversion
-                                        lock (unsupportedCompressionTextures)
-                                        {
-                                            unsupportedCompressionTextures.Add(entry.Key);
-                                        }
+                                        // Skip entries with unsupported compression methods
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
-                                        progressCallback?.Invoke($"⚠️  [{currentProcessed}/{totalOperations}] Skipping (unsupported compression): {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                        progressCallback?.Invoke($"Skipping (unsupported compression): {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         errors.Add($"Unsupported compression: {Path.GetFileName(entry.Key)}");
                                         
                                         // Log to file for debugging
@@ -992,7 +956,7 @@ namespace VPM.Services
                                         // Mark as failed so it will be copied as-is (never skip textures)
                                         failedTextures[entry.Key] = (null, entry.LastModifiedTime ?? DateTimeOffset.Now, "Corrupted file header - copied as-is");
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
-                                        progressCallback?.Invoke($"⚠️  [{currentProcessed}/{totalOperations}] Texture unreadable, copying as-is: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
+                                        progressCallback?.Invoke($"Texture unreadable, copying as-is: {Path.GetFileName(entry.Key)}", currentProcessed, totalOperations);
                                         errors.Add($"Corrupted file header (copied as-is): {Path.GetFileName(entry.Key)}");
                                         
                                         // Log to file for debugging
@@ -1006,7 +970,7 @@ namespace VPM.Services
                                     {
                                         // Log other errors but continue processing
                                         int currentProcessed = Interlocked.Increment(ref processedCount);
-                                        progressCallback?.Invoke($"❌ [{currentProcessed}/{totalOperations}] Error converting {Path.GetFileName(entry.Key)}: {ex.Message}", currentProcessed, totalOperations);
+                                        progressCallback?.Invoke($"Error converting {Path.GetFileName(entry.Key)}: {ex.Message}", currentProcessed, totalOperations);
                                         errors.Add($"Error converting {Path.GetFileName(entry.Key)}: {ex.Message}");
                                         
                                         // Log to file for debugging
@@ -1040,7 +1004,7 @@ namespace VPM.Services
                             var conversionInfo = config.TextureConversions[failedEntry.Key];
                             string textureName = Path.GetFileName(failedEntry.Key);
                             string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
-                            string detail = $"  • {textureName}: {originalRes} (⚠️  Copied as-is - {failedEntry.Value.reason})";
+                            string detail = $"  • {textureName}: {originalRes} (Copied as-is - {failedEntry.Value.reason})";
                             textureConversionDetails.Add(detail);
                         }
 
@@ -1050,7 +1014,7 @@ namespace VPM.Services
                         
                         if (sceneEntries.Count > 0)
                         {
-                            progressCallback?.Invoke($"⚙️  Processing {sceneEntries.Count} scene/preset file(s)...", processedCount, totalOperations);
+                            progressCallback?.Invoke($"Processing {sceneEntries.Count} scene/preset file(s)...", processedCount, totalOperations);
                             _performanceTimer.Start("Scene/Hair Processing");
                         }
 
@@ -1069,7 +1033,7 @@ namespace VPM.Services
                             {
                                 _performanceTimer.Start("JSON Parsing");
                                 
-                                // CRITICAL FIX: Load scene data on-demand (not pre-loaded)
+                                // Load scene data on-demand.
                                 byte[] sourceData;
                                 lock (archiveLock)
                                 {
@@ -1275,8 +1239,6 @@ namespace VPM.Services
                             catch (SharpCompress.Compressors.Deflate.ZlibException)
                             {
                                 // CRITICAL FIX: Never skip textures - copy as-is even if decompression fails
-                                // System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ⚠️  Decompression error on entry (copying as-is): {entry.Key}");
-                                // System.Diagnostics.Debug.WriteLine($"[PACKAGE_REPACK] ZlibException: {zlibEx.Message}");
                                 progressCallback?.Invoke($"⚠️  Decompression issue, copying as-is: {Path.GetFileName(entry.Key)}", processedCount, totalOperations);
                                 errors.Add($"Decompression issue (copied as-is): {Path.GetFileName(entry.Key)}");
                                 

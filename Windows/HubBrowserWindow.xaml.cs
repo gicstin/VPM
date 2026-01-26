@@ -2642,9 +2642,7 @@ namespace VPM.Windows
                 vm.LocalPath = localPath;
                 
                 // Check if there's an update available
-                // CRITICAL: Use the pre-computed _localPackageVersions dictionary
-                // which already contains the HIGHEST version for each base package name.
-                // This was built in BuildLocalPackageLookups() at startup.
+                // Use _localPackageVersions (highest version per base name).
                 var localPackageName = Path.GetFileNameWithoutExtension(localPath);
                 var basePackageName = GetBasePackageName(localPackageName);
                 
@@ -3385,8 +3383,7 @@ namespace VPM.Windows
                                 
                                 _localPackagePaths[packageName] = downloadedPath;
                                 
-                                // CRITICAL FIX: Update PackageManager metadata so that when the Hub window is reopened,
-                                // it will correctly detect that this package is already downloaded and not show it as available
+                                // Update PackageManager metadata so the Hub reflects the new local package.
                                 if (_packageManager != null && System.IO.File.Exists(downloadedPath))
                                 {
                                     try
@@ -3403,17 +3400,13 @@ namespace VPM.Windows
                                             BuildLocalPackageLookups();
                                         }
                                         
-                                        // CRITICAL FIX: Remove this package from all MissingDependencies lists
-                                        // so that the missing dependencies panel updates correctly after download
+                                        // Remove from MissingDependencies so the panel updates after download.
                                         _packageManager.RemoveFromMissingDependencies(packageName);
                                     }
                                     catch (Exception)
                                     {
                                         // If parsing fails, at least update the lookups from _localPackagePaths
                                         BuildLocalPackageLookups();
-                                        
-                                        // Still try to remove from missing dependencies
-                                        _packageManager.RemoveFromMissingDependencies(packageName);
                                     }
                                 }
 
@@ -4109,7 +4102,7 @@ namespace VPM.Windows
                 StatusText.Text = "Checking for updates...";
                 
                 // Get all package groups that have updates available
-                // CRITICAL: Use _localPackageVersions which contains the HIGHEST version for each base package
+                // Use _localPackageVersions (highest version per base package).
                 var updatesAvailable = new List<(string packageGroup, int localVersion, int hubVersion)>();
                 
                 foreach (var kvp in _localPackageVersions)
@@ -4296,8 +4289,7 @@ namespace VPM.Windows
                     }
                 }
                 
-                // CRITICAL FIX: Filter out packages that are actually on disk
-                // The MissingDependencies list may be stale if packages were downloaded since last scan
+                // Filter out packages already on disk (MissingDependencies may be stale).
                 var trulyMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var dep in missingDeps)
                 {

@@ -33,7 +33,7 @@ namespace VPM.Services
         {
             if (_disposed) return null;
             
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            // Fail fast if file is locked for writing.
             if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
             {
                 return null; // File is being optimized
@@ -50,7 +50,7 @@ namespace VPM.Services
         {
             if (_disposed) return Task.FromResult<byte[]>(null);
             
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            // Fail fast if file is locked for writing.
             if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
             {
                 return Task.FromResult<byte[]>(null); // File is being optimized
@@ -67,7 +67,7 @@ namespace VPM.Services
         {
             if (_disposed) return null;
             
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            // Fail fast if file is locked for writing.
             if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
             {
                 return null; // File is being optimized
@@ -78,25 +78,14 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Reads multiple entries from an archive in a single file open operation.
-        /// This is the most efficient method for batch loading (e.g., multiple preview images).
-        /// 
-        /// Key benefits:
-        /// - Opens the VAR file ONCE for all entries
-        /// - Only reads the specific entries requested (not the whole archive)
-        /// - Closes file immediately after reading
-        /// - No file locks held after return
-        /// 
-        /// Example: For a 500MB package with 100 textures but only 3 preview images,
-        /// this reads ~150KB (the 3 previews) not 500MB.
-        /// 
-        /// Returns empty dictionary if the file is locked for writing (optimization in progress).
+        /// Reads multiple entries efficiently in one open/close cycle.
+        /// Returns empty if the file is locked for writing.
         /// </summary>
         public Dictionary<string, byte[]> ReadEntriesBatch(string archivePath, IEnumerable<string> entryPaths)
         {
             if (_disposed) return new Dictionary<string, byte[]>();
             
-            // CRITICAL: Check FileAccessController FIRST - if file is locked for writing, fail fast
+            // Fail fast if file is locked for writing.
             if (FileAccessController.Instance.IsFileLockedForWriting(archivePath))
             {
                 return new Dictionary<string, byte[]>(); // File is being optimized

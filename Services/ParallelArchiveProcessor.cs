@@ -10,14 +10,8 @@ using SharpCompress.Archives.Zip;
 namespace VPM.Services
 {
     /// <summary>
-    /// Helper class for safe parallel processing of ZIP archive entries.
-    /// Handles thread-safe IArchive access and provides convenient parallel processing patterns.
-    /// 
-    /// Key design:
-    /// - Uses ThreadLocal to open ONE archive per thread (not per item) - 10-50x faster
-    /// - Supports both void and return-value processing
-    /// - Configurable parallelism level
-    /// - Exception handling and aggregation
+    /// Helper for parallel processing of ZIP entries.
+    /// Uses ThreadLocal to open one archive per thread and aggregates exceptions.
     /// </summary>
     public static class ParallelArchiveProcessor
     {
@@ -52,7 +46,7 @@ namespace VPM.Services
 
             var exceptions = new ConcurrentBag<Exception>();
             
-            // ThreadLocal opens ONE archive per thread instead of per item (10-50x faster)
+            // One archive per thread via ThreadLocal.
             using var threadLocalArchive = new ThreadLocal<IArchive>(
                 () => ZipArchive.Open(zipPath), 
                 trackAllValues: true);

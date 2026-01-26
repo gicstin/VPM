@@ -185,7 +185,6 @@ namespace VPM.Services
                         }
                         catch (Exception)
                         {
-                            // System.Diagnostics.Debug.WriteLine($"Error converting texture {kvp.Key}: {ex.Message}");
                         }
                     }).ToArray();
 
@@ -211,7 +210,6 @@ namespace VPM.Services
             }
             catch (Exception)
             {
-                // System.Diagnostics.Debug.WriteLine($"Error in parallel texture conversion: {ex.Message}");
             }
 
             return results;
@@ -352,7 +350,6 @@ namespace VPM.Services
                         }
                         catch (Exception)
                         {
-                            // System.Diagnostics.Debug.WriteLine($"Error converting texture {kvp.Key}: {ex.Message}");
                         }
                     }).ToArray();
 
@@ -378,7 +375,6 @@ namespace VPM.Services
             }
             catch (Exception)
             {
-                // System.Diagnostics.Debug.WriteLine($"Error in streaming texture conversion: {ex.Message}");
             }
 
             return results;

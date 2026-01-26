@@ -24,7 +24,6 @@ namespace VPM
         public partial class MainWindow : Window, IPackageMetadataProvider
         {
             // Ensure ImageManager and PackageDownloader are disposed to release resources
-            // Ensure ImageManager and PackageDownloader are disposed to release resources
             protected override void OnClosed(EventArgs e)
             {
                 base.OnClosed(e);

@@ -9,16 +9,8 @@ using System.Threading.Tasks;
 namespace VPM.Services
 {
     /// <summary>
-    /// Centralized file access controller that provides reader-writer lock semantics
-    /// for archive file access. This eliminates file lock issues by:
-    /// 1. Allowing multiple concurrent readers
-    /// 2. Blocking new readers when a writer is waiting
-    /// 3. Providing exclusive access for write operations (optimization, move, delete)
-    /// 4. Automatic cleanup via disposable tokens
-    /// 
-    /// USAGE:
-    /// - For reading (image loading): await AcquireReadAccessAsync(path)
-    /// - For writing (optimization): await AcquireWriteAccessAsync(path, timeout)
+    /// Centralized reader/writer coordination for archive file access.
+    /// Readers fail fast when a writer is waiting; writers get exclusive access via disposable tokens.
     /// </summary>
     public sealed class FileAccessController : IDisposable
     {
@@ -189,11 +181,7 @@ namespace VPM.Services
         #region Public API - Write Access
         
         /// <summary>
-        /// Acquires exclusive write access to a file. This will:
-        /// 1. Immediately block new readers (WriterWaiting = true) - ATOMICALLY
-        /// 2. Cancel any pending read operations for this file
-        /// 3. Wait for existing readers to finish (up to timeout)
-        /// 4. Return exclusive access token
+        /// Acquires exclusive write access (blocks new readers, waits for active readers up to timeout).
         /// </summary>
         /// <param name="filePath">Path to the file</param>
         /// <param name="timeout">Maximum time to wait for exclusive access</param>
@@ -207,9 +195,7 @@ namespace VPM.Services
             var normalizedPath = NormalizePath(filePath);
             var state = GetOrCreateState(normalizedPath);
             
-            // CRITICAL FIX: Use lock to atomically set WriterWaiting and cancel readers
-            // This prevents race condition where a reader could slip through between
-            // the flag set and the cancellation
+            // Atomically set WriterWaiting and cancel readers to prevent races.
             lock (_writerTransitionLock)
             {
                 // Signal that writer is waiting - new readers will fail fast immediately

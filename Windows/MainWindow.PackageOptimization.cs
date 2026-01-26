@@ -180,7 +180,7 @@ namespace VPM
 
                 string packagePath = pkgInfo.CurrentPath;
                 
-                // Only support VAR files (not unarchived folders)
+                // Only support VAR files
                 if (!packagePath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
                 {
                     MessageBox.Show("Texture conversion is only supported for .var files, not unarchived packages.", 
@@ -189,8 +189,6 @@ namespace VPM
                 }
 
                 // Get VAM root folder for ArchivedPackages
-                // Use _selectedFolder (actual VAM root) instead of deriving from package path
-                // This handles external packages correctly
                 string defaultArchivedFolder = Path.Combine(_selectedFolder, "ArchivedPackages");
                 
                 // Get effective archive folder (custom or default)
@@ -233,11 +231,9 @@ namespace VPM
                 if (result != MessageBoxResult.Yes)
                     return;
                 
-                // Check if we're reading from archive and file exists in main folder
+                // If re-optimizing, check for an existing optimized file
                 if (isAlreadyOptimized)
                 {
-                    // For external packages, the optimized file will be in the same folder as source
-                    // For VAM root packages, check AddonPackages folder
                     string existingOptimizedPath = packagePath;
                     
                     // Also check AddonPackages if it exists (for VAM root packages)
@@ -284,8 +280,7 @@ namespace VPM
                 // This ensures any file handles are released
                 parentDialog.Close();
                 
-                // CRITICAL: Cancel any active image loading to prevent file locks
-                // This stops the image grid from requesting new images while we're working
+                // Cancel any active image loading to prevent file locks
                 await CancelImageLoading();
                 
                 // Clear image preview grid before processing
@@ -305,11 +300,8 @@ namespace VPM
 
                 progressDialog.Show();
                 
-                // CRITICAL: Acquire exclusive write access using FileAccessController
-                // This GUARANTEES no image loading can access the file during optimization
-                // - Immediately blocks new readers (image loads)
-                // - Cancels any pending read operations
-                // - Waits for existing readers to finish (up to 30 seconds)
+                // Acquire exclusive write access using FileAccessController
+                // This guarantees no image loading can access the file during optimization
                 IDisposable writeAccess = null;
 
                 try
@@ -445,8 +437,7 @@ namespace VPM
                 }
                 finally
                 {
-                    // CRITICAL: Always release write access when done
-                    // This allows image loading to resume
+                    // Always release write access when done
                     writeAccess?.Dispose();
                     
                     // Invalidate the file from FileAccessController to clean up state
@@ -1482,7 +1473,7 @@ namespace VPM
                 optimizeButton.IsEnabled = false;
                 optimizeButton.Content = "Acquiring lock...";
                 
-                // CRITICAL: Cancel any active image loading to prevent file locks
+                // Cancel any active image loading to prevent file locks
                 await CancelImageLoading();
                 
                 // Clear image preview grid before processing
@@ -1491,17 +1482,141 @@ namespace VPM
                 // Release file locks before operation to prevent conflicts with image grid
                 await _imageManager.ReleasePackagesAsync(new List<string> { packageName });
                 
-                // CRITICAL: Acquire exclusive write access using FileAccessController
-                // This GUARANTEES no image loading can access the file during optimization
+                // Acquire exclusive write access using FileAccessController
                 IDisposable writeAccess = null;
+
                 try
                 {
+                    // Acquire exclusive write access - this blocks until all readers finish
+                    // Timeout of 30 seconds to handle large images and slow systems
                     writeAccess = await Services.FileAccessController.Instance
                         .AcquireWriteAccessAsync(packagePath, TimeSpan.FromSeconds(30));
-                }
-                catch (TimeoutException)
-                {
-                    // Re-enable buttons
+                    
+                    optimizeButton.Content = "Optimizing...";
+                    var config = new PackageRepackager.OptimizationConfig();
+                    
+                    // Add texture conversions (only where target differs from current)
+                    foreach (var texture in selectedTextures)
+                    {
+                        string targetResolution = texture.ConvertTo8K ? "8K" :
+                                                texture.ConvertTo4K ? "4K" :
+                                                texture.ConvertTo2K ? "2K" : "2K";
+                        
+                        // Skip textures where target resolution equals current resolution
+                        if (targetResolution == texture.Resolution)
+                            continue;
+                        
+                        config.TextureConversions[texture.ReferencedPath] =
+                            (targetResolution, texture.Width, texture.Height, texture.FileSize);
+                    }
+                    
+                    // Add hair conversions
+                    foreach (var hair in selectedHairs)
+                    {
+                        int targetDensity = hair.ConvertTo32 ? 32 : hair.ConvertTo24 ? 24 : hair.ConvertTo16 ? 16 : hair.ConvertTo8 ? 8 : 16;
+                        string key = $"{hair.SceneFile}_{hair.HairId}";
+                        config.HairConversions[key] = (hair.SceneFile, hair.HairId, targetDensity, hair.HasCurveDensity);
+                    }
+                    
+                    // Add light shadow conversions
+                    foreach (var light in selectedLights)
+                    {
+                        bool castShadows = !light.SetShadowsOff;
+                        int shadowResolution = light.SetShadows512 ? 512 :
+                                             light.SetShadows1024 ? 1024 :
+                                             light.SetShadows2048 ? 2048 : 0;
+                        string key = $"{light.SceneFile}_{light.LightId}";
+                        config.LightConversions[key] = (light.SceneFile, light.LightId, castShadows, shadowResolution);
+                    }
+                    
+                    // Set mirrors flag
+                    config.DisableMirrors = disableMirrors;
+                    
+                    // Set force latest dependencies flag from settings
+                    config.ForceLatestDependencies = _settingsManager?.Settings?.ForceLatestDependencies ?? false;
+                    
+                    // Add disabled dependencies
+                    config.DisabledDependencies = disabledDependencies;
+                    
+                    // Set disable morph preload flag from settings
+                    config.DisableMorphPreload = _settingsManager?.Settings?.DisableMorphPreload ?? true;
+                    
+                    // Set IsMorphAsset flag from package metadata (already retrieved earlier)
+                    config.IsMorphAsset = packageMetadata?.IsMorphAsset ?? false;
+
+                    // Perform optimization in background
+                    string outputPath = null;
+                    long originalPackageSize = 0;
+                    long newPackageSize = 0;
+                    int texturesConverted = 0;
+                    int hairsModified = 0;
+                    
+                    var repackageStartTime = benchmarkStart.ElapsedMilliseconds;
+                    var repackager = new PackageRepackager(_imageManager, _settingsManager);
+                    
+                    // Get effective archive folder (custom or default)
+                    string effectiveArchiveFolder = repackager.GetEffectiveArchiveFolder(archivedFolder);
+                    
+                    var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
+                        packagePath, 
+                        effectiveArchiveFolder, 
+                        config, 
+                        null, // No progress callback
+                        needsBackup); // Pass the backup flag
+                    
+                    outputPath = optimizationResult.OutputPath;
+                    originalPackageSize = optimizationResult.OriginalSize;
+                    newPackageSize = optimizationResult.NewSize;
+                    texturesConverted = optimizationResult.TexturesConverted;
+                    hairsModified = optimizationResult.HairsModified;
+                    
+                    // Remove disabled dependencies if any
+                    if (disabledDependencies.Count > 0)
+                    {
+                        await System.Threading.Tasks.Task.Run(() =>
+                        {
+                            var dependencyRemover = new Services.DependencyRemover();
+                            var removalResult = dependencyRemover.RemoveDependenciesFromPackage(outputPath ?? packagePath, disabledDependencies);
+                        });
+                    }
+
+                    // Clear metadata cache BEFORE refresh to force re-parsing
+                    // For external packages, we need to remove using the correct metadata key
+                    if (_packageManager?.PackageMetadata != null)
+                    {
+                        Debug.WriteLine($"[OPTIMIZE] Clearing metadata for package: {packageName}");
+                        Debug.WriteLine($"[OPTIMIZE] Total metadata keys before clear: {_packageManager.PackageMetadata.Count}");
+                        
+                        // Find and remove all matching keys (handles external packages with different keys)
+                        var keysToRemove = _packageManager.PackageMetadata.Keys
+                            .Where(k => k.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
+                                       k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase) ||
+                                       Path.GetFileNameWithoutExtension(k).Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                            .ToList();
+                        
+                        Debug.WriteLine($"[OPTIMIZE] Found {keysToRemove.Count} keys to remove: {string.Join(", ", keysToRemove)}");
+                        
+                        foreach (var key in keysToRemove)
+                        {
+                            _packageManager.PackageMetadata.Remove(key);
+                            Debug.WriteLine($"[OPTIMIZE] Removed metadata key: {key}");
+                        }
+                        
+                        Debug.WriteLine($"[OPTIMIZE] Total metadata keys after clear: {_packageManager.PackageMetadata.Count}");
+                    }
+
+                    // Delay to ensure file system has flushed
+                    await System.Threading.Tasks.Task.Delay(500);
+
+                    // Refresh package data using filename (without extension) to avoid parsing issues
+                    string filenameWithoutExt = Path.GetFileNameWithoutExtension(packagePath);
+                    await RefreshSinglePackage(filenameWithoutExt);
+
+                    // Calculate savings
+                    long spaceSaved = originalPackageSize - newPackageSize;
+                    double percentSaved = originalPackageSize > 0 ? (100.0 * spaceSaved / originalPackageSize) : 0;
+                    
+                    // Re-enable button and navigation
                     optimizeButton.IsEnabled = true;
                     optimizeButton.Content = "Optimize";
                     upArrowButton.IsEnabled = currentPackageIndex > 0;
@@ -1509,171 +1624,25 @@ namespace VPM
                     leftArrowButton.IsEnabled = true;
                     rightArrowButton.IsEnabled = true;
                     
-                    CustomMessageBox.Show("Could not acquire exclusive access to the file.\n\n" +
-                                  "The file may still be in use by image loading operations.\n\n" +
-                                  "Please try again in a few seconds.", "File Access Timeout",
-                                  MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-                
-                optimizeButton.Content = "Optimizing...";
-                
-                try
-                {
-                // Build optimization config
-                var config = new PackageRepackager.OptimizationConfig();
-                
-                // Add texture conversions (only where target differs from current)
-                foreach (var texture in selectedTextures)
-                {
-                    string targetResolution = texture.ConvertTo8K ? "8K" :
-                                            texture.ConvertTo4K ? "4K" :
-                                            texture.ConvertTo2K ? "2K" : "2K";
+                    // Refresh the window content with updated data
+                    SetStatus($"Refreshing optimization data...");
+                    await RefreshOptimizationTabsData(allPackages, textureResult, hairResult, tabControl);
                     
-                    // Skip textures where target resolution equals current resolution
-                    if (targetResolution == texture.Resolution)
-                        continue;
-                    
-                    config.TextureConversions[texture.ReferencedPath] = 
-                        (targetResolution, texture.Width, texture.Height, texture.FileSize);
-                }
-                
-                // Add hair conversions
-                foreach (var hair in selectedHairs)
-                {
-                    int targetDensity = hair.ConvertTo32 ? 32 : hair.ConvertTo24 ? 24 : hair.ConvertTo16 ? 16 : hair.ConvertTo8 ? 8 : 16;
-                    string key = $"{hair.SceneFile}_{hair.HairId}";
-                    config.HairConversions[key] = (hair.SceneFile, hair.HairId, targetDensity, hair.HasCurveDensity);
-                }
-                
-                // Add light shadow conversions
-                foreach (var light in selectedLights)
-                {
-                    bool castShadows = !light.SetShadowsOff;
-                    int shadowResolution = light.SetShadows512 ? 512 : 
-                                         light.SetShadows1024 ? 1024 : 
-                                         light.SetShadows2048 ? 2048 : 0;
-                    string key = $"{light.SceneFile}_{light.LightId}";
-                    config.LightConversions[key] = (light.SceneFile, light.LightId, castShadows, shadowResolution);
-                }
-                
-                // Set mirrors flag
-                config.DisableMirrors = disableMirrors;
-                
-                // Set force latest dependencies flag from settings
-                config.ForceLatestDependencies = _settingsManager?.Settings?.ForceLatestDependencies ?? false;
-                
-                // Add disabled dependencies
-                config.DisabledDependencies = disabledDependencies;
-                
-                // Set disable morph preload flag from settings
-                config.DisableMorphPreload = _settingsManager?.Settings?.DisableMorphPreload ?? true;
-                
-                // Set IsMorphAsset flag from package metadata (already retrieved earlier)
-                config.IsMorphAsset = packageMetadata?.IsMorphAsset ?? false;
-
-                // Perform optimization in background
-                string outputPath = null;
-                long originalPackageSize = 0;
-                long newPackageSize = 0;
-                int texturesConverted = 0;
-                int hairsModified = 0;
-                
-                var repackageStartTime = benchmarkStart.ElapsedMilliseconds;
-                var repackager = new PackageRepackager(_imageManager, _settingsManager);
-                
-                // Get effective archive folder (custom or default)
-                string effectiveArchiveFolder = repackager.GetEffectiveArchiveFolder(archivedFolder);
-                
-                var optimizationResult = await repackager.RepackageVarWithOptimizationsAsync(
-                    packagePath, 
-                    effectiveArchiveFolder, 
-                    config, 
-                    null, // No progress callback
-                    needsBackup); // Pass the backup flag
-                
-                outputPath = optimizationResult.OutputPath;
-                originalPackageSize = optimizationResult.OriginalSize;
-                newPackageSize = optimizationResult.NewSize;
-                texturesConverted = optimizationResult.TexturesConverted;
-                hairsModified = optimizationResult.HairsModified;
-                
-                // Remove disabled dependencies if any
-                if (disabledDependencies.Count > 0)
-                {
-                    await System.Threading.Tasks.Task.Run(() =>
-                    {
-                        var dependencyRemover = new Services.DependencyRemover();
-                        var removalResult = dependencyRemover.RemoveDependenciesFromPackage(outputPath ?? packagePath, disabledDependencies);
-                    });
-                }
-
-                // CRITICAL: Clear metadata cache BEFORE refresh to force re-parsing
-                // For external packages, we need to remove using the correct metadata key
-                if (_packageManager?.PackageMetadata != null)
-                {
-                    Debug.WriteLine($"[OPTIMIZE] Clearing metadata for package: {packageName}");
-                    Debug.WriteLine($"[OPTIMIZE] Total metadata keys before clear: {_packageManager.PackageMetadata.Count}");
-                    
-                    // Find and remove all matching keys (handles external packages with different keys)
-                    var keysToRemove = _packageManager.PackageMetadata.Keys
-                        .Where(k => k.Equals(packageName, StringComparison.OrdinalIgnoreCase) ||
-                                   k.StartsWith(packageName + ".", StringComparison.OrdinalIgnoreCase) ||
-                                   Path.GetFileNameWithoutExtension(k).Equals(packageName, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-                    
-                    Debug.WriteLine($"[OPTIMIZE] Found {keysToRemove.Count} keys to remove: {string.Join(", ", keysToRemove)}");
-                    
-                    foreach (var key in keysToRemove)
-                    {
-                        _packageManager.PackageMetadata.Remove(key);
-                        Debug.WriteLine($"[OPTIMIZE] Removed metadata key: {key}");
-                    }
-                    
-                    Debug.WriteLine($"[OPTIMIZE] Total metadata keys after clear: {_packageManager.PackageMetadata.Count}");
-                }
-
-                // Delay to ensure file system has flushed
-                await System.Threading.Tasks.Task.Delay(500);
-
-                // Refresh package data using filename (without extension) to avoid parsing issues
-                string filenameWithoutExt = Path.GetFileNameWithoutExtension(packagePath);
-                await RefreshSinglePackage(filenameWithoutExt);
-
-                // Calculate savings
-                long spaceSaved = originalPackageSize - newPackageSize;
-                double percentSaved = originalPackageSize > 0 ? (100.0 * spaceSaved / originalPackageSize) : 0;
-                
-                // Re-enable button and navigation
-                optimizeButton.IsEnabled = true;
-                optimizeButton.Content = "Optimize";
-                upArrowButton.IsEnabled = currentPackageIndex > 0;
-                downArrowButton.IsEnabled = currentPackageIndex < allPackages.Count - 1;
-                leftArrowButton.IsEnabled = true;
-                rightArrowButton.IsEnabled = true;
-                
-                // Refresh the window content with updated data
-                SetStatus($"Refreshing optimization data...");
-                await RefreshOptimizationTabsData(allPackages, textureResult, hairResult, tabControl);
-                
-                SetStatus($"✓ Optimization complete! Saved {FormatHelper.FormatFileSize(spaceSaved)} ({percentSaved:F1}%)");
+                    SetStatus($"✓ Optimization complete! Saved {FormatHelper.FormatFileSize(spaceSaved)} ({percentSaved:F1}%)");
                 }
                 finally
                 {
-                    // CRITICAL: Always release write access when done
-                    writeAccess?.Dispose();
-                    
-                    // Invalidate the file from FileAccessController to clean up state
                     Services.FileAccessController.Instance.InvalidateFile(packagePath);
+                    writeAccess?.Dispose();
                 }
-        }
-        catch (Exception ex)
-        {
-            CustomMessageBox.Show($"Error during optimization:\n\n{ex.Message}", "Optimization Error",
+            }
+            catch (Exception ex)
+            {
+                CustomMessageBox.Show($"Error during optimization:\n\n{ex.Message}", "Optimization Error",
                                   MessageBoxButton.OK, MessageBoxImage.Error);
-            SetStatus($"❌ Package optimization failed: {ex.Message}");
+                SetStatus($"❌ Package optimization failed: {ex.Message}");
+            }
         }
-    }
 
         /// <summary>
         /// Shows a dark-themed message box

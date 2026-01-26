@@ -12,14 +12,8 @@ using SharpCompress.Writers;
 namespace VPM.Services
 {
     /// <summary>
-    /// Wrapper for IArchive that ensures proper disposal of underlying FileStream
-    /// and coordinates with FileAccessController to prevent file lock conflicts.
-    /// 
-    /// CRITICAL: This class now holds a read lock from FileAccessController for the
-    /// entire duration that the archive is open. This ensures that:
-    /// 1. Writers (optimization/move operations) wait for all readers to finish
-    /// 2. No new file handles are opened while a writer is waiting
-    /// 3. File operations are properly coordinated across the application
+    /// Wrapper for IArchive that coordinates with FileAccessController.
+    /// Holds a read token for the lifetime of the archive so writers can safely wait.
     /// </summary>
     public class DisposableArchive : IDisposable
     {
@@ -53,8 +47,7 @@ namespace VPM.Services
                 _archive?.Dispose();
                 _archive = null;
                 
-                // Then release the read lock - this allows writers to proceed
-                // CRITICAL: Must be done AFTER the file handle is closed
+                // Release the read lock after closing the handle.
                 _readLock?.Dispose();
                 
                 if (_forceGcOnDispose)
@@ -71,15 +64,8 @@ namespace VPM.Services
     }
 
     /// <summary>
-    /// Phase 4: Archive handle pool for parallel archive access
-    /// Manages reusable archive handles to reduce contention and improve throughput.
-    /// 
-    /// NOTE: This class is used internally by optimization operations that already have
-    /// exclusive control over the files they're processing. It does NOT acquire a read lock
-    /// from FileAccessController because the optimization process itself manages file access.
-    /// 
-    /// For general archive reading (image loading, etc.), use SharpCompressHelper.OpenForRead()
-    /// which properly coordinates with FileAccessController.
+    /// Archive handle pool for parallel access.
+    /// Used by operations that already hold exclusive file control; does not acquire read locks.
     /// </summary>
     public class ArchiveHandlePool : IDisposable
     {
@@ -98,10 +84,7 @@ namespace VPM.Services
             _archivePath = archivePath;
             _maxHandles = Math.Max(1, Math.Min(maxHandles, Environment.ProcessorCount));
             
-            // NOTE: We intentionally do NOT acquire a FileAccessController read lock here.
-            // ArchiveHandlePool is used by optimization operations that already have exclusive
-            // control over the files. Acquiring a read lock would cause deadlock when the
-            // optimization tries to move/delete the file later.
+            // No FileAccessController read lock here; callers already control file access.
         }
 
         /// <summary>

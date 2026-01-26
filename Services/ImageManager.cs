@@ -62,20 +62,14 @@ namespace VPM.Services
         private const int MAX_BITMAP_CACHE_SIZE = 200;
         private const int MAX_STRONG_CACHE_SIZE = 10; // Reduced from 75 to prevent memory bloat
         
-        // MEDIUM PRIORITY FIX 4: Chunked loading threshold (configurable)
-        // Threshold rationale: Balances memory fragmentation reduction with I/O efficiency
-        // Smaller files: single allocation is more efficient
-        // Larger files: chunking reduces heap fragmentation by 40-50%
+        // Chunked loading threshold (larger files use chunking to reduce heap fragmentation).
         private const long CHUNKED_LOADING_THRESHOLD = 2 * 1024 * 1024; // 2MB
         
         // Performance tracking
         private int _cacheHits = 0;
         private int _cacheMisses = 0;
         
-        // Memory pressure management
-        // Adjusted thresholds for better memory control
-        // 1.5GB (HIGH): Start aggressive cache cleanup
-        // 2.5GB (CRITICAL): Force immediate cleanup
+        // Memory pressure thresholds for cache cleanup.
         private DateTime _lastMemoryCheck = DateTime.MinValue;
         private const int MEMORY_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds
         private const long HIGH_MEMORY_THRESHOLD = 1500L * 1024 * 1024; // 1.5GB
@@ -84,10 +78,7 @@ namespace VPM.Services
         // Live loading from VAR archives
         private readonly ReaderWriterLockSlim _varArchiveLock = new ReaderWriterLockSlim();
 
-        // Phase 4: Parallel archive access metrics
-        // Used to measure parallel loading efficiency and throughput
-        // Efficiency = (parallelTasksCreated / parallelBatchesProcessed) / ProcessorCount
-        // Target: >80% efficiency (tasks per batch close to ProcessorCount)
+        // Parallel archive access metrics.
         private int _parallelBatchesProcessed = 0;
         private int _parallelTasksCreated = 0;
         private long _parallelTotalTime = 0;
@@ -203,7 +194,6 @@ namespace VPM.Services
         private void OnThreadPoolProgressChanged(int current, int total)
         {
             // Can be used to update UI progress indicators
-            // Console.WriteLine($"[ImageLoader] Progress: {current}/{total}");
         }
         
         /// <summary>
@@ -2263,15 +2253,15 @@ namespace VPM.Services
         {
             if (string.IsNullOrEmpty(varPath)) return;
             
-            // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Starting for: {varPath}");
-            
             try
             {
                 var packageName = Path.GetFileNameWithoutExtension(varPath);
                 
+                // Small delay to allow any pending operations to begin cancellation
+                await Task.Delay(50);
+                
                 // CRITICAL: Cancel any pending image loads for this package
                 // This prevents new file handles from being opened while we try to close existing ones
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Cancelling pending operations for package");
                 _asyncPool.CancelPendingForPackage(varPath);
 
                 // CRITICAL: Dispose shared archive pools that hold FileStream handles to this package
@@ -2295,9 +2285,7 @@ namespace VPM.Services
                 _asyncPool.LockFreeReader.InvalidateArchive(varPath);
 
                 // Wait for active file operations to complete
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Releasing file locks from async pool");
                 await _asyncPool.ReleaseFileLocksAsync(new[] { varPath });
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Async pool locks released");
 
                 // CRITICAL: Clear bitmap cache entries for this package to release memory references
                 // This must happen BEFORE the file operation to prevent "file in use" errors
@@ -2357,23 +2345,11 @@ namespace VPM.Services
                     _varArchiveLock.ExitWriteLock();
                 }
                 
-                // Force garbage collection to ensure all references are released
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Forcing garbage collection");
-                // GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized);
-                // GC.WaitForPendingFinalizers();
-                // GC.Collect(GC.MaxGeneration, GCCollectionMode.Optimized);
-                // GC.WaitForPendingFinalizers();
-                
                 // Wait for file system to release locks (increased to 500ms to allow pending operations to complete)
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Waiting for file system to release locks");
                 await Task.Delay(100);
-                
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] === COMPLETE ===");
             }
             catch (Exception)
             {
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Error: {ex.Message}");
-                // Console.WriteLine($"[ImageManager.CloseFileHandlesAsync] Stack trace: {ex.StackTrace}");
             }
         }
 

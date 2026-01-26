@@ -14,9 +14,7 @@ using Microsoft.IO;
 namespace VPM.Services
 {
     /// <summary>
-    /// Async-based image loader pool for high-performance image loading
-    /// Replaces the dedicated thread pool with Task-based async/await pattern
-    /// Provides similar performance with better resource management and simpler lifecycle
+    /// Async-based image loader pool.
     /// </summary>
     public class ImageLoaderAsyncPool : IDisposable
     {
@@ -44,7 +42,7 @@ namespace VPM.Services
         private int _totalValidationChecks = 0;
         private readonly object _validationMetricsLock = new();
         
-        // File locking management - FIXED: Use atomic operations for thread safety
+        // File locking management (thread-safe).
         private readonly ConcurrentDictionary<string, int> _activeFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly ConcurrentDictionary<string, DateTime> _cancelledPaths = new(StringComparer.OrdinalIgnoreCase);
         private readonly TimeSpan _cancelledPathExpiry = TimeSpan.FromMinutes(1); // Auto-expire cancelled paths
@@ -96,41 +94,33 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Cancels pending operations for specific file paths and waits for active ones to finish
+        /// Cancels pending operations for file paths and waits briefly for active ones to finish.
         /// </summary>
         public async Task ReleaseFileLocksAsync(IEnumerable<string> filePaths)
         {
             var paths = filePaths.ToList();
             
-            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Starting release for {paths.Count} paths");
-            
-            // 1. Mark paths as cancelled to prevent new operations
-            // Also mark the package NAME (without path) to catch both AddonPackages and AllPackages versions
+            // Mark paths (and filenames) as cancelled to prevent new operations.
             var now = DateTime.UtcNow;
             foreach (var path in paths)
             {
-                // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Marking path as cancelled: {path}");
                 _cancelledPaths[path] = now; // Use indexer for atomic update
                 
-                // Also extract package name and mark it (e.g., "Package.Name.1" from full path)
+                // Also mark by filename to catch multiple folder locations.
                 var fileName = System.IO.Path.GetFileNameWithoutExtension(path);
                 if (!string.IsNullOrEmpty(fileName))
                 {
                     _cancelledPaths[fileName] = now;
-                    // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Also marked package name: {fileName}");
                 }
                 
-                // CRITICAL: Invalidate lock-free archive cache for this path
-                // This ensures no cached data references the file
+                // Invalidate archive cache for this path.
                 _lockFreeReader.InvalidateArchive(path);
                 
-                // Also cancel any pending items in the queue for this path
+                // Cancel any queued items.
                 CancelPendingForPackage(path);
             }
             
-            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Paths marked as cancelled");
-            
-            // 2. Wait for active operations to finish
+            // Wait briefly for active operations to finish.
             var maxWait = TimeSpan.FromSeconds(10); // Increased from 5s to 10s for robustness
             var start = DateTime.UtcNow;
             int waitIterations = 0;
@@ -143,17 +133,12 @@ namespace VPM.Services
                 {
                     if (_activeFiles.TryGetValue(path, out int count) && count > 0)
                     {
-                        if (waitIterations % 10 == 0) // Log every 500ms
-                        {
-                            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] Path still active: {path} (count: {count})");
-                        }
                         anyActive = true;
                     }
                 }
                 
                 if (!anyActive)
                 {
-                    // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] All paths released after {waitIterations} iterations");
                     break;
                 }
                     
@@ -162,21 +147,17 @@ namespace VPM.Services
             
             if (waitIterations >= maxWait.TotalMilliseconds / 50)
             {
-                // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] WARNING: Timeout waiting for file locks to release");
                 foreach (var path in paths)
                 {
                     if (_activeFiles.TryGetValue(path, out int count) && count > 0)
                     {
-                        // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] STILL ACTIVE: {path} (count: {count})");
+                        break;
                     }
                 }
             }
             
-            // 3. Use optimized GC collection for file handle release
-            // Full GC.Collect() causes UI stuttering - use non-blocking Gen 0 instead
+            // Hint GC to release file handles.
             GC.Collect(0, GCCollectionMode.Optimized, blocking: false);
-            
-            // Console.WriteLine($"[ImageLoaderAsyncPool.ReleaseFileLocksAsync] === COMPLETE ===");
         }
 
         /// <summary>

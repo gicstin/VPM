@@ -68,8 +68,7 @@ namespace VPM.Services
         /// <returns>Path to the new VAR file</returns>
         private async Task<(string outputPath, long originalSize, long newSize, int texturesConverted)> RepackageVarInternalAsync(string sourceVarPath, string archivedFolder, Dictionary<string, (string targetResolution, int originalWidth, int originalHeight, long originalSize)> textureConversions, ProgressCallback progressCallback = null)
         {
-            // CRITICAL FIX: Acquire exclusive write access at the START of optimization
-            // This blocks ALL image loading operations from opening the file while we work on it.
+            // Acquire exclusive write access before optimization to prevent file locks.
             IDisposable writeLock = null;
             string tempOutputPath = null; // Track temp file for cleanup in finally block
             try
@@ -112,8 +111,7 @@ namespace VPM.Services
                 
                 if (isSourceInArchive)
                 {
-                    // SCENARIO 3: Optimizing from archive folder
-                    // Read from archive (keep original), write to loaded folder
+                    // Source is already archived: read from archive, write to loaded folder.
                     progressCallback?.Invoke("Optimizing from archive (original preserved)...", 0, textureConversions.Count);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -144,9 +142,7 @@ namespace VPM.Services
                 }
                 else if (File.Exists(archiveFilePath))
                 {
-                    // SCENARIO 2: Re-optimizing already optimized package in loaded folder
-                    // Read from archive (original) to allow re-optimization with different settings
-                    // This provides BETTER QUALITY when downscaling (e.g., 8K->2K is better than 4K->2K)
+                    // Re-optimizing: read original from archive, write back to loaded folder.
                     progressCallback?.Invoke("Re-optimizing from original archive (better quality)...", 0, textureConversions.Count);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -159,8 +155,7 @@ namespace VPM.Services
                 }
                 else
                 {
-                    // SCENARIO 1: First-time optimization
-                    // Move original to archive, then optimize
+                    // First-time optimization: archive original, then write optimized package.
                     progressCallback?.Invoke("Moving original to archive...", 0, textureConversions.Count);
                     
                     if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceVarPath);
@@ -168,7 +163,7 @@ namespace VPM.Services
                     
                     archivedPath = archiveFilePath;
                     
-                    // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
+                    // Copy+Delete is more reliable than Move for locked files.
                     for (int moveAttempt = 1; moveAttempt <= 10; moveAttempt++)
                     {
                         try
@@ -191,8 +186,7 @@ namespace VPM.Services
                     finalOutputPath = sourceVarPath; // Write back to original location (now empty)
                 }
                 
-                // STEP 2: Now work with the source file (from archive or after moving to archive)
-                // Create temp file for the converted version in the output directory
+                // Create temp output in the destination folder.
                 string outputDirectory = Path.GetDirectoryName(finalOutputPath);
                 tempOutputPath = Path.Combine(outputDirectory, "~temp_" + Guid.NewGuid().ToString("N").Substring(0, 8) + "_" + filename);
                 
@@ -202,7 +196,7 @@ namespace VPM.Services
                     File.Delete(tempOutputPath);
                 }
                 
-                progressCallback?.Invoke("🔍 Analyzing package...", 0, textureConversions.Count);
+                progressCallback?.Invoke("Analyzing package...", 0, textureConversions.Count);
 
                 try
                 {
@@ -224,7 +218,7 @@ namespace VPM.Services
                         var allEntries = sourceArchive.Entries.ToList();
                         var conversionInputs = new List<(string fullName, DateTimeOffset lastWriteTime, byte[] data, (string targetResolution, int originalWidth, int originalHeight, long originalSize) info)>();
                         
-                        progressCallback?.Invoke($"📚 Reading {allEntries.Count} files from archive...", 0, textureConversions.Count);
+                        progressCallback?.Invoke($"Reading {allEntries.Count} files from archive...", 0, textureConversions.Count);
 
                         foreach (var entry in allEntries)
                         {
@@ -254,163 +248,108 @@ namespace VPM.Services
                         
                         if (totalConversions > 0)
                         {
-                            progressCallback?.Invoke($"🖼️  Starting conversion of {totalConversions} texture(s)...", 0, totalConversions);
-                        }
-
-                        // Use adaptive memory-aware parallelism with proper async I/O
-                        // System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_START] Processing {totalConversions} textures with adaptive parallelism");
-                        
-                        // OPTIMIZATION: Use full CPU cores for texture conversion (CPU-bound operation)
-                        // Texture resizing is CPU-intensive, not I/O-bound, so we can use all cores
-                        int maxConcurrentTextures = Math.Max(2, Environment.ProcessorCount); // Full parallelism for CPU-bound work
-                        using (var semaphore = new System.Threading.SemaphoreSlim(maxConcurrentTextures))
-                        {
-                            var tasks = conversionInputs.Select(async item =>
+                            progressCallback?.Invoke($"Starting conversion of {totalConversions} texture(s)...", 0, totalConversions);
+                            
+                            int maxConcurrentTextures = Math.Max(2, Environment.ProcessorCount);
+                            using (var semaphore = new System.Threading.SemaphoreSlim(maxConcurrentTextures))
                             {
-                                await semaphore.WaitAsync();
-                                try
+                                var tasks = conversionInputs.Select(async item =>
                                 {
-                                    var (fullName, lastWriteTime, sourceData, conversionInfo) = item;
-
-                                    System.Threading.Interlocked.Add(ref originalTotalSize, sourceData.Length);
-
-                                    // Convert texture asynchronously
-                                    int targetDimension = TextureConverter.GetTargetDimension(conversionInfo.targetResolution);
-                                    string extension = Path.GetExtension(fullName);
-                                    byte[] convertedData = await System.Threading.Tasks.Task.Run(() => 
-                                        _textureConverter.ResizeImage(sourceData, targetDimension, extension));
-
-                                    int current = System.Threading.Interlocked.Increment(ref processedCount);
-                                    progressCallback?.Invoke($"🖼️  [{current}/{totalConversions}] Converting: {Path.GetFileName(fullName)}", current, Math.Max(1, totalConversions));
-
-                                    if (convertedData != null)
+                                    await semaphore.WaitAsync();
+                                    try
                                     {
-                                        System.Threading.Interlocked.Add(ref newTotalSize, convertedData.Length);
+                                        var (fullName, lastWriteTime, sourceData, conversionInfo) = item;
+                                        System.Threading.Interlocked.Add(ref originalTotalSize, sourceData.Length);
                                         
-                                        string textureName = Path.GetFileName(fullName);
-                                        string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
-                                        string detail = $"  • {textureName}: {originalRes} → {conversionInfo.targetResolution} ({FormatHelper.FormatBytes(sourceData.Length)} → {FormatHelper.FormatBytes(convertedData.Length)})";
-                                        conversionDetails.Add(detail);
+                                        int targetDimension = TextureConverter.GetTargetDimension(conversionInfo.targetResolution);
+                                        string extension = Path.GetExtension(fullName);
+                                        byte[] convertedData = await System.Threading.Tasks.Task.Run(() =>
+                                            _textureConverter.ResizeImage(sourceData, targetDimension, extension));
                                         
-                                        convertedTextures[fullName] = (convertedData, lastWriteTime);
+                                        int current = System.Threading.Interlocked.Increment(ref processedCount);
+                                        progressCallback?.Invoke($"Converting: {Path.GetFileName(fullName)}", current, Math.Max(1, totalConversions));
+                                        
+                                        if (convertedData != null)
+                                        {
+                                            System.Threading.Interlocked.Add(ref newTotalSize, convertedData.Length);
+                                            
+                                            string textureName = Path.GetFileName(fullName);
+                                            string originalRes = GetResolutionString(conversionInfo.originalWidth, conversionInfo.originalHeight);
+                                            string detail = $"  • {textureName}: {originalRes} → {conversionInfo.targetResolution} ({FormatHelper.FormatBytes(sourceData.Length)} → {FormatHelper.FormatBytes(convertedData.Length)})";
+                                            conversionDetails.Add(detail);
+                                            
+                                            convertedTextures[fullName] = (convertedData, lastWriteTime);
+                                        }
+                                        else
+                                        {
+                                            System.Threading.Interlocked.Add(ref newTotalSize, sourceData.Length);
+                                        }
                                     }
-                                    else
+                                    finally
                                     {
-                                        System.Threading.Interlocked.Add(ref newTotalSize, sourceData.Length);
+                                        semaphore.Release();
                                     }
-                                }
-                                finally
-                                {
-                                    semaphore.Release();
-                                }
-                            }).ToArray();
-
-                            // Wait for all texture conversions to complete
-                            await System.Threading.Tasks.Task.WhenAll(tasks);
-                            // System.Diagnostics.Debug.WriteLine($"[TEXTURE_CONVERSION_COMPLETE] All {totalConversions} textures processed");
+                                }).ToArray();
+                                
+                                await System.Threading.Tasks.Task.WhenAll(tasks);
+                            }
+                        }
+                        else
+                        {
+                            progressCallback?.Invoke("Writing optimized package...", textureConversions.Count, textureConversions.Count);
                         }
 
-                        progressCallback?.Invoke("📝 Writing optimized package...", totalConversions, totalConversions);
-                        
                         int writeIndex = 0;
                         int totalWrites = allEntries.Count;
-                        
-                        foreach (var entry in allEntries)
+                        foreach (var writeEntry in allEntries)
                         {
-                            if (entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
-                            {
+                            if (writeEntry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
                                 continue;
-                            }
                             
                             writeIndex++;
                             if (writeIndex % 100 == 0)
                             {
-                                progressCallback?.Invoke($"📝 Writing files... ({writeIndex}/{totalWrites})", totalConversions, totalConversions);
+                                progressCallback?.Invoke($"Writing files... ({writeIndex}/{totalWrites})", Math.Max(1, totalConversions), Math.Max(1, totalConversions));
                             }
-
-                            if (convertedTextures.TryGetValue(entry.Key, out var converted))
+                            
+                            if (convertedTextures.TryGetValue(writeEntry.Key, out var converted))
                             {
-                                outputArchive.AddEntry(entry.Key, new MemoryStream(converted.data));
+                                outputArchive.AddEntry(writeEntry.Key, new MemoryStream(converted.data));
                             }
                             else
                             {
-                                // Try to read source first before creating entry to prevent corrupted empty entries
                                 try
                                 {
-                                    using (var sourceStream = entry.OpenEntryStream())
+                                    using (var sourceStream = writeEntry.OpenEntryStream())
                                     using (var ms = new MemoryStream())
                                     {
                                         await sourceStream.CopyToAsync(ms);
-                                        outputArchive.AddEntry(entry.Key, new MemoryStream(ms.ToArray()));
+                                        outputArchive.AddEntry(writeEntry.Key, new MemoryStream(ms.ToArray()));
                                     }
                                 }
                                 catch (InvalidDataException)
                                 {
-                                    // Skip entries with unsupported compression methods
                                 }
                                 catch (Exception)
                                 {
-                                    // Skip entries that cannot be read
                                 }
                             }
                         }
 
                         if (!string.IsNullOrEmpty(originalMetaJson))
                         {
-                            progressCallback?.Invoke("📋 Updating package metadata...", totalConversions, totalConversions);
+                            progressCallback?.Invoke("Updating package metadata...", Math.Max(1, totalConversions), Math.Max(1, totalConversions));
                             string updatedMetaJson = UpdateMetaJsonDescription(originalMetaJson, conversionDetails, originalTotalSize, newTotalSize);
-
                             outputArchive.AddEntry("meta.json", new MemoryStream(Encoding.UTF8.GetBytes(updatedMetaJson)));
                         }
-                        
-                        // Save the archive
+
                         using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
                         {
                             outputArchive.SaveTo(outputFileStream, CompressionType.Deflate);
                         }
                     }
-
-                    progressCallback?.Invoke("✅ Finalizing package...", textureConversions.Count, textureConversions.Count);
                     
-                    // STEP 3: Move the converted temp file to the final output location
-                    if (File.Exists(finalOutputPath))
-                    {
-                        // Check if we're writing to a different location than the source
-                        bool writingToDifferentLocation = !finalOutputPath.Equals(sourceVarPath, StringComparison.OrdinalIgnoreCase);
-                        
-                        // If reading from archive and writing to a DIFFERENT location, add timestamp to avoid conflict
-                        // But if writing to SAME location (re-optimizing), just delete and replace
-                        if (isSourceInArchive && writingToDifferentLocation)
-                        {
-                            string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                            string filenameWithoutExt = Path.GetFileNameWithoutExtension(filename);
-                            string ext = Path.GetExtension(filename);
-                            string outputDir = Path.GetDirectoryName(finalOutputPath);
-                            finalOutputPath = Path.Combine(outputDir, $"{filenameWithoutExt}_{timestamp}{ext}");
-                        }
-                        else
-                        {
-                            // GUARANTEED FIX: Delete with retry loop
-                            for (int deleteAttempt = 1; deleteAttempt <= 10; deleteAttempt++)
-                            {
-                                try
-                                {
-                                    File.Delete(finalOutputPath);
-                                    break;
-                                }
-                                catch (IOException) when (deleteAttempt < 10)
-                                {
-                                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(finalOutputPath);
-                                    FileAccessController.Instance.InvalidateFile(finalOutputPath);
-                                    GC.Collect();
-                                    GC.WaitForPendingFinalizers();
-                                    await Task.Delay(100 * deleteAttempt);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // GUARANTEED FIX: Use File.Copy + File.Delete instead of File.Move
+                    // Copy+Delete is more reliable than Move for locked files.
                     for (int copyAttempt = 1; copyAttempt <= 10; copyAttempt++)
                     {
                         try
@@ -432,7 +371,7 @@ namespace VPM.Services
                     // Force timestamp update to ensure cache invalidation
                     File.SetLastWriteTimeUtc(finalOutputPath, DateTime.UtcNow);
 
-                    progressCallback?.Invoke("✨ Texture optimization complete!", textureConversions.Count, textureConversions.Count);
+                    progressCallback?.Invoke("Texture optimization complete!", textureConversions.Count, textureConversions.Count);
                     
                     // Get file sizes for statistics
                     long convertedSize = new FileInfo(finalOutputPath).Length;
@@ -478,14 +417,13 @@ namespace VPM.Services
             }
             finally
             {
-                // CRITICAL: Always clean up temp file if it exists
-                // This prevents leftover ~temp_ files when operations fail or are interrupted
+                // Always clean up temp output file.
                 if (!string.IsNullOrEmpty(tempOutputPath))
                 {
                     try { if (File.Exists(tempOutputPath)) File.Delete(tempOutputPath); } catch { }
                 }
                 
-                // CRITICAL: Always release the write lock when optimization completes
+                // Always release write lock.
                 writeLock?.Dispose();
             }
         }
