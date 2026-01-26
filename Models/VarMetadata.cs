@@ -73,7 +73,6 @@ namespace VPM.Models
         public bool HasTextureOptimization { get; set; } = false;
         public bool HasHairOptimization { get; set; } = false;
         public bool HasMirrorOptimization { get; set; } = false;
-        public bool HasJsonMinification { get; set; } = false;
 
         // Snapshot helpers
         public string VariantRole { get; set; } = "Unknown"; // Loaded, Available, Archived, Duplicate

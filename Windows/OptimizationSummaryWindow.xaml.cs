@@ -218,11 +218,7 @@ namespace VPM
             var totalLights = packageDetails?.Sum(p => p.Value.LightCount) ?? 0;
             var totalDisabledDeps = packageDetails?.Sum(p => p.Value.DisabledDependencies) ?? 0;
             var totalLatestDeps = packageDetails?.Sum(p => p.Value.LatestDependencies) ?? 0;
-            var totalJsonMinified = packageDetails?.Count(p => p.Value.JsonMinified) ?? 0;
-            var totalJsonSizeBefore = packageDetails?.Sum(p => p.Value.JsonSizeBeforeMinify) ?? 0;
-            var totalJsonSizeAfter = packageDetails?.Sum(p => p.Value.JsonSizeAfterMinify) ?? 0;
-            var totalJsonSaved = totalJsonSizeBefore - totalJsonSizeAfter;
-            int totalOperations = totalTextures + totalHair + totalMirrors + totalLights + totalDisabledDeps + totalLatestDeps + totalJsonMinified;
+            int totalOperations = totalTextures + totalHair + totalMirrors + totalLights + totalDisabledDeps + totalLatestDeps;
             
             report.AppendLine("── OPTIMIZATION BREAKDOWN ──────────────────────────────────────────────────────────────────────────────");
             report.AppendLine();
@@ -249,11 +245,6 @@ namespace VPM
                 report.AppendLine($"  ▸ DEPS REMOVED  {totalDisabledDeps,4}                                   Cleaner dependencies");
             if (totalLatestDeps > 0)
                 report.AppendLine($"  ▸ DEPS UPDATED  {totalLatestDeps,4}                                   Future-proofed");
-            if (totalJsonMinified > 0)
-            {
-                double jsonPercent = totalJsonSizeBefore > 0 ? (100.0 * totalJsonSaved / totalJsonSizeBefore) : 0;
-                report.AppendLine($"  ▸ JSON          {totalJsonMinified,4}  Saved {FormatBytes(totalJsonSaved)} (-{jsonPercent:F1}%)         Faster loading");
-            }
             report.AppendLine();
 
             // Top Optimizations Leaderboard
@@ -385,14 +376,6 @@ namespace VPM
                         report.AppendLine($"  Dependencies Updated to .latest: {details.LatestDependencies}");
                         foreach (var depDetail in details.LatestDependencyDetails)
                             report.AppendLine($"    - {depDetail}");
-                    }
-
-                    if (details.JsonMinified)
-                    {
-                        long jsonSaved = details.JsonSizeBeforeMinify - details.JsonSizeAfterMinify;
-                        double jsonPercent = details.JsonSizeBeforeMinify > 0 ? (100.0 * jsonSaved / details.JsonSizeBeforeMinify) : 0;
-                        report.AppendLine();
-                        report.AppendLine($"  JSON Minified: {FormatBytes(details.JsonSizeBeforeMinify)} -> {FormatBytes(details.JsonSizeAfterMinify)} (-{jsonPercent:F1}%)");
                     }
 
                     report.AppendLine();
@@ -781,9 +764,6 @@ namespace VPM
         public int LightCount { get; set; }
         public int DisabledDependencies { get; set; }
         public int LatestDependencies { get; set; }
-        public bool JsonMinified { get; set; } = false;
-        public long JsonSizeBeforeMinify { get; set; } = 0;
-        public long JsonSizeAfterMinify { get; set; } = 0;
         public string Error { get; set; }
         
         // Detailed change information

@@ -525,7 +525,19 @@ namespace VPM.Services
                         return;
                     }
 
-                    var packageBase = Path.GetFileNameWithoutExtension(fileInfo.Name);
+                    var filename = fileInfo.Name;
+                    var (creator, pkgName, versionText) = ParseFilename(filename);
+                    string packageBase;
+                    
+                    if (creator != null && pkgName != null && versionText != null && TryParseLeadingInt(versionText, out var version))
+                    {
+                        packageBase = $"{creator}.{pkgName}.{version}";
+                    }
+                    else
+                    {
+                        packageBase = Path.GetFileNameWithoutExtension(filename);
+                    }
+
                     var descriptor = new PackageVariantDescriptor(
                         packageBase,
                         role,
@@ -1146,7 +1158,7 @@ namespace VPM.Services
                 {
                     try
                     {
-                        var files = Directory.EnumerateFiles(installedFolder, "*.var", SearchOption.AllDirectories);
+                        var files = SymlinkSafeFileSystem.EnumerateFilesSafe(installedFolder, "*.var", true);
                         lock (installed)
                         {
                             installed.AddRange(files);
@@ -1165,7 +1177,7 @@ namespace VPM.Services
                 {
                     try
                     {
-                        var files = Directory.EnumerateFiles(allPackagesFolder, "*.var", SearchOption.AllDirectories);
+                        var files = SymlinkSafeFileSystem.EnumerateFilesSafe(allPackagesFolder, "*.var", true);
                         lock (available)
                         {
                             available.AddRange(files);
@@ -1187,7 +1199,7 @@ namespace VPM.Services
                 {
                     try
                     {
-                        var files = Directory.EnumerateFiles(archivedPackagesFolder, "*.var", SearchOption.AllDirectories);
+                        var files = SymlinkSafeFileSystem.EnumerateFilesSafe(archivedPackagesFolder, "*.var", true);
                         // Add archived packages to available list with special marker
                         lock (available)
                         {
@@ -2804,10 +2816,6 @@ namespace VPM.Services
                         
                         case "vpmMirrorOptimized":
                             metadata.HasMirrorOptimization = ParseBooleanValue(value);
-                            break;
-                        
-                        case "vpmJsonMinified":
-                            metadata.HasJsonMinification = ParseBooleanValue(value);
                             break;
                         
                         case "vpmOriginalDate":

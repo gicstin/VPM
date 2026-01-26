@@ -36,7 +36,7 @@ namespace VPM.Services
 
             try
             {
-                var jsonFiles = Directory.GetFiles(sceneDir, "*.json", SearchOption.AllDirectories);
+                var jsonFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(sceneDir, "*.json", true);
 
                 foreach (var jsonPath in jsonFiles)
                 {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -170,26 +171,56 @@ namespace VPM
                     var results = new List<(string packageName, bool success, string error)>();
                     var completed = 0;
 
-                    // Load external packages first using their file paths from metadata
-                    foreach (var package in externalPackages)
+                    // Load external packages in parallel
+                    var externalProcessedPaths = new List<string>();
+                    if (externalPackages.Count > 0)
                     {
-                        completed++;
-                        UpdateMainTableLoading(completed, totalCount, package.Name);
-                        SetStatus(totalCount > 1
-                            ? $"Loading packages... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {package.Name}...");
+                        var externalCompleted = 0;
+                        await Parallel.ForEachAsync(externalPackages, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (package, ct) =>
+                        {
+                            var currentCompleted = Interlocked.Increment(ref externalCompleted);
+                            
+                            // UI update must be on UI thread
+                            await Dispatcher.InvokeAsync(() => {
+                                UpdateMainTableLoading(currentCompleted, totalCount, package.Name);
+                                SetStatus(totalCount > 1
+                                    ? $"Loading packages... {currentCompleted}/{totalCount} ({currentCompleted * 100 / totalCount}%)"
+                                    : $"Loading {package.Name}...");
+                            });
 
-                        // Get the file path from metadata
-                        if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) && 
-                            !string.IsNullOrEmpty(metadata.FilePath))
+                            // Get the file path from metadata
+                            if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata) && 
+                                !string.IsNullOrEmpty(metadata.FilePath))
+                            {
+                                var (success, error, filePath) = await _packageFileManager.LoadPackageFromExternalPathAsync(package.Name, metadata.FilePath, suppressIndexUpdate: true);
+                                lock (results)
+                                {
+                                    results.Add((package.Name, success, error));
+                                    if (success && !string.IsNullOrEmpty(filePath))
+                                    {
+                                        lock (externalProcessedPaths)
+                                        {
+                                            externalProcessedPaths.Add(filePath);
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                lock (results)
+                                {
+                                    results.Add((package.Name, false, "External package file path not found in metadata"));
+                                }
+                            }
+                        });
+
+                        // Batch rebuild image index for external packages
+                        if (externalProcessedPaths.Count > 0)
                         {
-                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(package.Name, metadata.FilePath);
-                            results.Add((package.Name, success, error));
+                            await (_imageManager?.BuildImageIndexFromVarsAsync(externalProcessedPaths, forceRebuild: false) ?? Task.CompletedTask);
                         }
-                        else
-                        {
-                            results.Add((package.Name, false, "External package file path not found in metadata"));
-                        }
+
+                        completed = externalPackages.Count;
                     }
 
                     // Load regular available packages
@@ -251,12 +282,8 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
 
-                    // Re-enable UI BEFORE refreshing image grid
+                    // Re-enable UI
                     LoadPackagesButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
-
-                    // Refresh image grid to show newly loaded packages
-                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
@@ -328,101 +355,117 @@ namespace VPM
                     return (false, 0);
                 }
 
-                var packagesToLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // PERFORMANCE FIX: Pre-build lookup for ALL packages to optimize dependency resolution to O(D)
+                var allPackageLookup = _packageManager.PackageMetadata.Values
+                    .GroupBy(p => $"{p.CreatorName}.{p.PackageName}", StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Version).ToList(), StringComparer.OrdinalIgnoreCase);
+
                 var allDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var processedPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var resolvedDependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 
-                var externalPackages = new List<string>();
-                var regularPackages = new List<string>();
+                var externalPackagesToLoad = new Dictionary<string, VarMetadata>(StringComparer.OrdinalIgnoreCase);
+                var regularPackagesToLoad = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                foreach (var packageName in packageNames)
+                // Recursive function to resolve all dependencies
+                void ResolveRecursive(string name)
                 {
-                    if (!_packageManager.PackageMetadata.TryGetValue(packageName, out var metadata))
-                        continue;
+                    if (processedPackages.Contains(name)) return;
+                    processedPackages.Add(name);
 
-                    // Load if Available or External (and not already loaded/cleared)
+                    if (!_packageManager.PackageMetadata.TryGetValue(name, out var metadata))
+                    {
+                        // If not found directly, it might be a dependency that needs resolution (like .latest or .min)
+                        // Try to resolve this name using our allPackageLookup
+                        var nameInfo = VPM.Models.DependencyVersionInfo.Parse(name);
+                        if (allPackageLookup.TryGetValue(nameInfo.BaseName, out var nameVariants))
+                        {
+                            var bestMatch = nameVariants.FirstOrDefault(v => nameInfo.IsSatisfiedBy(v.Version));
+                            if (bestMatch != null)
+                            {
+                                resolvedDependencies.Add(name);
+                                var key = $"{bestMatch.CreatorName}.{bestMatch.PackageName}.{bestMatch.Version}";
+                                ResolveRecursive(key);
+                                return;
+                            }
+                        }
+                        return;
+                    }
+
+                    resolvedDependencies.Add(name);
                     if (metadata.Status == "Available")
                     {
-                        packagesToLoad.Add(packageName);
-                        regularPackages.Add(packageName);
+                        regularPackagesToLoad.Add(name);
                     }
                     else if (metadata.IsExternal)
                     {
-                        packagesToLoad.Add(packageName);
-                        externalPackages.Add(packageName);
+                        externalPackagesToLoad[name] = metadata;
                     }
-                    
-                    // Resolve dependencies
+
                     if (metadata.Dependencies != null)
                     {
-                        foreach (var dependency in metadata.Dependencies)
+                        foreach (var dep in metadata.Dependencies)
                         {
-                            var dependencyName = dependency;
-                            if (dependency.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                            {
-                                dependencyName = Path.GetFileNameWithoutExtension(dependency);
-                            }
+                            var depName = dep.EndsWith(".var", StringComparison.OrdinalIgnoreCase) 
+                                ? Path.GetFileNameWithoutExtension(dep) 
+                                : dep;
+                            
+                            allDependencies.Add(depName);
 
-                            allDependencies.Add(dependencyName);
+                            // Resolve this dependency recursively if it's not already loaded
+                            var status = _packageFileManager?.GetPackageStatus(depName);
+                            if (status != "Loaded")
+                            {
+                                // Recurse with resolution
+                                ResolveRecursive(depName);
+                            }
                         }
                     }
                 }
 
-                // Find available dependencies (local)
-                var availableDependencies = allDependencies
-                    .Where(d => !packagesToLoad.Contains(d))
-                    .Where(d => {
-                        var status = _packageFileManager?.GetPackageStatus(d);
-                        return status == "Available" || status == "Outdated" || status == "Archived";
-                    })
-                    .ToList();
-
-                // Find external dependencies
-                var externalDependencies = new List<(string name, VarMetadata metadata)>();
-                foreach (var depName in allDependencies.Where(d => !packagesToLoad.Contains(d) && !availableDependencies.Contains(d)))
+                foreach (var packageName in packageNames)
                 {
-                    var depInfo = VPM.Models.DependencyVersionInfo.Parse(depName);
-                    var depMetadata = _packageManager?.PackageMetadata?.Values
-                        .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(depInfo.BaseName, StringComparison.OrdinalIgnoreCase) && p.IsExternal)
-                        .Where(p => depInfo.IsSatisfiedBy(p.Version))
-                        .OrderByDescending(p => p.Version)
-                        .FirstOrDefault();
-                    
-                    if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
-                    {
-                        externalDependencies.Add((depName, depMetadata));
-                    }
+                    ResolveRecursive(packageName);
                 }
 
-                // PERFORMANCE FIX: Create HashSets for O(1) lookups during missing dependency calculation
-                var availableDepsSet = new HashSet<string>(availableDependencies, StringComparer.OrdinalIgnoreCase);
-                var externalDepsSet = new HashSet<string>(externalDependencies.Select(e => e.name), StringComparer.OrdinalIgnoreCase);
+                // Split into categories for the loading logic
+                var regularPackagesToLoadList = regularPackagesToLoad.ToList();
+                var externalPackagesToLoadList = externalPackagesToLoad.Select(kvp => (kvp.Key, kvp.Value)).ToList();
 
-                // Calculate missing dependencies (neither to-be-loaded, nor already loaded)
+                var availableDependencies = regularPackagesToLoad
+                    .Where(p => !packageNames.Contains(p, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+                
+                var externalDependencies = externalPackagesToLoad
+                    .Where(kvp => !packageNames.Contains(kvp.Key, StringComparer.OrdinalIgnoreCase))
+                    .Select(kvp => (kvp.Key, kvp.Value))
+                    .ToList();
+
+                var regularPackages = regularPackagesToLoad
+                    .Where(p => packageNames.Contains(p, StringComparer.OrdinalIgnoreCase))
+                    .ToList();
+                
+                var externalPackages = externalPackagesToLoad
+                    .Where(kvp => packageNames.Contains(kvp.Key, StringComparer.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                // Calculate missing dependencies
                 var missingCount = 0;
                 foreach (var depName in allDependencies)
                 {
-                    // Check if it's being loaded
-                    if (packagesToLoad.Contains(depName) || availableDepsSet.Contains(depName) || externalDepsSet.Contains(depName))
-                        continue;
-
-                    // Check if it's already loaded or has another valid status that doesn't require loading but isn't "Missing"
+                    if (resolvedDependencies.Contains(depName)) continue;
+                    
                     var status = _packageFileManager?.GetPackageStatus(depName);
-                    if (status == "Loaded") 
-                        continue;
+                    if (status == "Loaded") continue;
                     
-                    // Note: "Unknown" usually implies missing if not found in metadata
-                    // If GetPackageStatus returns "Missing", or if it's "Unknown" (and not in metadata properly)
-                    // Simplified check: If it's not Loaded, Available, Outdated, Archived, or External -> It's missing
-                    
-                    // We already filtered Available/Outdated/Archived into availableDependencies.
-                    // We already filtered External into externalDependencies.
-                    // So if we are here, it's not any of those.
-                    // If it was Loaded, we skipped it above.
-                    // So it must be Missing.
                     missingCount++;
                 }
 
-                var totalToLoad = packagesToLoad.Count + availableDependencies.Count + externalDependencies.Count;
+                var allPackagesToLoadSet = new HashSet<string>(regularPackagesToLoad, StringComparer.OrdinalIgnoreCase);
+                foreach (var extKey in externalPackagesToLoad.Keys) allPackagesToLoadSet.Add(extKey);
+
+                var totalToLoad = allPackagesToLoadSet.Count;
 
                 if (totalToLoad == 0)
                 {
@@ -433,12 +476,12 @@ namespace VPM
 
                 if (interactive && totalToLoad >= 50)
                 {
-                    var displayPackages = packagesToLoad.Take(3).ToList();
-                    var allDeps = availableDependencies.Concat(externalDependencies.Select(e => e.name)).ToList();
+                    var displayPackages = packageNames.Take(3).ToList();
+                    var allDeps = availableDependencies.Concat(externalDependencies.Select(e => e.Key)).ToList();
                     var displayDeps = allDeps.Take(3).ToList();
                     var displayText = "Packages:\n" + string.Join("\n", displayPackages);
-                    if (packagesToLoad.Count > 3)
-                        displayText += $"\n... and {packagesToLoad.Count - 3} more";
+                    if (packageNames.Count > 3)
+                        displayText += $"\n... and {packageNames.Count - 3} more";
                     
                     if (allDeps.Count > 0)
                     {
@@ -448,7 +491,7 @@ namespace VPM
                     }
 
                     var result = MessageBox.Show(
-                        $"Load {packagesToLoad.Count} packages + {allDeps.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
+                        $"Load {packageNames.Count} packages + {allDeps.Count} dependencies ({totalToLoad} total)?\n\nThis operation may take several minutes.\n\n{displayText}",
                         "Confirm Load Operation",
                         MessageBoxButton.YesNo,
                         MessageBoxImage.Question);
@@ -465,9 +508,7 @@ namespace VPM
 
                 try
                 {
-                    var allPackagesToLoad = new List<string>(packagesToLoad);
-                    allPackagesToLoad.AddRange(availableDependencies);
-                    allPackagesToLoad.AddRange(externalDependencies.Select(e => e.name));
+                    var allPackagesToLoad = allPackagesToLoadSet.ToList();
 
                     await PrepareForPackageFileOperationsAsync(allPackagesToLoad);
 
@@ -475,36 +516,54 @@ namespace VPM
                     var totalCount = totalToLoad;
                     var completed = 0;
 
-                    foreach (var pkgName in externalPackages)
+                    // Load all external packages (main and dependencies) in parallel
+                    var allExternalToLoad = externalPackagesToLoad.Select(kvp => (name: kvp.Key, path: kvp.Value.FilePath))
+                        .Where(e => !string.IsNullOrEmpty(e.path))
+                        .ToList();
+
+                    var externalProcessedPaths = new List<string>();
+                    if (allExternalToLoad.Count > 0)
                     {
-                        completed++;
-                        if (interactive) UpdateMainTableLoading(completed, totalCount, pkgName);
-                        SetStatus(totalCount > 1
-                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {pkgName}...");
-
-                        if (_packageManager.PackageMetadata.TryGetValue(pkgName, out var metadata) && 
-                            !string.IsNullOrEmpty(metadata.FilePath))
+                        var externalCompleted = 0;
+                        await Parallel.ForEachAsync(allExternalToLoad, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (ext, ct) =>
                         {
-                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(pkgName, metadata.FilePath);
-                            results.Add((pkgName, success, error));
-                        }
-                        else
+                            var currentCompleted = Interlocked.Increment(ref externalCompleted);
+                            
+                            await Dispatcher.InvokeAsync(() => {
+                                if (interactive) UpdateMainTableLoading(currentCompleted, totalCount, ext.name);
+                                SetStatus(totalCount > 1
+                                    ? $"Loading packages and dependencies... {currentCompleted}/{totalCount} ({currentCompleted * 100 / totalCount}%)"
+                                    : $"Loading {ext.name}...");
+                            });
+
+                            (bool success, string error, string filePath) result = await _packageFileManager.LoadPackageFromExternalPathAsync(ext.name, ext.path, suppressIndexUpdate: true);
+                            lock (results)
+                            {
+                                results.Add((ext.name, result.success, result.error));
+                                if (result.success && !string.IsNullOrEmpty(result.filePath))
+                                {
+                                    lock (externalProcessedPaths)
+                                    {
+                                        externalProcessedPaths.Add(result.filePath);
+                                    }
+                                }
+                            }
+                        });
+
+                        // Batch rebuild image index for external packages
+                        if (externalProcessedPaths.Count > 0)
                         {
-                            results.Add((pkgName, false, "External package file path not found in metadata"));
+                            await (_imageManager?.BuildImageIndexFromVarsAsync(externalProcessedPaths, forceRebuild: false) ?? Task.CompletedTask);
                         }
-                    }
 
-                    foreach (var (depName, depMetadata) in externalDependencies)
-                    {
-                        completed++;
-                        if (interactive) UpdateMainTableLoading(completed, totalCount, depName);
-                        SetStatus(totalCount > 1
-                            ? $"Loading packages and dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {depName}...");
-
-                        var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(depName, depMetadata.FilePath);
-                        results.Add((depName, success, error));
+                        completed = allExternalToLoad.Count;
+                        
+                        // Handle missing paths for main external packages that weren't in allExternalToLoad
+                        var missingPaths = externalPackages.Except(allExternalToLoad.Select(e => e.name), StringComparer.OrdinalIgnoreCase).ToList();
+                        foreach(var missing in missingPaths)
+                        {
+                            results.Add((missing, false, "External package file path not found in metadata"));
+                        }
                     }
 
                     var regularAndDeps = regularPackages.Concat(availableDependencies).ToList();
@@ -519,7 +578,7 @@ namespace VPM
                         });
 
                         var regularResults = await _packageFileManager.LoadPackagesAsync(regularAndDeps, progress);
-                        results.AddRange(regularResults);
+                        results.AddRange(regularResults.Select(r => (r.packageName, r.success, r.error)));
                     }
 
                     ClearPackageMetadataCache();
@@ -535,24 +594,10 @@ namespace VPM
                     if (successfullyLoaded.Count > 0)
                     {
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
-                        
-                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
-                        
-                        if (PackageDataGrid?.SelectedItems?.Count > 0)
-                        {
-                            var selectedPackage = PackageDataGrid.SelectedItems[0] as PackageItem;
-                            if (selectedPackage != null)
-                            {
-                                DisplayDependencies(selectedPackage);
-                            }
-                        }
                     }
 
                     LoadPackagesButton.IsEnabled = true;
                     LoadPackagesWithDepsButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
-
-                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     var successCount = results.Count(r => r.success);
                     var failureCount = results.Count(r => !r.success);
@@ -618,13 +663,11 @@ namespace VPM
             {
                 if (!EnsureVamFolderSelected()) return;
 
-                var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>()
-                    .Where(p => p.Status == "Available" || p.IsExternal)
-                    .ToList();
+                var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>().ToList();
 
                 if (selectedPackages.Count == 0)
                 {
-                    MessageBox.Show("No available or external packages selected.", "No Packages",
+                    MessageBox.Show("No packages selected.", "No Packages",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -744,12 +787,8 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyUnloaded, "Available");
                     }
 
-                    // Re-enable UI BEFORE refreshing image grid
+                    // Re-enable UI
                     UnloadPackagesButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
-
-                    // Refresh image grid to show updated package status
-                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
@@ -855,31 +894,60 @@ namespace VPM
                     var results = new List<(string packageName, bool success, string error)>();
                     var completed = 0;
 
-                    // Load external dependencies first using their file paths from metadata
-                    foreach (var dep in externalDeps)
+                    // Load external dependencies first using their file paths from metadata in parallel
+                    var externalProcessedPaths = new List<string>();
+                    if (externalDeps.Count > 0)
                     {
-                        completed++;
-                        UpdateDependenciesTableLoading(completed, totalCount, dep.DisplayName);
-                        SetStatus(totalCount > 1
-                            ? $"Loading dependencies... {completed}/{totalCount} ({completed * 100 / totalCount}%)"
-                            : $"Loading {dep.DisplayName}...");
-
-                        // Find metadata for this dependency by matching Creator.PackageName
-                        // Get the highest version if multiple versions exist
-                        var depMetadata = _packageManager?.PackageMetadata?.Values
-                            .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(dep.Name, StringComparison.OrdinalIgnoreCase))
-                            .OrderByDescending(p => p.Version)
-                            .FirstOrDefault();
-
-                        if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
+                        var externalCompleted = 0;
+                        await Parallel.ForEachAsync(externalDeps, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (dep, ct) =>
                         {
-                            var (success, error) = await _packageFileManager.LoadPackageFromExternalPathAsync(dep.DisplayName, depMetadata.FilePath);
-                            results.Add((dep.DisplayName, success, error));
-                        }
-                        else
+                            var currentCompleted = Interlocked.Increment(ref externalCompleted);
+                            
+                            await Dispatcher.InvokeAsync(() => {
+                                UpdateDependenciesTableLoading(currentCompleted, totalCount, dep.DisplayName);
+                                SetStatus(totalCount > 1
+                                    ? $"Loading dependencies... {currentCompleted}/{totalCount} ({currentCompleted * 100 / totalCount}%)"
+                                    : $"Loading {dep.DisplayName}...");
+                            });
+
+                            // Find metadata for this dependency by matching Creator.PackageName
+                            // Get the highest version if multiple versions exist
+                            var depMetadata = _packageManager?.PackageMetadata?.Values
+                                .Where(p => $"{p.CreatorName}.{p.PackageName}".Equals(dep.Name, StringComparison.OrdinalIgnoreCase))
+                                .OrderByDescending(p => p.Version)
+                                .FirstOrDefault();
+
+                            if (depMetadata != null && !string.IsNullOrEmpty(depMetadata.FilePath))
+                            {
+                                var (success, error, filePath) = await _packageFileManager.LoadPackageFromExternalPathAsync(dep.DisplayName, depMetadata.FilePath, suppressIndexUpdate: true);
+                                lock (results)
+                                {
+                                    results.Add((dep.DisplayName, success, error));
+                                    if (success && !string.IsNullOrEmpty(filePath))
+                                    {
+                                        lock (externalProcessedPaths)
+                                        {
+                                            externalProcessedPaths.Add(filePath);
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                lock (results)
+                                {
+                                    results.Add((dep.DisplayName, false, "External dependency file path not found in metadata"));
+                                }
+                            }
+                        });
+
+                        // Batch rebuild image index for external dependencies
+                        if (externalProcessedPaths.Count > 0)
                         {
-                            results.Add((dep.DisplayName, false, "External dependency file path not found in metadata"));
+                            await (_imageManager?.BuildImageIndexFromVarsAsync(externalProcessedPaths, forceRebuild: false) ?? Task.CompletedTask);
                         }
+
+                        completed = externalDeps.Count;
                     }
 
                     // Load regular available dependencies
@@ -935,14 +1003,8 @@ namespace VPM
 
                     if (successfullyLoaded.Count > 0)
                     {
-                        // Refresh package status index to reflect newly loaded packages
-                        _packageFileManager?.RefreshPackageStatusIndex(force: true);
-                        
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
-
-                    // Refresh image grid to show newly loaded dependencies
-                    await RefreshCurrentlyDisplayedImagesAsync();
 
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
@@ -981,11 +1043,9 @@ namespace VPM
                 finally
                 {
                     HideDependenciesTableLoading();
-                    RefreshDependenciesUi();
 
                     // Re-enable UI
                     LoadDependenciesButton.IsEnabled = true;
-                    UpdateDependenciesButtonBar();
                 }
             }
             catch (Exception)
@@ -1099,9 +1159,6 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyUnloaded, "Available");
                     }
 
-                    // Refresh image grid to show updated dependency status
-                    await RefreshCurrentlyDisplayedImagesAsync();
-
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
                     var failureCount = results.Count(r => !r.success);
@@ -1130,11 +1187,9 @@ namespace VPM
                 finally
                 {
                     HideDependenciesTableLoading();
-                    RefreshDependenciesUi();
 
                     // Re-enable UI
                     UnloadDependenciesButton.IsEnabled = true;
-                    UpdateDependenciesButtonBar();
                 }
 
             }
@@ -1375,9 +1430,6 @@ namespace VPM
                         await BulkUpdatePackageStatus(successfullyLoaded, "Loaded");
                     }
 
-                    // Refresh image grid to show newly loaded dependencies
-                    await RefreshCurrentlyDisplayedImagesAsync();
-
                     // Enhanced status reporting
                     var successCount = results.Count(r => r.success);
                     var failureCount = results.Count(r => !r.success);
@@ -1415,11 +1467,9 @@ namespace VPM
                 finally
                 {
                     HideDependenciesTableLoading();
-                    RefreshDependenciesUi();
 
                     // Re-enable UI
                     LoadAllDependenciesButton.IsEnabled = true;
-                    UpdatePackageButtonBar();
                 }
             }
             catch (Exception)
@@ -1442,6 +1492,7 @@ namespace VPM
             try
             {
                 // Context-aware: if in Scenes, Presets, or Custom mode, show scene/preset info instead
+                bool hasAvailableDependencies = Dependencies.Any(d => (d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || d.Status?.StartsWith("#") == true) && d.Name != "No dependencies");
                 if (_currentContentMode == "Scenes" || _currentContentMode == "Presets" || _currentContentMode == "Custom")
                 {
                     var selectedItems = _currentContentMode == "Scenes" 
@@ -1454,12 +1505,11 @@ namespace VPM
                     FixDuplicatesButton.Visibility = Visibility.Collapsed;
                     
                     // Show Load All Dependencies button if there are available dependencies
-                    var hasAvailableDependencies = Dependencies.Any(d => d.Status == "Available" && d.Name != "No dependencies");
                     LoadAllDependenciesButton.Visibility = selectedItems.Count > 0 && hasAvailableDependencies ? Visibility.Visible : Visibility.Collapsed;
                     
                     if (selectedItems.Count > 0 && hasAvailableDependencies)
                     {
-                        var availableCount = Dependencies.Count(d => d.Status == "Available");
+                        var availableCount = Dependencies.Count(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || d.Status?.StartsWith("#") == true);
                         if (selectedItems.Count == 1)
                         {
                             LoadAllDependenciesButton.Content = availableCount == 1 
@@ -1554,8 +1604,8 @@ namespace VPM
                 // Show Unload button if any packages are Loaded
                 UnloadPackagesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
 
-                // Show Load +Deps button if any packages are Available or External
-                LoadPackagesWithDepsButton.Visibility = (hasAvailable || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
+                // Show Load +Deps button if any packages are Available or External OR if there are available dependencies
+                LoadPackagesWithDepsButton.Visibility = (hasAvailable || hasExternal || hasAvailableDependencies) ? Visibility.Visible : Visibility.Collapsed;
 
                 // Check if all selected packages have the same normalized status (for keyboard shortcut hint)
                 // For EXTERNAL packages, treat them as "Available" for status comparison
@@ -1907,14 +1957,19 @@ namespace VPM
 
             try
             {
+                // Force index refresh to ensure file system changes are recognized
+                if (_packageFileManager != null)
+                {
+                    await Task.Run(() => _packageFileManager.RefreshPackageStatusIndex(force: true));
+                }
+
                 // Create a HashSet for O(1) lookup
                 var inputNameSet = new HashSet<string>(packageNames, StringComparer.OrdinalIgnoreCase);
 
-                await Dispatcher.InvokeAsync(() =>
+                await Dispatcher.InvokeAsync(async () =>
                 {
                     // SELECTION PRESERVATION: Save selections before any updates
                     var savedPackageSelections = PreserveDataGridSelections();
-                    var savedDependencySelections = PreserveDependenciesDataGridSelections();
                     _suppressSelectionEvents = true;
 
                     try
@@ -1923,7 +1978,6 @@ namespace VPM
                         var affectedBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                         // 1. Update PackageMetadata and collect affected keys/names
-                        // Iterate all metadata to ensure we catch all variations (BaseName, FullName, Filename)
                         if (_packageManager?.PackageMetadata != null)
                         {
                             foreach (var kvp in _packageManager.PackageMetadata)
@@ -1933,20 +1987,14 @@ namespace VPM
                                 var fileNameNoExt = Path.GetFileNameWithoutExtension(metadataKey);
                                 var baseName = $"{metadata.CreatorName}.{metadata.PackageName}";
 
-                                // Check if this package matches any input name
-                                // Input names can be: "Creator.Package", "Creator.Package.Version", "Creator.Package.Version.var"
                                 if (inputNameSet.Contains(metadataKey) || 
                                     inputNameSet.Contains(fileNameNoExt) || 
                                     inputNameSet.Contains(baseName))
                                 {
-                                    // Update metadata status
                                     metadata.Status = newStatus;
-                                    
-                                    // Track affected identifiers
                                     affectedMetadataKeys.Add(metadataKey);
                                     affectedBaseNames.Add(baseName);
                                     
-                                    // Handle #archived counterpart if it exists
                                     var archivedKey = metadataKey + "#archived";
                                     if (_packageManager.PackageMetadata.TryGetValue(archivedKey, out var archivedMetadata))
                                     {
@@ -1975,7 +2023,7 @@ namespace VPM
                             }
                         }
 
-                        // Update reactive filter counts without full refresh
+                        // Update reactive filter counts
                         if (_reactiveFilterManager != null)
                         {
                             _reactiveFilterManager.InvalidateCounts();
@@ -1991,27 +2039,17 @@ namespace VPM
                             }
                         }
 
-                        // NOTE: Do NOT call SyncPackageDisplayWithFilters() here!
-                        // This would remove packages that no longer match filters, causing selection loss.
-                        // Users should see the status change result - they can manually refresh filters if needed.
-
                         // SELECTION PRESERVATION: Restore selections after all updates
                         RestoreDataGridSelections(savedPackageSelections);
                         
-                        // Ensure dependencies display is updated (re-sorted/filtered)
-                        RefreshDependenciesDisplay();
-                        
-                        RestoreDependenciesDataGridSelections(savedDependencySelections);
+                        // FULL UI REFRESH: This is the critical fix for the dependencies table
+                        // It updates info, tab counts, dependencies grid, and images for the current selection
+                        await RefreshSelectionDisplaysImmediate();
                     }
                     finally
                     {
                         _suppressSelectionEvents = false;
                     }
-
-                    // Update button states
-                    UpdatePackageButtonBar();
-                    UpdateDependenciesButtonBar();
-
                 }, System.Windows.Threading.DispatcherPriority.Normal);
             }
             catch (Exception ex)
@@ -2137,105 +2175,105 @@ namespace VPM
                 int failedCount = 0;
                 var errors = new List<string>();
                 
-                // Move files on background thread
-                await Task.Run(() =>
+                // Move files in parallel on background thread
+                await Parallel.ForEachAsync(oldVersions, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (metadata, ct) =>
                 {
-                    foreach (var metadata in oldVersions)
+                    try
                     {
-                        try
+                        var sourceFile = metadata.FilePath;
+                        var fileName = Path.GetFileName(sourceFile);
+                        var destFile = Path.Combine(oldPackagesFolder, fileName);
+                        
+                        if (File.Exists(sourceFile))
                         {
-                            var sourceFile = metadata.FilePath;
-                            var fileName = Path.GetFileName(sourceFile);
-                            var destFile = Path.Combine(oldPackagesFolder, fileName);
-                            
-                            if (File.Exists(sourceFile))
+                            if (File.Exists(destFile))
                             {
-                                if (File.Exists(destFile))
+                                File.Delete(destFile);
+                            }
+
+                            var sourceInfo = new FileInfo(sourceFile);
+                            var originalCreationTime = sourceInfo.CreationTime;
+                            var originalLastWriteTime = sourceInfo.LastWriteTime;
+
+                            bool moved = false;
+                            string lastError = null;
+
+                            // Fast path: try rename move with short retries for transient locks.
+                            for (int attempt = 1; attempt <= 5; attempt++)
+                            {
+                                try
                                 {
-                                    File.Delete(destFile);
+                                    File.Move(sourceFile, destFile);
+                                    moved = true;
+                                    break;
+                                }
+                                catch (IOException ex) when (attempt < 5)
+                                {
+                                    lastError = ex.Message;
+                                    await Task.Delay(50 * attempt);
+                                }
+                                catch (UnauthorizedAccessException ex) when (attempt < 5)
+                                {
+                                    lastError = ex.Message;
+                                    await Task.Delay(50 * attempt);
+                                }
+                            }
+
+                            // Fallback: copy+delete (cross-volume or persistent lock)
+                            if (!moved)
+                            {
+                                await Task.Run(() => File.Copy(sourceFile, destFile, overwrite: false));
+                                try
+                                {
+                                    File.SetLastWriteTime(destFile, originalLastWriteTime);
+                                    File.SetCreationTime(destFile, originalCreationTime);
+                                }
+                                catch
+                                {
                                 }
 
-                                var sourceInfo = new FileInfo(sourceFile);
-                                var originalCreationTime = sourceInfo.CreationTime;
-                                var originalLastWriteTime = sourceInfo.LastWriteTime;
-
-                                bool moved = false;
-                                string lastError = null;
-
-                                // Fast path: try rename move with short retries for transient locks.
                                 for (int attempt = 1; attempt <= 5; attempt++)
                                 {
                                     try
                                     {
-                                        File.Move(sourceFile, destFile);
+                                        File.Delete(sourceFile);
                                         moved = true;
                                         break;
                                     }
                                     catch (IOException ex) when (attempt < 5)
                                     {
                                         lastError = ex.Message;
-                                        System.Threading.Thread.Sleep(50 * attempt);
+                                        await Task.Delay(50 * attempt);
                                     }
                                     catch (UnauthorizedAccessException ex) when (attempt < 5)
                                     {
                                         lastError = ex.Message;
-                                        System.Threading.Thread.Sleep(50 * attempt);
+                                        await Task.Delay(50 * attempt);
                                     }
                                 }
-
-                                // Fallback: copy+delete (cross-volume or persistent lock)
-                                if (!moved)
-                                {
-                                    File.Copy(sourceFile, destFile, overwrite: false);
-                                    try
-                                    {
-                                        File.SetLastWriteTime(destFile, originalLastWriteTime);
-                                        File.SetCreationTime(destFile, originalCreationTime);
-                                    }
-                                    catch
-                                    {
-                                    }
-
-                                    for (int attempt = 1; attempt <= 5; attempt++)
-                                    {
-                                        try
-                                        {
-                                            File.Delete(sourceFile);
-                                            moved = true;
-                                            break;
-                                        }
-                                        catch (IOException ex) when (attempt < 5)
-                                        {
-                                            lastError = ex.Message;
-                                            System.Threading.Thread.Sleep(50 * attempt);
-                                        }
-                                        catch (UnauthorizedAccessException ex) when (attempt < 5)
-                                        {
-                                            lastError = ex.Message;
-                                            System.Threading.Thread.Sleep(50 * attempt);
-                                        }
-                                    }
-                                }
-
-                                if (!moved)
-                                {
-                                    throw new IOException(lastError ?? "Failed to move file");
-                                }
-
-                                try
-                                {
-                                    File.SetLastWriteTime(destFile, originalLastWriteTime);
-                                }
-                                catch
-                                {
-                                }
-
-                                movedCount++;
                             }
+
+                            if (!moved)
+                            {
+                                throw new IOException(lastError ?? "Failed to move file");
+                            }
+
+                            try
+                            {
+                                File.SetLastWriteTime(destFile, originalLastWriteTime);
+                            }
+                            catch
+                            {
+                            }
+
+                            Interlocked.Increment(ref movedCount);
                         }
-                        catch (Exception ex)
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.Increment(ref failedCount);
+                        lock (errors)
                         {
-                            failedCount++;
                             errors.Add($"{Path.GetFileName(metadata.FilePath)}: {ex.Message}");
                         }
                     }

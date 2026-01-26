@@ -132,8 +132,6 @@ namespace VPM.Services
             public bool DisableMorphPreload { get; set; } = false;
             
             public bool IsMorphAsset { get; set; } = false;
-            
-            public bool MinifyJson { get; set; } = false;
         }
 
         /// <summary>
@@ -148,8 +146,6 @@ namespace VPM.Services
             public int HairsModified { get; set; }
             public List<string> TextureDetails { get; set; } = new List<string>();
             public List<string> Errors { get; set; } = new List<string>();
-            public long JsonSizeBeforeMinify { get; set; } = 0;
-            public long JsonSizeAfterMinify { get; set; } = 0;
         }
 
         /// <summary>
@@ -276,10 +272,6 @@ namespace VPM.Services
                 string archiveFilePath = Path.Combine(archivedFolder, filename); // Path where archive will be stored
                 long originalFileSize = new FileInfo(sourceVarPath).Length; // Capture original size before any processing
                 
-                // Track JSON minification sizes
-                long jsonSizeBeforeMinify = 0;
-                long jsonSizeAfterMinify = 0;
-                
                 Directory.CreateDirectory(archivedFolder);
                 
                 // Note: isSourceInArchive was already determined during lock acquisition
@@ -402,9 +394,9 @@ namespace VPM.Services
                     // Note: Textures being converted will be read from archive in the conversion loop for better quality
                     
                 }
-                else if (!createBackup && File.Exists(archiveFilePath) && (config.MinifyJson || config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload))
+                else if (!createBackup && File.Exists(archiveFilePath) && (config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload))
                 {
-                    // SCENARIO 2B: Re-optimizing already optimized package WITH METADATA-ONLY CHANGES (minify, dependencies, etc.)
+                    // SCENARIO 2B: Re-optimizing already optimized package WITH METADATA-ONLY CHANGES (dependencies, etc.)
                     // For metadata-only updates on already-optimized packages, modify current file in-place
                     // This preserves previous optimizations (textures, hair, etc.) while applying new metadata changes
                     progressCallback?.Invoke("Applying metadata optimizations...", 0, totalOperations);
@@ -531,9 +523,9 @@ namespace VPM.Services
                                                    config.LightConversions.Count > 0 ||
                                                    config.DisableMirrors;
 
-                    // If only metadata updates needed (dependencies, minification, etc.), use in-place update mode
+                    // If only metadata updates needed (dependencies, etc.), use in-place update mode
                     // This preserves the original ZIP compression and avoids re-packaging overhead
-                    bool hasMetadataOnlyUpdates = config.MinifyJson || config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload;
+                    bool hasMetadataOnlyUpdates = config.ForceLatestDependencies || config.DisabledDependencies.Count > 0 || config.DisableMorphPreload;
                     
                     if (!hasContentModifications && hasMetadataOnlyUpdates)
                     {
@@ -619,24 +611,14 @@ namespace VPM.Services
                                     originalMetaJsonDate,
                                     dependencyChanges,
                                     config.DisabledDependencies,
-                                    morphPreloadChanged,
-                                    config.MinifyJson);
+                                    morphPreloadChanged);
 
-                                if (config.MinifyJson)
-                                {
-                                    updatedMetaJsonFinal = MinifyJson(updatedMetaJsonFinal);
-                                }
+                                updatedMetaJsonFinal = PrettifyJson(updatedMetaJsonFinal);
                             }
 
                             if (updatedMetaJsonFinal == null)
                             {
                                 updatedMetaJsonFinal = originalMetaJson;
-                            }
-
-                            if (updatedMetaJsonFinal != null)
-                            {
-                                jsonSizeBeforeMinify = Encoding.UTF8.GetByteCount(originalMetaJson ?? string.Empty);
-                                jsonSizeAfterMinify = Encoding.UTF8.GetByteCount(updatedMetaJsonFinal);
                             }
 
                             var outputDirectoryForTemp = Path.GetDirectoryName(fileToModify);
@@ -722,9 +704,7 @@ namespace VPM.Services
                             NewSize = metadataUpdateSize,
                             TexturesConverted = 0,
                             HairsModified = 0,
-                            TextureDetails = new List<string>(),
-                            JsonSizeBeforeMinify = jsonSizeBeforeMinify,
-                            JsonSizeAfterMinify = jsonSizeAfterMinify
+                            TextureDetails = new List<string>()
                         };
                     }
 
@@ -1202,17 +1182,13 @@ namespace VPM.Services
                                 lastWriteTime = modified.lastWriteTime;
                             }
                             
-                            // Apply JSON minification if enabled for all JSON-based files
-                            // Includes: .json, .vaj (poses), .vam (scenes), .vap (presets)
-                            var jsonExtensions = new[] { ".json", ".vaj", ".vam", ".vap" };
+                            // Automatically unminify JSON files if they were previously minified
+                            // Includes: .json, .vaj (poses), .vam (scenes), .vap (presets), .vmi/.vmb (morphs), .vlb (lookbooks), .vsc (scripts)
+                            var jsonExtensions = new[] { ".json", ".vaj", ".vam", ".vap", ".vmi", ".vmb", ".vlb", ".vsc" };
                             bool isJsonFile = jsonExtensions.Any(ext => entry.Key.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
-                            if (config.MinifyJson && isJsonFile)
+                            if (isJsonFile)
                             {
                                 string fileType = Path.GetExtension(entry.Key).ToUpper().TrimStart('.');
-                                if (writeIndex % 10 == 0) // Update every 10 files to avoid too many UI updates
-                                {
-                                    progressCallback?.Invoke($"📦 Minifying {fileType} files... ({writeIndex}/{totalWrites})", processedCount, totalOperations);
-                                }
                                 try
                                 {
                                     string jsonContent;
@@ -1227,19 +1203,21 @@ namespace VPM.Services
                                         jsonContent = reader.ReadToEnd();
                                     }
                                     
-                                    // Track size before minification
-                                    jsonSizeBeforeMinify += Encoding.UTF8.GetByteCount(jsonContent);
+                                    string prettifiedJson = PrettifyJson(jsonContent);
                                     
-                                    string minifiedJson = MinifyJson(jsonContent);
-                                    
-                                    // Track size after minification
-                                    jsonSizeAfterMinify += Encoding.UTF8.GetByteCount(minifiedJson);
-                                    
-                                    dataToWrite = Encoding.UTF8.GetBytes(minifiedJson);
+                                    // Only update if it was actually minified (prettifiedJson != jsonContent)
+                                    if (prettifiedJson != jsonContent)
+                                    {
+                                        if (writeIndex % 10 == 0) // Update every 10 files to avoid too many UI updates
+                                        {
+                                            progressCallback?.Invoke($"📦 Unminifying {fileType} files... ({writeIndex}/{totalWrites})", processedCount, totalOperations);
+                                        }
+                                        dataToWrite = Encoding.UTF8.GetBytes(prettifiedJson);
+                                    }
                                 }
                                 catch
                                 {
-                                    // If minification fails, keep original data
+                                    // If prettification fails, keep original data
                                 }
                             }
                             
@@ -1422,16 +1400,10 @@ namespace VPM.Services
                                 originalMetaJsonDate,
                                 dependencyChanges,
                                 config.DisabledDependencies,
-                                morphPreloadChanged,
-                                config.MinifyJson);
+                                morphPreloadChanged);
                             
-                            // Apply JSON minification to meta.json if enabled
-                            if (config.MinifyJson)
-                            {
-                                _performanceTimer.Start("JSON Minification");
-                                updatedMetaJson = MinifyJson(updatedMetaJson);
-                                _performanceTimer.Stop("JSON Minification");
-                            }
+                            // Unminify meta.json if it's minified
+                            updatedMetaJson = PrettifyJson(updatedMetaJson);
                             
                             outputArchive.AddEntry("meta.json", new MemoryStream(Encoding.UTF8.GetBytes(updatedMetaJson)));
                         }
@@ -1570,9 +1542,7 @@ namespace VPM.Services
                         TexturesConverted = textureConversionDetails.Count,
                         HairsModified = hairConversionDetails.Count,
                         TextureDetails = textureConversionDetails.ToList(),
-                        Errors = errors.ToList(),
-                        JsonSizeBeforeMinify = jsonSizeBeforeMinify,
-                        JsonSizeAfterMinify = jsonSizeAfterMinify
+                        Errors = errors.ToList()
                     };
                 }
                 catch
@@ -1644,23 +1614,33 @@ namespace VPM.Services
         }
 
         /// <summary>
-        /// Minifies JSON by removing whitespace and formatting
+        /// Prettifies JSON content if it's currently minified
         /// </summary>
-        private static string MinifyJson(string jsonContent)
+        private static string PrettifyJson(string jsonContent)
         {
+            if (string.IsNullOrWhiteSpace(jsonContent)) return jsonContent;
+            
+            // If it already contains newlines, it's likely not minified
+            if (jsonContent.Contains('\n')) return jsonContent;
+
             try
             {
                 // Parse the JSON to ensure it's valid
                 using (JsonDocument doc = JsonDocument.Parse(jsonContent))
                 {
-                    // Use JsonSerializerOptions with no indentation to minify
-                    var options = new JsonSerializerOptions { WriteIndented = false };
+                    // Use JsonSerializerOptions with indentation to prettify
+                    var options = new JsonSerializerOptions 
+                    { 
+                        WriteIndented = true,
+                        // Use UnsafeRelaxedJsonEscaping to match VaM's handling of special characters
+                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                    };
                     return JsonSerializer.Serialize(doc.RootElement, options);
                 }
             }
             catch
             {
-                // If minification fails, return original content
+                // If prettification fails, return original content
                 return jsonContent;
             }
         }
@@ -2468,8 +2448,7 @@ namespace VPM.Services
             DateTime? originalMetaJsonDate,
             List<string> dependencyChanges = null,
             List<string> disabledDependencies = null,
-            bool morphPreloadChanged = false,
-            bool minifyJson = false)
+            bool morphPreloadChanged = false)
         {
             try
             {
@@ -2526,10 +2505,9 @@ namespace VPM.Services
                     bool hasDependencyOpt = (dependencyChanges != null && dependencyChanges.Count > 0) || (disabledDependencies != null && disabledDependencies.Count > 0) || 
                                            (existingFlags.ContainsKey("vpmDependencyOptimized") && existingFlags["vpmDependencyOptimized"] == "True");
                     bool hasMorphPreloadOpt = morphPreloadChanged || (existingFlags.ContainsKey("vpmMorphPreloadOptimized") && existingFlags["vpmMorphPreloadOptimized"] == "True");
-                    bool hasJsonMinified = minifyJson || (existingFlags.ContainsKey("vpmJsonMinified") && existingFlags["vpmJsonMinified"] == "True");
                     
-                    // vpmOptimized is true if ANY optimization exists (including meta.json changes like morph preload, dependency changes, or minification)
-                    bool hasAnyOptimization = hasTextureOpt || hasHairOpt || hasShadowOpt || hasMirrorOpt || hasDependencyOpt || hasMorphPreloadOpt || hasJsonMinified;
+                    // vpmOptimized is true if ANY optimization exists (including meta.json changes like morph preload, dependency changes)
+                    bool hasAnyOptimization = hasTextureOpt || hasHairOpt || hasShadowOpt || hasMirrorOpt || hasDependencyOpt || hasMorphPreloadOpt;
                     
                     descriptionBuilder.AppendLine("[VPM_FLAGS]");
                     descriptionBuilder.AppendLine($"vpmOptimized={hasAnyOptimization}");
@@ -2539,7 +2517,6 @@ namespace VPM.Services
                     descriptionBuilder.AppendLine($"vpmMirrorOptimized={hasMirrorOpt}");
                     descriptionBuilder.AppendLine($"vpmDependencyOptimized={hasDependencyOpt}");
                     descriptionBuilder.AppendLine($"vpmMorphPreloadOptimized={hasMorphPreloadOpt}");
-                    descriptionBuilder.AppendLine($"vpmJsonMinified={hasJsonMinified}");
                     
                     // Preserve or set original date
                     string dateToUse = existingOriginalDate ?? (originalMetaJsonDate.HasValue ? originalMetaJsonDate.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff") : null);

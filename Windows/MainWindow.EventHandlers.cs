@@ -3230,10 +3230,7 @@ namespace VPM
                     DisplayPackageInfo(packageItem);
                     UpdateBothTabCounts(packageItem);
                     
-                    if (_showingDependents)
-                        DisplayDependents(packageItem);
-                    else
-                        DisplayDependencies(packageItem);
+                    RefreshDependenciesDisplay();
                     
                     await DisplayPackageImagesAsync(packageItem, imageToken);
                 }
@@ -3242,10 +3239,7 @@ namespace VPM
                     DisplayMultiplePackageInfo(selectedPackages);
                     UpdateBothTabCountsForMultiple(selectedPackages);
                     
-                    if (_showingDependents)
-                        DisplayConsolidatedDependents(selectedPackages);
-                    else
-                        DisplayConsolidatedDependencies(selectedPackages);
+                    RefreshDependenciesDisplay();
                     
                     // Use standard loading (now optimized)
                     await DisplayMultiplePackageImagesAsync(selectedPackages, null, imageToken);
@@ -6343,7 +6337,6 @@ namespace VPM
                     metadata.HasTextureOptimization = false;
                     metadata.HasHairOptimization = false;
                     metadata.HasMirrorOptimization = false;
-                    metadata.HasJsonMinification = false;
                     
                     // Update the UI item
                     packageItem.IsOptimized = false;

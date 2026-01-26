@@ -34,6 +34,8 @@ namespace VPM.Services
         private readonly TimeSpan _maxCacheAge = TimeSpan.FromDays(7);
         private readonly int _maxEntries = 2000; // Limit memory usage
         
+        public string GamePath { get; set; }
+        
         // JsonSerializer options for serializing details
         private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {

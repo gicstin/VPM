@@ -131,7 +131,6 @@ namespace VPM.Models
         // Package Optimizer Settings
         private bool _forceLatestDependencies = true;
         private bool _disableMorphPreload = true;
-        private bool _minifyJsonFiles = true;
         private long _textureCompressionQuality = 90L;
         private string _customArchivePath = "";
         
@@ -721,12 +720,6 @@ namespace VPM.Models
             get => _disableMorphPreload;
             set => SetProperty(ref _disableMorphPreload, value);
         }
-        
-        public bool MinifyJsonFiles
-        {
-            get => _minifyJsonFiles;
-            set => SetProperty(ref _minifyJsonFiles, value);
-        }
 
         public long TextureCompressionQuality
         {
@@ -898,7 +891,6 @@ namespace VPM.Models
                 UseThoroughTextureScan = false,
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,
-                MinifyJsonFiles = true,
                 CustomArchivePath = "",
                 HubBrowserSearchText = "",
                 HubBrowserSource = "All",

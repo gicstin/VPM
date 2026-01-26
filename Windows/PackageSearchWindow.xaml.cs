@@ -642,7 +642,7 @@ namespace VPM
                     // Scan AddonPackages folder once - including subfolders
                     if (Directory.Exists(_addonPackagesFolder))
                     {
-                        var loadedFiles = Directory.GetFiles(_addonPackagesFolder, "*.var", SearchOption.AllDirectories);
+                        var loadedFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_addonPackagesFolder, "*.var", true);
                         foreach (var filePath in loadedFiles)
                         {
                             var fileInfo = new FileInfo(filePath);
@@ -662,7 +662,7 @@ namespace VPM
                     // Scan AllPackages folder once - including subfolders
                     if (Directory.Exists(_allPackagesFolder))
                     {
-                        var unloadedFiles = Directory.GetFiles(_allPackagesFolder, "*.var", SearchOption.AllDirectories);
+                        var unloadedFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_allPackagesFolder, "*.var", true);
                         foreach (var filePath in unloadedFiles)
                         {
                             var fileInfo = new FileInfo(filePath);

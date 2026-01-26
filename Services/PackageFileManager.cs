@@ -780,13 +780,29 @@ namespace VPM.Services
             {
                 string lastError = null;
 
-                // Step 1: Copy the file with retries
+                bool isSymlink = SymlinkSafeFileSystem.IsSymlink(src);
+                string linkTarget = null;
+                if (isSymlink)
+                {
+                    var info = new FileInfo(src);
+                    // Resolve relative targets to absolute paths to prevent broken links after move
+                    linkTarget = info.ResolveLinkTarget(false)?.FullName ?? info.LinkTarget;
+                }
+
+                // Step 1: Copy/Link the file with retries
                 for (int copyAttempt = 1; copyAttempt <= retries; copyAttempt++)
                 {
                     try
                     {
                         await ReleaseAppFileHandlesAsync(src);
-                        File.Copy(src, dst, overwrite: false);
+                        if (isSymlink && linkTarget != null)
+                        {
+                            File.CreateSymbolicLink(dst, linkTarget);
+                        }
+                        else
+                        {
+                            File.Copy(src, dst, overwrite: false);
+                        }
                         break;
                     }
                     catch (IOException ex) when (copyAttempt < retries)
@@ -881,11 +897,22 @@ namespace VPM.Services
             return await CopyDeleteFallbackAsync(sourceInfo, sourcePath, destinationPath, maxRetries);
         }
 
+        private SemaphoreSlim GetPackageLock(string packageName)
+        {
+            return _packageLocks.GetOrAdd(packageName, _ => new SemaphoreSlim(1, 1));
+        }
+
+        public async Task<(bool success, string error)> LoadPackageAsync(string packageName)
+        {
+            var (success, error, _) = await LoadPackageInternalAsync(packageName);
+            return (success, error);
+        }
+
         /// <summary>
         /// Loads a package by moving it from AllPackages to AddonPackages with enhanced error handling.
         /// Handles .latest, .min[NUMBER], and exact version references.
         /// </summary>
-        public async Task<(bool success, string error)> LoadPackageAsync(string packageName)
+        public async Task<(bool success, string error, string filePath)> LoadPackageInternalAsync(string packageName, bool suppressIndexUpdate = false)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(PackageFileManager));
@@ -896,7 +923,7 @@ namespace VPM.Services
             // Check for recent duplicate operations (1 second throttle for keyboard/UI responsiveness)
             if (WasRecentlyPerformed(operationKey, TimeSpan.FromSeconds(1)))
             {
-                return (false, "Operation was recently performed, please wait before retrying");
+                return (false, "Operation was recently performed, please wait before retrying", null);
             }
 
             // Fire operation started event
@@ -906,7 +933,9 @@ namespace VPM.Services
                 Operation = "Load"
             });
 
-            await _fileLock.WaitAsync();
+            // Use per-package lock instead of global _fileLock for better parallelism
+            var packageLock = GetPackageLock(packageName);
+            await packageLock.WaitAsync();
             try
             {
                 RecordOperation(operationKey);
@@ -951,7 +980,7 @@ namespace VPM.Services
                         ErrorMessage = errorMsg
                     });
                     
-                    return (false, errorMsg);
+                    return (false, errorMsg, null);
                 }
 
                 // If the target file is already in AddonPackages, it's already loaded
@@ -964,7 +993,7 @@ namespace VPM.Services
                         Success = true,
                         ErrorMessage = ""
                     });
-                    return (true, "");
+                    return (true, "", targetFile);
                 }
 
                 string sourceFile = targetFile;
@@ -993,7 +1022,7 @@ namespace VPM.Services
                         Success = true,
                         ErrorMessage = ""
                     });
-                    return (true, "");
+                    return (true, "", destinationFile);
                 }
 
                 // First ensure any open file handles are closed
@@ -1005,22 +1034,22 @@ namespace VPM.Services
                 
                 if (success)
                 {
-                    _successfulOperations++;
+                    Interlocked.Increment(ref _successfulOperations);
                     
                     // Remove empty directories from source location
                     var sourceDirectory = Path.GetDirectoryName(sourceFile);
                     RemoveEmptyDirectories(sourceDirectory, _allPackagesFolder);
                     
-                    // Update status index - package is now loaded
-                    lock (_statusIndexLock)
+                    if (!suppressIndexUpdate)
                     {
+                        // Update status index - package is now loaded
                         UpdatePackageStatusInIndex(packageName, "Loaded");
-                    }
-                    
-                    // Rebuild image index for this package to show previews
-                    await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
+                        
+                        // Rebuild image index for this package to show previews
+                        await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
 
-                    InvalidatePackageIndex();
+                        InvalidatePackageIndex();
+                    }
                 }
 
                 OperationCompleted?.Invoke(this, new PackageOperationEventArgs
@@ -1031,7 +1060,7 @@ namespace VPM.Services
                     ErrorMessage = error
                 });
 
-                return (success, error);
+                return (success, error, success ? destinationFile : null);
                 }
                 catch (Exception ex)
                 {
@@ -1044,26 +1073,29 @@ namespace VPM.Services
                         ErrorMessage = errorMsg
                     });
 
-                    return (false, errorMsg);
+                    return (false, errorMsg, null);
                 }
             finally
             {
-                _fileLock.Release();
+                packageLock.Release();
             }
         }
+
+        public Task<(bool success, string error, string filePath)> LoadPackageFromExternalPathAsync(string packageName, string externalFilePath, bool suppressIndexUpdate = false) => 
+            LoadPackageFromExternalPathInternalAsync(packageName, externalFilePath, suppressIndexUpdate);
 
         /// <summary>
         /// Loads a package from an external path by copying it to AddonPackages.
         /// Used for external destination packages that need to be moved to the game folder.
         /// </summary>
-        public async Task<(bool success, string error)> LoadPackageFromExternalPathAsync(string packageName, string externalFilePath)
+        public async Task<(bool success, string error, string filePath)> LoadPackageFromExternalPathInternalAsync(string packageName, string externalFilePath, bool suppressIndexUpdate = false)
         {
             if (_disposed)
                 throw new ObjectDisposedException(nameof(PackageFileManager));
 
             if (string.IsNullOrEmpty(externalFilePath) || !File.Exists(externalFilePath))
             {
-                return (false, $"External file not found: {externalFilePath}");
+                return (false, $"External file not found: {externalFilePath}", null);
             }
 
             var operationKey = $"load_external_{packageName}";
@@ -1071,7 +1103,7 @@ namespace VPM.Services
             // Check for recent duplicate operations
             if (WasRecentlyPerformed(operationKey, TimeSpan.FromSeconds(1)))
             {
-                return (false, "Operation was recently performed, please wait before retrying");
+                return (false, "Operation was recently performed, please wait before retrying", null);
             }
 
             // Fire operation started event
@@ -1081,7 +1113,9 @@ namespace VPM.Services
                 Operation = "Load"
             });
 
-            await _fileLock.WaitAsync();
+            // Use per-package lock instead of global _fileLock for better parallelism
+            var packageLock = GetPackageLock(packageName);
+            await packageLock.WaitAsync();
             try
             {
                 RecordOperation(operationKey);
@@ -1100,7 +1134,7 @@ namespace VPM.Services
                         Success = true,
                         ErrorMessage = ""
                     });
-                    return (true, "");
+                    return (true, "", destinationFile);
                 }
 
                 // First ensure any open file handles are closed
@@ -1111,18 +1145,18 @@ namespace VPM.Services
 
                 if (success)
                 {
-                    _successfulOperations++;
+                    Interlocked.Increment(ref _successfulOperations);
 
-                    // Update status index - package is now loaded
-                    lock (_statusIndexLock)
+                    if (!suppressIndexUpdate)
                     {
+                        // Update status index - package is now loaded
                         UpdatePackageStatusInIndex(packageName, "Loaded");
+
+                        // Rebuild image index for this package to show previews
+                        await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
+
+                        InvalidatePackageIndex();
                     }
-
-                    // Rebuild image index for this package to show previews
-                    await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
-
-                    InvalidatePackageIndex();
                 }
 
                 OperationCompleted?.Invoke(this, new PackageOperationEventArgs
@@ -1133,7 +1167,7 @@ namespace VPM.Services
                     ErrorMessage = error
                 });
 
-                return (success, error);
+                return (success, error, success ? destinationFile : null);
             }
             catch (Exception ex)
             {
@@ -1146,19 +1180,25 @@ namespace VPM.Services
                     ErrorMessage = errorMsg
                 });
 
-                return (false, errorMsg);
+                return (false, errorMsg, null);
             }
             finally
             {
-                _fileLock.Release();
+                packageLock.Release();
             }
+        }
+
+        public async Task<(bool success, string error)> UnloadPackageAsync(string packageName)
+        {
+            var (success, error, _) = await UnloadPackageInternalAsync(packageName);
+            return (success, error);
         }
 
         /// <summary>
         /// Unloads a package by moving it from AddonPackages to AllPackages.
         /// Handles .latest, .min[NUMBER], and exact version references.
         /// </summary>
-        public async Task<(bool success, string error)> UnloadPackageAsync(string packageName)
+        public async Task<(bool success, string error, string filePath)> UnloadPackageInternalAsync(string packageName, bool suppressIndexUpdate = false)
         {
 
             var operationKey = $"unload_{packageName}";
@@ -1166,7 +1206,7 @@ namespace VPM.Services
             // Check for recent duplicate operations (1 second throttle for keyboard/UI responsiveness)
             if (WasRecentlyPerformed(operationKey, TimeSpan.FromSeconds(1)))
             {
-                return (false, "Operation was recently performed, please wait before retrying");
+                return (false, "Operation was recently performed, please wait before retrying", null);
             }
 
             // Fire operation started event
@@ -1176,7 +1216,9 @@ namespace VPM.Services
                 Operation = "Unload"
             });
 
-            await _fileLock.WaitAsync();
+            // Use per-package lock instead of global _fileLock for better parallelism
+            var packageLock = GetPackageLock(packageName);
+            await packageLock.WaitAsync();
             try
             {
                 RecordOperation(operationKey);
@@ -1219,7 +1261,7 @@ namespace VPM.Services
                         ErrorMessage = errorMsg
                     });
                     
-                    return (false, errorMsg);
+                    return (false, errorMsg, null);
                 }
 
                 // Preserve subfolder structure when moving from AddonPackages to AllPackages
@@ -1282,7 +1324,7 @@ namespace VPM.Services
                             ErrorMessage = ""
                         });
                         
-                        return (true, "");
+                        return (true, "", null); // Null because it was deleted
                     }
                     catch (Exception ex)
                     {
@@ -1296,7 +1338,7 @@ namespace VPM.Services
                             ErrorMessage = errorMsg
                         });
                         
-                        return (false, errorMsg);
+                        return (false, errorMsg, null);
                     }
                 }
 
@@ -1312,19 +1354,22 @@ namespace VPM.Services
 
                 if (success)
                 {
-                    _successfulOperations++;
+                    Interlocked.Increment(ref _successfulOperations);
                     
                     // Remove empty directories from source location
                     var sourceDirectory = Path.GetDirectoryName(sourceFile);
                     RemoveEmptyDirectories(sourceDirectory, _addonPackagesFolder);
                     
-                    // Update status index - package is now available (unloaded)
-                    UpdatePackageStatusInIndex(packageName, "Available");
-                    
-                    // Rebuild image index for this package to show previews
-                    await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
-                    
-                    InvalidatePackageIndex();
+                    if (!suppressIndexUpdate)
+                    {
+                        // Update status index - package is now available (unloaded)
+                        UpdatePackageStatusInIndex(packageName, "Available");
+                        
+                        // Rebuild image index for this package to show previews
+                        await _imageManager?.RebuildImageIndexForPackageAsync(destinationFile);
+                        
+                        InvalidatePackageIndex();
+                    }
                 }
 
                 OperationCompleted?.Invoke(this, new PackageOperationEventArgs
@@ -1335,7 +1380,7 @@ namespace VPM.Services
                     ErrorMessage = error
                 });
 
-                return (success, error);
+                return (success, error, success ? destinationFile : null);
             }
             catch (Exception ex)
             {
@@ -1348,11 +1393,11 @@ namespace VPM.Services
                     ErrorMessage = errorMsg
                 });
 
-                return (false, errorMsg);
+                return (false, errorMsg, null);
             }
             finally
             {
-                _fileLock.Release();
+                packageLock.Release();
             }
         }
 
@@ -1368,9 +1413,9 @@ namespace VPM.Services
                 throw new ObjectDisposedException(nameof(PackageFileManager));
 
             var packageList = packageNames.ToList();
-            var results = new List<(string packageName, bool success, string error)>();
+            var results = new ConcurrentBag<(string packageName, bool success, string error)>();
+            var successfullyProcessedPaths = new ConcurrentBag<string>();
             
-
             // Fire progress event for batch start
             OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
             {
@@ -1379,43 +1424,54 @@ namespace VPM.Services
                 CurrentPackage = "Starting batch operation..."
             });
 
-            var successCount = 0;
+            var completedCount = 0;
 
-            for (int i = 0; i < packageList.Count; i++)
+            await Parallel.ForEachAsync(packageList, new ParallelOptions 
+            { 
+                MaxDegreeOfParallelism = 4,
+                CancellationToken = cancellationToken 
+            }, async (packageName, ct) =>
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    break;
-                }
-
-                var packageName = packageList[i];
-                
-                // Report progress
-                progress?.Report((i, packageList.Count, packageName));
-                OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
-                {
-                    Completed = i,
-                    Total = packageList.Count,
-                    CurrentPackage = packageName
-                });
-
                 try
                 {
-                    var (success, error) = await LoadPackageAsync(packageName);
+                    var (success, error, filePath) = await LoadPackageInternalAsync(packageName, suppressIndexUpdate: true);
                     results.Add((packageName, success, error));
 
                     if (success)
                     {
-                        successCount++;
-                        // Ensure status is updated immediately after successful load
                         UpdatePackageStatusInIndex(packageName, "Loaded");
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            successfullyProcessedPaths.Add(filePath);
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    var error = $"Exception during load: {ex.Message}";
-                    results.Add((packageName, false, error));
+                    results.Add((packageName, false, $"Exception during load: {ex.Message}"));
                 }
+                finally
+                {
+                    var currentCompleted = Interlocked.Increment(ref completedCount);
+                    
+                    // Report progress
+                    progress?.Report((currentCompleted, packageList.Count, packageName));
+                    OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
+                    {
+                        Completed = currentCompleted,
+                        Total = packageList.Count,
+                        CurrentPackage = packageName
+                    });
+                }
+            });
+
+            // Rebuild index once at the end since we suppressed updates during the loop
+            _packageIndexDirty = true;
+            
+            // Batch rebuild image index for all successfully loaded packages
+            if (successfullyProcessedPaths.Count > 0)
+            {
+                await (_imageManager?.BuildImageIndexFromVarsAsync(successfullyProcessedPaths.ToList(), forceRebuild: false) ?? Task.CompletedTask);
             }
 
             // Final progress report
@@ -1427,7 +1483,7 @@ namespace VPM.Services
                 CurrentPackage = "Batch operation completed"
             });
 
-            return results;
+            return results.ToList();
         }
 
         /// <summary>
@@ -1439,26 +1495,54 @@ namespace VPM.Services
             CancellationToken cancellationToken = default)
         {
             var packageList = packageNames.ToList();
-            var results = new List<(string packageName, bool success, string error)>();
+            var results = new ConcurrentBag<(string packageName, bool success, string error)>();
+            var successfullyProcessedPaths = new ConcurrentBag<string>();
             
+            var completedCount = 0;
 
-            for (int i = 0; i < packageList.Count; i++)
+            await Parallel.ForEachAsync(packageList, new ParallelOptions 
+            { 
+                MaxDegreeOfParallelism = 4,
+                CancellationToken = cancellationToken 
+            }, async (packageName, ct) =>
             {
-                if (cancellationToken.IsCancellationRequested)
+                try
                 {
-                    break;
+                    var (success, error, filePath) = await UnloadPackageInternalAsync(packageName, suppressIndexUpdate: true);
+                    results.Add((packageName, success, error));
+
+                    if (success)
+                    {
+                        UpdatePackageStatusInIndex(packageName, "Available");
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            successfullyProcessedPaths.Add(filePath);
+                        }
+                    }
                 }
+                catch (Exception ex)
+                {
+                    results.Add((packageName, false, $"Exception during unload: {ex.Message}"));
+                }
+                finally
+                {
+                    var currentCompleted = Interlocked.Increment(ref completedCount);
+                    progress?.Report((currentCompleted, packageList.Count, packageName));
+                }
+            });
 
-                var packageName = packageList[i];
-                progress?.Report((i, packageList.Count, packageName));
-
-                var (success, error) = await UnloadPackageAsync(packageName);
-                results.Add((packageName, success, error));
+            // Rebuild index once at the end
+            _packageIndexDirty = true;
+            
+            // Batch rebuild image index for all successfully unloaded packages (to point to their new "Available" location)
+            if (successfullyProcessedPaths.Count > 0)
+            {
+                await (_imageManager?.BuildImageIndexFromVarsAsync(successfullyProcessedPaths.ToList(), forceRebuild: false) ?? Task.CompletedTask);
             }
 
             progress?.Report((packageList.Count, packageList.Count, ""));
             
-            return results;
+            return results.ToList();
         }
 
         /// <summary>
@@ -1572,7 +1656,7 @@ namespace VPM.Services
                 // Scan AddonPackages folder (Loaded packages) - including subfolders
                 if (Directory.Exists(_addonPackagesFolder))
                 {
-                    var loadedFiles = Directory.GetFiles(_addonPackagesFolder, "*.var", SearchOption.AllDirectories);
+                    var loadedFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_addonPackagesFolder, "*.var", true);
                     foreach (var file in loadedFiles)
                     {
                         var filename = Path.GetFileNameWithoutExtension(file);
@@ -1592,7 +1676,7 @@ namespace VPM.Services
                 // Scan AllPackages folder (Available packages) - including subfolders
                 if (Directory.Exists(_allPackagesFolder))
                 {
-                    var availableFiles = Directory.GetFiles(_allPackagesFolder, "*.var", SearchOption.AllDirectories);
+                    var availableFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_allPackagesFolder, "*.var", true);
                     foreach (var file in availableFiles)
                     {
                         var filename = Path.GetFileNameWithoutExtension(file);
@@ -1615,7 +1699,7 @@ namespace VPM.Services
                 // Use TryAdd to avoid overwriting Loaded or Available status
                 if (Directory.Exists(_archivedPackagesFolder))
                 {
-                    var archivedFiles = Directory.GetFiles(_archivedPackagesFolder, "*.var", SearchOption.AllDirectories);
+                    var archivedFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_archivedPackagesFolder, "*.var", true);
                     foreach (var file in archivedFiles)
                     {
                         var filename = Path.GetFileNameWithoutExtension(file);
@@ -1651,7 +1735,7 @@ namespace VPM.Services
                     continue;
                 
                 var dirInfo = new DirectoryInfo(dir);
-                var currentSignature = (dirInfo.GetFiles("*.var", SearchOption.AllDirectories).Length, 
+                var currentSignature = (SymlinkSafeFileSystem.EnumerateFilesSafe(dir, "*.var", true).Count(), 
                                        dirInfo.LastWriteTimeUtc.Ticks);
                 
                 if (!_statusIndexDirectorySignatures.TryGetValue(dir, out var lastSignature) || 
@@ -1680,7 +1764,7 @@ namespace VPM.Services
                 }
                 
                 var dirInfo = new DirectoryInfo(dir);
-                var signature = (dirInfo.GetFiles("*.var", SearchOption.AllDirectories).Length, 
+                var signature = (SymlinkSafeFileSystem.EnumerateFilesSafe(dir, "*.var", true).Count(), 
                                 dirInfo.LastWriteTimeUtc.Ticks);
                 _statusIndexDirectorySignatures[dir] = signature;
             }

@@ -34,7 +34,7 @@ namespace VPM.Services
                 if (!Directory.Exists(_baseDirectory))
                     return;
 
-                var markerFiles = Directory.GetFiles(_baseDirectory, "*" + _markerExtension, SearchOption.AllDirectories);
+                var markerFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(_baseDirectory, "*" + _markerExtension, true);
                 foreach (var markerFile in markerFiles)
                 {
                     // The marker file marks the original file (e.g., scene1.json.fav marks scene1.json)

@@ -148,7 +148,7 @@ namespace VPM.Services
                 {
                     try
                     {
-                        foreach (var file in Directory.EnumerateFiles(folder, "*.var", SearchOption.AllDirectories))
+                        foreach (var file in SymlinkSafeFileSystem.EnumerateFilesSafe(folder, "*.var", true))
                         {
                             // Skip temp files created during optimization
                             var filename = Path.GetFileName(file);

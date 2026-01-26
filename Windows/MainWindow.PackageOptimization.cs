@@ -2100,13 +2100,6 @@ namespace VPM
                 };
                 tabControl.Items.Add(dependenciesTab);
 
-                var miscTab = new TabItem 
-                { 
-                    Header = "Misc",
-                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30))
-                };
-                tabControl.Items.Add(miscTab);
-
                 var summaryTab = new TabItem 
                 { 
                     Header = "Summary",
@@ -2361,18 +2354,7 @@ namespace VPM
                 // Optimize button click handler
                 optimizeButton.Click += async (s, e) =>
                 {
-                    // Extract minify JSON option from Misc tab
-                    // Handle both string and StackPanel headers (tabs are populated asynchronously)
-                    bool minifyJson = false;
-                    var miscTab = tabControl.Items.Cast<TabItem>().FirstOrDefault(t => 
-                        (t.Header is StackPanel sp && sp.Children.OfType<TextBlock>().Any(tb => tb.Text == "Misc")) ||
-                        (t.Header is string s && s == "Misc"));
-                    if (miscTab?.Tag is CheckBox minifyCheckBox)
-                    {
-                        minifyJson = minifyCheckBox.IsChecked ?? false;
-                    }
-                    
-                    await ApplyBulkPackageOptimizations(packages, textureResult, hairResult, dependencyResult, dialog, optimizeButton, tabControl, minifyJson, progressBar, currentPackageText, timeInfoText, alertCheckBox, bottomGrid);
+                    await ApplyBulkPackageOptimizations(packages, textureResult, hairResult, dependencyResult, dialog, optimizeButton, tabControl, progressBar, currentPackageText, timeInfoText, alertCheckBox, bottomGrid);
                 };
 
                 // Archive Path button (row 1, column 0 - left side below progress bar)
@@ -2485,15 +2467,7 @@ namespace VPM
                             dependenciesTab = CreateBulkDependenciesTab(dependencyResult, _settingsManager?.Settings?.ForceLatestDependencies ?? false, dialog);
                             tabControl.Items.Insert(dependenciesIndex, dependenciesTab);
                             
-                            int miscIndex = tabControl.Items.Count > 5 ? 5 : tabControl.Items.Count;
-                            if (tabControl.Items.Count > miscIndex)
-                            {
-                                tabControl.Items.RemoveAt(miscIndex);
-                            }
-                            miscTab = CreateBulkMiscTab(packages, dialog);
-                            tabControl.Items.Insert(miscIndex, miscTab);
-                            
-                            int summaryIndex = tabControl.Items.Count > 6 ? 6 : tabControl.Items.Count;
+                            int summaryIndex = tabControl.Items.Count > 5 ? 5 : tabControl.Items.Count;
                             if (tabControl.Items.Count > summaryIndex)
                             {
                                 tabControl.Items.RemoveAt(summaryIndex);
@@ -2501,7 +2475,7 @@ namespace VPM
                             summaryTab = CreateBulkSummaryTab(packages, textureResult, hairResult, dependencyResult, dialog);
                             tabControl.Items.Insert(summaryIndex, summaryTab);
                             
-                            // Select the first tab (Textures) to avoid starting on Misc
+                            // Select the first tab (Textures)
                             tabControl.SelectedIndex = 0;
                             
                             // Enable the Optimize button now that all tabs are loaded
@@ -2589,7 +2563,7 @@ namespace VPM
         /// <summary>
         /// Applies bulk package optimizations
         /// </summary>
-        private async Task ApplyBulkPackageOptimizations(List<PackageItem> packages, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, DependencyScanner.DependencyScanResult dependencyResult, Window parentDialog, Button optimizeButton, TabControl tabControl, bool minifyJson = false, ProgressBar progressBar = null, TextBlock currentPackageText = null, TextBlock timeInfoText = null, CheckBox alertCheckBox = null, Grid bottomGrid = null)
+        private async Task ApplyBulkPackageOptimizations(List<PackageItem> packages, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, DependencyScanner.DependencyScanResult dependencyResult, Window parentDialog, Button optimizeButton, TabControl tabControl, ProgressBar progressBar = null, TextBlock currentPackageText = null, TextBlock timeInfoText = null, CheckBox alertCheckBox = null, Grid bottomGrid = null)
         {
             try
             {
@@ -2639,12 +2613,6 @@ namespace VPM
                 packagesToOptimize.UnionWith(lightsByPackage.Keys);
                 packagesToOptimize.UnionWith(packagesWithDepChanges);
                 packagesToOptimize.UnionWith(latestDepsByPackage.Keys);
-                
-                // If minify JSON is enabled, include all packages
-                if (minifyJson)
-                {
-                    packagesToOptimize.UnionWith(packages.Select(p => p.Name));
-                }
 
                 if (packagesToOptimize.Count == 0)
                 {
@@ -2821,8 +2789,7 @@ namespace VPM
                             pkgTextureResult,
                             pkgHairResult,
                             disabledDependencies: pkgDisabledDeps,
-                            latestDependencies: pkgLatestDeps,
-                            minifyJson: minifyJson);
+                            latestDependencies: pkgLatestDeps);
 
                         if (optimizationCoreResult.Errors != null && optimizationCoreResult.Errors.Count > 0)
                         {
@@ -2871,9 +2838,6 @@ namespace VPM
                             LightCount = lightsByPackage.ContainsKey(packageName) ? lightsByPackage[packageName].Count : 0,
                             DisabledDependencies = pkgDisabledDeps?.Count ?? 0,
                             LatestDependencies = pkgLatestDeps?.Count ?? 0,
-                            JsonMinified = minifyJson,
-                            JsonSizeBeforeMinify = optimizationCoreResult.JsonSizeBeforeMinify,
-                            JsonSizeAfterMinify = optimizationCoreResult.JsonSizeAfterMinify,
                             TextureDetailsWithSizes = optimizationCoreResult.TextureDetails ?? new List<string>()
                         };
 
@@ -3159,8 +3123,6 @@ namespace VPM
         {
             public List<string> TextureDetails { get; set; } = new List<string>();
             public List<string> Errors { get; set; } = new List<string>();
-            public long JsonSizeBeforeMinify { get; set; } = 0;
-            public long JsonSizeAfterMinify { get; set; } = 0;
             public long OriginalSize { get; set; } = 0;
             public long NewSize { get; set; } = 0;
         }
@@ -3168,7 +3130,7 @@ namespace VPM
         /// <summary>
         /// Core optimization logic without UI manipulation
         /// </summary>
-        private async Task<OptimizationCoreResult> OptimizeSinglePackageCore(string packageName, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, List<DependencyItemModel> disabledDependencies = null, List<DependencyItemModel> latestDependencies = null, bool minifyJson = false, PackageRepackager.ProgressCallback progressCallback = null)
+        private async Task<OptimizationCoreResult> OptimizeSinglePackageCore(string packageName, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, List<DependencyItemModel> disabledDependencies = null, List<DependencyItemModel> latestDependencies = null, PackageRepackager.ProgressCallback progressCallback = null)
         {
             // Get selected items
             var selectedTextures = textureResult.Textures.Where(t => t.HasConversionSelected).ToList();
@@ -3281,8 +3243,7 @@ namespace VPM
                                       selectedHairs.Count > 0 || 
                                       selectedMirrors.Count > 0 || 
                                       selectedLights.Count > 0 || 
-                                      hasDependencyChanges || 
-                                      minifyJson;
+                                      hasDependencyChanges;
             
             // Determine if we need to backup (copy to archive) or use existing archive
             // Backup if NOT already optimized AND any optimization is being applied
@@ -3379,9 +3340,6 @@ namespace VPM
                     .ToList();
             }
 
-            // Set minify JSON flag
-            config.MinifyJson = minifyJson;
-
             // Create repackager and run optimization
             var coreResult = new OptimizationCoreResult();
             var repackager = new PackageRepackager(_imageManager, _settingsManager);
@@ -3394,8 +3352,6 @@ namespace VPM
             );
             coreResult.TextureDetails = optimizationResult.TextureDetails ?? new List<string>();
             coreResult.Errors = optimizationResult.Errors ?? new List<string>();
-            coreResult.JsonSizeBeforeMinify = optimizationResult.JsonSizeBeforeMinify;
-            coreResult.JsonSizeAfterMinify = optimizationResult.JsonSizeAfterMinify;
             coreResult.OriginalSize = optimizationResult.OriginalSize;
             coreResult.NewSize = optimizationResult.NewSize;
 
@@ -3669,12 +3625,9 @@ namespace VPM
                 
                 tabControl.Resources.Add(typeof(TabItem), tabItemStyle);
 
-                // Add all tabs: Dependencies, Misc, Summary
+                // Add all tabs: Dependencies, Summary
                 var depsTab = CreateSceneDependenciesTab(scenes);
                 tabControl.Items.Add(depsTab);
-
-                var miscTab = CreateSceneMiscTab(scenes);
-                tabControl.Items.Add(miscTab);
 
                 var summaryTab = CreateSceneSummaryTab(scenes);
                 tabControl.Items.Add(summaryTab);
@@ -3809,12 +3762,9 @@ namespace VPM
                 
                 tabControl.Resources.Add(typeof(TabItem), tabItemStyle);
 
-                // Add tabs: Dependencies, Misc, and Summary
+                // Add tabs: Dependencies and Summary
                 var depsTab = CreatePresetDependenciesTab(presets);
                 tabControl.Items.Add(depsTab);
-
-                var miscTab = CreatePresetMiscTab(presets);
-                tabControl.Items.Add(miscTab);
 
                 var summaryTab = CreatePresetSummaryTab(presets);
                 tabControl.Items.Add(summaryTab);
@@ -4459,86 +4409,7 @@ namespace VPM
             dataGrid.Columns.Add(column);
         }
 
-        /// <summary>
-        /// Creates the Misc tab for scene optimization with JSON minification feature
-        /// </summary>
-        private TabItem CreateSceneMiscTab(List<SceneItem> scenes)
-        {
-            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            headerPanel.Children.Add(new TextBlock { Text = "Misc", VerticalAlignment = VerticalAlignment.Center });
 
-            string tooltipText = "MISCELLANEOUS OPTIMIZATIONS:\n\n" +
-                "✓ JSON Minification - Removes whitespace and formatting\n" +
-                "✓ Reduces file size without changing functionality\n" +
-                "✓ Makes files harder to read but smaller on disk\n\n" +
-                "Example: Minified JSON removes all indentation and line breaks,\n" +
-                "reducing scene file size by 20-40% typically.\n\n" +
-                "Note: You can always format JSON later if needed for editing.";
-            
-            headerPanel.Children.Add(CreateTooltipInfoIcon(tooltipText));
-
-            var tab = new TabItem { Header = headerPanel, Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)) };
-            var tabGrid = new Grid { Margin = new Thickness(10) };
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            var summaryText = new TextBlock
-            {
-                Text = "Additional Optimization Options",
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            Grid.SetRow(summaryText, 0);
-            tabGrid.Children.Add(summaryText);
-
-            // Content panel with checkbox
-            var contentPanel = new StackPanel { Margin = new Thickness(5) };
-
-            // JSON Minification checkbox with modern styling
-            var minifyCheckbox = new System.Windows.Controls.CheckBox
-            {
-                Name = "MinifyJsonCheckbox",
-                Content = "Minify JSON (Remove whitespace and formatting)",
-                IsChecked = true,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
-                FontSize = 13,
-                FontWeight = FontWeights.SemiBold,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(0, 10, 0, 10),
-                Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = "Removes all unnecessary whitespace, indentation, and line breaks from JSON files.\nTypically saves 20-40% of file size without affecting functionality.",
-                Style = CreateModernCheckboxStyle()
-            };
-            contentPanel.Children.Add(minifyCheckbox);
-
-            // Info text
-            var infoText = new TextBlock
-            {
-                Text = "JSON minification reduces file size by removing formatting characters (spaces, tabs, newlines).\n\n" +
-                       "Benefits:\n" +
-                       "  • Smaller file size (20-40% reduction)\n" +
-                       "  • Faster loading in VaM\n" +
-                       "  • No functional changes to scenes\n\n" +
-                       "Note: Minified JSON is harder to read/edit manually, but VaM handles it perfectly.",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
-                VerticalAlignment = VerticalAlignment.Top,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(25, 0, 0, 10),
-                TextWrapping = TextWrapping.Wrap
-            };
-            contentPanel.Children.Add(infoText);
-
-            Grid.SetRow(contentPanel, 2);
-            tabGrid.Children.Add(contentPanel);
-
-            tab.Content = tabGrid;
-            return tab;
-        }
 
         /// <summary>
         /// Creates the Summary tab for scene optimization
@@ -4643,7 +4514,6 @@ namespace VPM
                 // Get dependency settings from the Dependencies tab if available
                 var disabledDependencies = new List<string>();
                 var forceLatestDependencies = new List<string>();
-                bool minifyJson = true; // Default to minify
                 
                 if (tabControl != null)
                 {
@@ -4690,21 +4560,6 @@ namespace VPM
                             }
                         }
                     }
-                    
-                    // Get Misc tab minify checkbox (should be at index 1)
-                    if (tabControl.Items.Count > 1)
-                    {
-                        var miscTab = tabControl.Items[1] as TabItem;
-                        if (miscTab?.Content is Grid miscGrid)
-                        {
-                            // Find the checkbox recursively by type
-                            var minifyCheckbox = FindVisualChild<System.Windows.Controls.CheckBox>(miscGrid);
-                            if (minifyCheckbox != null)
-                            {
-                                minifyJson = minifyCheckbox.IsChecked == true;
-                            }
-                        }
-                    }
                 }
 
                 // Create backup folder
@@ -4747,21 +4602,8 @@ namespace VPM
                         
                         string optimizedJson = jsonContent;
 
-                        // Track JSON minification sizes if enabled
-                        if (minifyJson)
-                        {
-                            details.JsonSizeBeforeMinify = System.Text.Encoding.UTF8.GetByteCount(jsonContent);
-                        }
-
                         // Apply optimizations
-                        optimizedJson = OptimizeSceneJson(optimizedJson, forceLatestDependencies, disabledDependencies, minifyJson);
-
-                        // Track JSON minification
-                        if (minifyJson)
-                        {
-                            details.JsonSizeAfterMinify = System.Text.Encoding.UTF8.GetByteCount(optimizedJson);
-                            details.JsonMinified = true;
-                        }
+                        optimizedJson = OptimizeSceneJson(optimizedJson, forceLatestDependencies, disabledDependencies);
 
                         long newSize = System.Text.Encoding.UTF8.GetByteCount(optimizedJson);
                         details.NewSize = newSize;
@@ -4865,7 +4707,7 @@ namespace VPM
         /// <summary>
         /// Optimizes scene JSON by applying various performance improvements
         /// </summary>
-        private string OptimizeSceneJson(string jsonContent, List<string> forceLatestDependencies, List<string> disabledDependencies, bool minifyJson = false)
+        private string OptimizeSceneJson(string jsonContent, List<string> forceLatestDependencies, List<string> disabledDependencies)
         {
             try
             {
@@ -4874,8 +4716,8 @@ namespace VPM
                 
                 // Parse JSON into a mutable document
                 using var doc = System.Text.Json.JsonDocument.Parse(jsonContent);
-                // Minified JSON has no indentation, formatted JSON has indentation
-                var options = new System.Text.Json.JsonWriterOptions { Indented = !minifyJson };
+                // Optimized JSON is always prettified (indented)
+                var options = new System.Text.Json.JsonWriterOptions { Indented = true };
                 using var stream = new System.IO.MemoryStream();
                 using var writer = new System.Text.Json.Utf8JsonWriter(stream, options);
                 
@@ -5315,22 +5157,6 @@ namespace VPM
                         dependencyItems.Where(d => d.IsEnabled).Select(d => d.DisplayName).ToList() : 
                         new List<string>();
 
-                    // Get minification setting from Misc tab (should be at index 1)
-                    bool shouldMinify = true;
-                    if (tabControl.Items.Count > 1)
-                    {
-                        var miscTab = tabControl.Items[1] as TabItem;
-                        if (miscTab?.Content is Grid miscGrid)
-                        {
-                            // Find the checkbox recursively by type
-                            var minifyCheckbox = FindVisualChild<System.Windows.Controls.CheckBox>(miscGrid);
-                            if (minifyCheckbox != null)
-                            {
-                                shouldMinify = minifyCheckbox.IsChecked == true;
-                            }
-                        }
-                    }
-
                     // Close the dialog
                     parentDialog.Close();
 
@@ -5340,7 +5166,7 @@ namespace VPM
                     {
                         try
                         {
-                            if (await OptimizePresetFile(preset.FilePath, disabledDependencies, forceLatestDependencies, shouldMinify))
+                            if (await OptimizePresetFile(preset.FilePath, disabledDependencies, forceLatestDependencies))
                             {
                                 optimizedCount++;
                                 
@@ -5590,9 +5416,9 @@ namespace VPM
         }
 
         /// <summary>
-        /// Optimizes a single preset file by modifying its dependencies and optionally minifying JSON
+        /// Optimizes a single preset file by modifying its dependencies
         /// </summary>
-        private async Task<bool> OptimizePresetFile(string filePath, List<string> disabledDependencies, List<string> forceLatestDependencies, bool shouldMinify)
+        private async Task<bool> OptimizePresetFile(string filePath, List<string> disabledDependencies, List<string> forceLatestDependencies)
         {
             try
             {
@@ -5611,9 +5437,9 @@ namespace VPM
                 using var document = System.Text.Json.JsonDocument.Parse(jsonContent);
                 var root = document.RootElement;
 
-                // Create optimized JSON
+                // Create optimized JSON (always prettified)
                 using var stream = new MemoryStream();
-                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = !shouldMinify });
+                using var writer = new System.Text.Json.Utf8JsonWriter(stream, new System.Text.Json.JsonWriterOptions { Indented = true });
                 
                 ProcessPresetJsonElement(root, writer, forceLatestDependencies, disabledDependencies, true);
                 
@@ -5757,115 +5583,7 @@ namespace VPM
             writer.WriteEndArray();
         }
 
-        /// <summary>
-        /// Creates the Misc tab for preset optimization with JSON minification feature
-        /// </summary>
-        private TabItem CreatePresetMiscTab(List<CustomAtomItem> presets)
-        {
-            var headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            headerPanel.Children.Add(new TextBlock { Text = "Misc", VerticalAlignment = VerticalAlignment.Center });
 
-            var tab = new TabItem { Header = headerPanel, Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)) };
-            var tabGrid = new Grid { Margin = new Thickness(10) };
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(10) });
-            tabGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-            var summaryText = new TextBlock
-            {
-                Text = "Miscellaneous optimization options",
-                FontSize = 14,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            Grid.SetRow(summaryText, 0);
-            tabGrid.Children.Add(summaryText);
-
-            // Scrollable content
-            var scrollViewer = new ScrollViewer
-            {
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                Background = new SolidColorBrush(Color.FromRgb(30, 30, 30))
-            };
-
-            var contentPanel = new StackPanel { Margin = new Thickness(5) };
-
-            // JSON Minification Section
-            var minifyHeader = new TextBlock
-            {
-                Text = "📄 JSON Optimization",
-                FontSize = 16,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
-                Margin = new Thickness(0, 0, 0, 15)
-            };
-            contentPanel.Children.Add(minifyHeader);
-
-            var minifyPanel = new StackPanel { Margin = new Thickness(15, 0, 0, 20) };
-
-            // Minify JSON checkbox
-            var minifyCheckbox = new System.Windows.Controls.CheckBox
-            {
-                Content = "Minify JSON files",
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
-                FontSize = 13,
-                FontWeight = FontWeights.Normal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 8),
-                Cursor = System.Windows.Input.Cursors.Hand,
-                ToolTip = "Remove unnecessary whitespace and formatting from preset JSON files to reduce file size.",
-                IsChecked = _settingsManager?.Settings?.MinifyJsonFiles ?? true
-            };
-            minifyPanel.Children.Add(minifyCheckbox);
-
-            var minifyDescription = new TextBlock
-            {
-                Text = "Removes unnecessary whitespace and formatting from preset files to reduce file size.\n" +
-                       "This can significantly reduce the size of large preset files with minimal impact on loading times.",
-                FontSize = 11,
-                Foreground = new SolidColorBrush(Color.FromRgb(160, 160, 160)),
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(25, 0, 0, 0)
-            };
-            minifyPanel.Children.Add(minifyDescription);
-
-            contentPanel.Children.Add(minifyPanel);
-
-            // File Processing Section
-            var processingHeader = new TextBlock
-            {
-                Text = "⚙️ Processing Options",
-                FontSize = 16,
-                FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
-                Margin = new Thickness(0, 10, 0, 15)
-            };
-            contentPanel.Children.Add(processingHeader);
-
-            var processingPanel = new StackPanel { Margin = new Thickness(15, 0, 0, 20) };
-
-            var processingDescription = new TextBlock
-            {
-                Text = $"• {presets.Count} preset file(s) will be processed\n" +
-                       "• Files are modified in-place (no backup created)\n" +
-                       "• Original file timestamps are preserved",
-                FontSize = 12,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
-                TextWrapping = TextWrapping.Wrap
-            };
-            processingPanel.Children.Add(processingDescription);
-
-            contentPanel.Children.Add(processingPanel);
-
-            scrollViewer.Content = contentPanel;
-            Grid.SetRow(scrollViewer, 2);
-            tabGrid.Children.Add(scrollViewer);
-
-            tab.Content = tabGrid;
-            return tab;
-        }
 
         /// <summary>
         /// Creates the Dependencies optimization tab for presets with interactive table matching scene mode style exactly

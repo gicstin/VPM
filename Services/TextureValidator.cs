@@ -507,7 +507,7 @@ namespace VPM.Services
                 var allFilePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var allImageFiles = new List<(string relativePath, string fullPath)>();
 
-                foreach (var file in Directory.GetFiles(customPath, "*.*", SearchOption.AllDirectories))
+                foreach (var file in SymlinkSafeFileSystem.EnumerateFilesSafe(customPath, "*.*", true))
                 {
                     var relativePath = System.IO.Path.GetRelativePath(packagePath, file).Replace("\\", "/").ToLower();
                     allFilePaths.Add(relativePath);

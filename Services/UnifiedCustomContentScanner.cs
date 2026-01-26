@@ -62,7 +62,7 @@ namespace VPM.Services
 
             try
             {
-                var vapFiles = Directory.GetFiles(customPersonDir, "*.vap", SearchOption.AllDirectories);
+                var vapFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(customPersonDir, "*.vap", true);
 
                 foreach (var vapPath in vapFiles)
                 {
@@ -99,7 +99,7 @@ namespace VPM.Services
 
             try
             {
-                var jsonFiles = Directory.GetFiles(sceneDir, "*.json", SearchOption.AllDirectories);
+                var jsonFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(sceneDir, "*.json", true);
 
                 foreach (var jsonPath in jsonFiles)
                 {

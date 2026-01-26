@@ -286,7 +286,7 @@ namespace VPM.Windows
                 if (File.Exists(destPath))
                     return destPath;
 
-                File.Move(varPath, destPath);
+                SymlinkSafeFileSystem.MoveFileSafe(varPath, destPath);
                 return destPath;
             }
             catch (Exception ex)
@@ -3649,7 +3649,7 @@ namespace VPM.Windows
                                 // Handle exception
                             }
                             
-                            File.Move(filePath, archivePath);
+                            SymlinkSafeFileSystem.MoveFileSafe(filePath, archivePath);
                             _localPackagePaths.Remove(packageName);
                         }
                         catch (Exception)
@@ -3705,7 +3705,7 @@ namespace VPM.Windows
                                 // Handle exception
                             }
                             
-                            File.Move(filePath, discardPath);
+                            SymlinkSafeFileSystem.MoveFileSafe(filePath, discardPath);
                             _localPackagePaths.Remove(packageName);
                         }
                         catch (Exception)

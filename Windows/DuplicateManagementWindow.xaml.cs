@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
 using VPM.Models;
+using VPM.Services;
 
 namespace VPM
 {
@@ -329,7 +330,7 @@ namespace VPM
                     
                 // Look for any version of this package in AddonPackages
                 var pattern = $"{baseName}.*.var";
-                var files = Directory.GetFiles(_addonPackagesPath, pattern, SearchOption.AllDirectories);
+                var files = SymlinkSafeFileSystem.EnumerateFilesSafe(_addonPackagesPath, pattern, true);
                 
                 // Exclude ArchivedPackages folder
                 foreach (var file in files)
@@ -366,7 +367,7 @@ namespace VPM
                 {
                     try
                     {
-                        var files = Directory.GetFiles(dest.Path, pattern, SearchOption.AllDirectories);
+                        var files = SymlinkSafeFileSystem.EnumerateFilesSafe(dest.Path, pattern, true);
                         foreach (var file in files)
                         {
                             if (!file.Contains("ArchivedPackages", StringComparison.OrdinalIgnoreCase))
@@ -398,7 +399,7 @@ namespace VPM
                     
                 // Look for any version of this package in AllPackages
                 var pattern = $"{baseName}.*.var";
-                var files = Directory.GetFiles(_allPackagesPath, pattern, SearchOption.AllDirectories);
+                var files = SymlinkSafeFileSystem.EnumerateFilesSafe(_allPackagesPath, pattern, true);
                 
                 // Exclude ArchivedPackages folder
                 foreach (var file in files)
@@ -872,9 +873,10 @@ namespace VPM
             // Try searching in subdirectories
             try
             {
-                var files = Directory.GetFiles(basePath, fileName, SearchOption.AllDirectories);
-                if (files.Length > 0)
-                    return files[0];
+                var files = SymlinkSafeFileSystem.EnumerateFilesSafe(basePath, fileName, true);
+                var firstFile = files.FirstOrDefault();
+                if (firstFile != null)
+                    return firstFile;
             }
             catch
             {
@@ -957,7 +959,7 @@ namespace VPM
                             }
                             
                             // Move the file
-                            File.Move(sourcePath, destPath);
+                            SymlinkSafeFileSystem.MoveFileSafe(sourcePath, destPath);
                             moveSuccessCount++;
                             
                             await System.Threading.Tasks.Task.Delay(1);

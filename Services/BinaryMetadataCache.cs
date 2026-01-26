@@ -25,6 +25,8 @@ namespace VPM.Services
         private int _cacheHits = 0;
         private int _cacheMisses = 0;
 
+        public string GamePath { get; set; }
+
         public BinaryMetadataCache()
         {
             // Use AppData for cache storage (survives app updates, per-user isolation)

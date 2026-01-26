@@ -83,7 +83,7 @@ namespace VPM.Services
                 // 1. Collect all relevant files
                 foreach (var ext in extensions)
                 {
-                    foundFiles.AddRange(Directory.GetFiles(folderPath, ext, SearchOption.AllDirectories));
+                    foundFiles.AddRange(SymlinkSafeFileSystem.EnumerateFilesSafe(folderPath, ext, true));
                 }
 
                 // 2. Group by Directory and FileName (without extension)

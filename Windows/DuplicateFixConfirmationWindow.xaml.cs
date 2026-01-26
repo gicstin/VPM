@@ -159,9 +159,9 @@ namespace VPM
                                 var allPackagesPath = Path.Combine(gameRoot, "AllPackages");
                                 
                                 if (Directory.Exists(addonPackagesPath))
-                                    foundFiles.AddRange(Directory.GetFiles(addonPackagesPath, searchPattern, SearchOption.AllDirectories));
+                                    foundFiles.AddRange(SymlinkSafeFileSystem.EnumerateFilesSafe(addonPackagesPath, searchPattern, true));
                                 if (Directory.Exists(allPackagesPath))
-                                    foundFiles.AddRange(Directory.GetFiles(allPackagesPath, searchPattern, SearchOption.AllDirectories));
+                                    foundFiles.AddRange(SymlinkSafeFileSystem.EnumerateFilesSafe(allPackagesPath, searchPattern, true));
                             }
                         }
                     }
