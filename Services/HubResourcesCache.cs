@@ -34,8 +34,32 @@ namespace VPM.Services
         private readonly string _cacheFilePath;
         private readonly string _metadataFilePath;
         private readonly ReaderWriterLockSlim _cacheLock = new ReaderWriterLockSlim();
+        private readonly object _saveLock = new object();
         private readonly HttpClient _httpClient;
         private bool _disposed;
+        
+        private static void BestEffortDeleteFile(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(path))
+                        File.Delete(path);
+                    return;
+                }
+                catch (IOException)
+                {
+                    Thread.Sleep(25 * (attempt + 1));
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    Thread.Sleep(25 * (attempt + 1));
+                }
+            }
+        }
         
         // Cached data
         private Dictionary<string, string> _packageIdToResourceId;
@@ -314,32 +338,41 @@ namespace VPM.Services
         /// </summary>
         private void SaveMetadata()
         {
-            try
+            lock (_saveLock)
             {
-                var tempPath = _metadataFilePath + ".tmp";
-                
-                using (var writer = new BinaryWriter(File.Create(tempPath)))
-                {
-                    writer.Write(1); // Version
-                    writer.Write(_etag ?? "");
-                    writer.Write(_lastModified.Ticks);
-                }
-                
-                // Atomic replace
                 try
                 {
-                    if (File.Exists(_metadataFilePath))
-                        File.Delete(_metadataFilePath);
-                    File.Move(tempPath, _metadataFilePath);
+                    var tempPath = _metadataFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    
+                    using (var writer = new BinaryWriter(File.Create(tempPath)))
+                    {
+                        writer.Write(1); // Version
+                        writer.Write(_etag ?? "");
+                        writer.Write(_lastModified.Ticks);
+                    }
+                    
+                    // Atomic replace
+                    try
+                    {
+                        if (File.Exists(_metadataFilePath))
+                        {
+                            File.Replace(tempPath, _metadataFilePath, null);
+                        }
+                        else
+                        {
+                            File.Move(tempPath, _metadataFilePath);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[HubResourcesCache] Failed to finalize metadata cache file write: {ex}");
+                        BestEffortDeleteFile(tempPath);
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[HubResourcesCache] Failed to finalize metadata cache file write: {ex}");
+                    Debug.WriteLine($"[HubResourcesCache] Failed to save metadata to disk: {ex}");
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"[HubResourcesCache] Failed to save metadata to disk: {ex}");
             }
         }
         
@@ -352,74 +385,60 @@ namespace VPM.Services
         /// </summary>
         public bool SaveToDisk()
         {
-            try
+            lock (_saveLock)
             {
-                var sw = Stopwatch.StartNew();
-                var tempPath = _cacheFilePath + ".tmp";
-                
-                _cacheLock.EnterReadLock();
+                var tempPath = _cacheFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 try
                 {
-                    using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                    using (var writer = new BinaryWriter(stream))
+                    var sw = Stopwatch.StartNew();
+                    
+                    _cacheLock.EnterReadLock();
+                    try
                     {
-                        // Write header
-                        writer.Write(Encoding.ASCII.GetBytes(CACHE_MAGIC));
-                        writer.Write(CACHE_VERSION);
-                        writer.Write(DateTime.Now.Ticks);
-                        
-                        // Write package count
-                        writer.Write(_packageIdToResourceId.Count);
-                        
-                        // Write packages
-                        foreach (var kvp in _packageIdToResourceId)
+                        using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        using (var writer = new BinaryWriter(stream))
                         {
-                            writer.Write(kvp.Key);
-                            writer.Write(kvp.Value);
+                            writer.Write(Encoding.ASCII.GetBytes(CACHE_MAGIC));
+                            writer.Write(CACHE_VERSION);
+                            writer.Write(DateTime.Now.Ticks);
+                            writer.Write(_packageIdToResourceId.Count);
+                            foreach (var kvp in _packageIdToResourceId)
+                            {
+                                writer.Write(kvp.Key);
+                                writer.Write(kvp.Value);
+                            }
+                            writer.Flush();
                         }
-                        
-                        writer.Flush();
                     }
-                }
-                finally
-                {
-                    _cacheLock.ExitReadLock();
-                }
-                
-                // Atomic replace
-                try
-                {
-                    if (File.Exists(_cacheFilePath))
-                        File.Delete(_cacheFilePath);
-                    File.Move(tempPath, _cacheFilePath);
+                    finally
+                    {
+                        _cacheLock.ExitReadLock();
+                    }
+                    
+                    try
+                    {
+                        if (File.Exists(_cacheFilePath))	
+                            File.Replace(tempPath, _cacheFilePath, null);
+                        else
+                            File.Move(tempPath, _cacheFilePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[HubResourcesCache] Failed to finalize cache file write: {ex}");
+                        BestEffortDeleteFile(tempPath);
+                        return false;
+                    }
+                    
+                    SaveMetadata();
+                    sw.Stop();
+                    return true;
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"[HubResourcesCache] Failed to finalize cache file write: {ex}");
+                    BestEffortDeleteFile(tempPath);
+                    Debug.WriteLine($"[HubResourcesCache] Failed to save cache to disk: {ex}");
+                    return false;
                 }
-                
-                // Save metadata
-                SaveMetadata();
-                
-                sw.Stop();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                // Clean up temp file
-                var tempPath = _cacheFilePath + ".tmp";
-                try
-                {
-                    if (File.Exists(tempPath))
-                        File.Delete(tempPath);
-                }
-                catch (Exception ex2)
-                {
-                    Debug.WriteLine($"[HubResourcesCache] Failed to delete temp file '{tempPath}': {ex2}");
-                }
-                
-                Debug.WriteLine($"[HubResourcesCache] Failed to save cache to disk: {ex}");
-                return false;
             }
         }
         

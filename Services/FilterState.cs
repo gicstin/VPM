@@ -27,9 +27,11 @@ namespace VPM.Services
         public bool FilterDuplicates { get; set; }
         public bool FilterNoDependents { get; set; }
         public bool FilterNoDependencies { get; set; }
+        public bool FilterCustomDependents { get; set; }
         public DateFilter DateFilter { get; set; }
         public FavoritesManager FavoritesManager { get; set; }
         public AutoInstallManager AutoInstallManager { get; set; }
+        public Func<VarMetadata, bool> HasCustomDependentsFunc { get; set; }
         public double FileSizeTinyMax { get; set; }
         public double FileSizeSmallMax { get; set; }
         public double FileSizeMediumMax { get; set; }

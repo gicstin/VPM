@@ -767,7 +767,17 @@ namespace VPM
         private static string ExtractFilterValue(string itemText, bool stripCount = true)
         {
             if (string.IsNullOrEmpty(itemText)) return "";
-            return stripCount ? itemText.Split('(')[0].Trim() : itemText;
+            if (!stripCount) return itemText;
+
+            int lastOpenParen = itemText.LastIndexOf('(');
+            int lastCloseParen = itemText.LastIndexOf(')');
+
+            if (lastOpenParen >= 0 && lastCloseParen > lastOpenParen)
+            {
+                return itemText.Substring(0, lastOpenParen).Trim();
+            }
+
+            return itemText.Trim();
         }
 
         /// <summary>
@@ -804,11 +814,11 @@ namespace VPM
                 _filterManager.SelectedDamagedFilter = null;
                 _filterManager.SelectedPlaylistFilters.Clear();
                 
-                
                 // Update status filters (includes regular status, optimization status, version status, and favorites)
                 _filterManager.FilterDuplicates = false;
                 _filterManager.FilterNoDependents = false;
                 _filterManager.FilterNoDependencies = false;
+                _filterManager.FilterCustomDependents = false;
                 if (StatusFilterList?.SelectedItems != null && StatusFilterList.SelectedItems.Count > 0)
                 {
                     var seenStatuses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -851,6 +861,10 @@ namespace VPM
                         else if (status == "No Dependencies")
                         {
                             _filterManager.FilterNoDependencies = true;
+                        }
+                        else if (status == "Dependents (Custom)")
+                        {
+                            _filterManager.FilterCustomDependents = true;
                         }
                         else
                         {
@@ -1529,6 +1543,7 @@ namespace VPM
                     // Restore selection if this version status was previously selected
                     if (selectedStatuses.Contains(ver.Key))
                     {
+                        System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring version selection: '{displayText}'");
                         StatusFilterList.SelectedItems.Add(displayText);
                     }
                 }
@@ -1543,6 +1558,25 @@ namespace VPM
 
                     // Restore selection if this dependency status was previously selected
                     if (selectedStatuses.Contains(dep.Key))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[PopulateStatusFilterList] Restoring dependency selection: '{displayText}'");
+                        StatusFilterList.SelectedItems.Add(displayText);
+                    }
+                }
+                
+                // Add custom dependents count
+                var customDependentCount = 0;
+                foreach (var pkg in filteredPackages.Values)
+                {
+                    if (HasCustomDependents(pkg))
+                        customDependentCount++;
+                }
+                
+                {
+                    var displayText = $"Dependents (Custom) ({customDependentCount:N0})";
+                    StatusFilterList.Items.Add(displayText);
+                    
+                    if (selectedStatuses.Contains("Dependents (Custom)"))
                     {
                         StatusFilterList.SelectedItems.Add(displayText);
                     }
@@ -2045,6 +2079,24 @@ namespace VPM
                         }
                     }
                     
+                    // Add custom dependents count
+                    var customDependentCount = 0;
+                    foreach (var pkg in _packageManager.PackageMetadata.Values)
+                    {
+                        if (HasCustomDependents(pkg))
+                            customDependentCount++;
+                    }
+                    
+                    {
+                        var displayText = $"Dependents (Custom) ({customDependentCount:N0})";
+                        StatusFilterList.Items.Add(displayText);
+                        
+                        if (selectedStatuses.Contains("Dependents (Custom)"))
+                        {
+                            StatusFilterList.SelectedItems.Add(displayText);
+                        }
+                    }
+                    
                     // Add External/Local package type filters
                     var externalCount = _packageManager.PackageMetadata.Values.Count(p => p.IsExternal);
                     var localCount = _packageManager.PackageMetadata.Values.Count(p => !p.IsExternal);
@@ -2342,24 +2394,24 @@ namespace VPM
             foreach (var status in statusCounts.OrderBy(s => s.Key))
             {
                 var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ? "Duplicates" : status.Key;
-                var displayText = $"{displayName} ({status.Value:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var statusDisplayText = $"{displayName} ({status.Value:N0})";
+                StatusFilterList.Items.Add(statusDisplayText);
 
                 if (selectedStatuses.Contains(status.Key))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(statusDisplayText);
                 }
             }
 
             // Add optimization status items
             foreach (var opt in optCounts.OrderBy(s => s.Key))
             {
-                var displayText = $"{opt.Key} ({opt.Value:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var optDisplayText = $"{opt.Key} ({opt.Value:N0})";
+                StatusFilterList.Items.Add(optDisplayText);
 
                 if (selectedStatuses.Contains(opt.Key))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(optDisplayText);
                 }
             }
 
@@ -2367,53 +2419,69 @@ namespace VPM
             var versionCounts = _filterManager.GetVersionStatusCounts(filteredPackages);
             foreach (var ver in versionCounts.OrderBy(s => s.Key))
             {
-                var displayText = $"{ver.Key} ({ver.Value:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var verDisplayText = $"{ver.Key} ({ver.Value:N0})";
+                StatusFilterList.Items.Add(verDisplayText);
 
                 if (selectedStatuses.Contains(ver.Key))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(verDisplayText);
                 }
             }
-            
+
             // Add dependency status counts (No Dependents / No Dependencies)
             var depCounts = _filterManager.GetDependencyStatusCounts(filteredPackages);
 
             foreach (var dep in depCounts.OrderBy(s => s.Key))
             {
-                var displayText = $"{dep.Key} ({dep.Value:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var depDisplayText = $"{dep.Key} ({dep.Value:N0})";
+                StatusFilterList.Items.Add(depDisplayText);
 
                 if (selectedStatuses.Contains(dep.Key))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(depDisplayText);
                 }
             }
-            
+
+            // Add custom dependents count
+            var customDependentCount = 0;
+            foreach (var pkg in filteredPackages.Values)
+            {
+                if (HasCustomDependents(pkg))
+                    customDependentCount++;
+            }
+
+            var customDisplayText = $"Dependents (Custom) ({customDependentCount:N0})";
+            StatusFilterList.Items.Add(customDisplayText);
+
+            if (selectedStatuses.Contains("Dependents (Custom)"))
+            {
+                StatusFilterList.SelectedItems.Add(customDisplayText);
+            }
+
             // Add External/Local package type filters
             var externalCount = filteredPackages.Values.Count(p => p.IsExternal);
             var localCount = filteredPackages.Values.Count(p => !p.IsExternal);
-            
+
             if (externalCount > 0)
             {
-                var displayText = $"External ({externalCount:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var externalDisplayText = $"External ({externalCount:N0})";
+                StatusFilterList.Items.Add(externalDisplayText);
                 if (selectedStatuses.Contains("External"))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(externalDisplayText);
                 }
             }
-            
+
             if (localCount > 0)
             {
-                var displayText = $"Local ({localCount:N0})";
-                StatusFilterList.Items.Add(displayText);
+                var localDisplayText = $"Local ({localCount:N0})";
+                StatusFilterList.Items.Add(localDisplayText);
                 if (selectedStatuses.Contains("Local"))
                 {
-                    StatusFilterList.SelectedItems.Add(displayText);
+                    StatusFilterList.SelectedItems.Add(localDisplayText);
                 }
             }
-            
+
             // Add favorites option
             if (_favoritesManager != null && _packageManager?.PackageMetadata != null)
             {

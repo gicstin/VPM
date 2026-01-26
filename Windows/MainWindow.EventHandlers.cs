@@ -2223,6 +2223,11 @@ namespace VPM
         private void OnWindowLoaded(object sender, RoutedEventArgs e)
         {
             var settings = _settingsManager.Settings;
+
+            if (CustomAtomItems.Count == 0)
+            {
+                _ = LoadCustomAtomItemsAsync();
+            }
             
             // Disable Hub buttons while loading packages
             _isLoadingPackages = true;

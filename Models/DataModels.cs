@@ -585,9 +585,12 @@ namespace VPM.Models
                     // Notify dependent properties
                     OnPropertyChanged(nameof(StatusIcon));
                     OnPropertyChanged(nameof(StatusColor));
+					OnPropertyChanged(nameof(CustomSortGroup));
                 }
             }
         }
+
+		public int CustomSortGroup => string.Equals(Status, "Custom", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
 
         public string Version
         {

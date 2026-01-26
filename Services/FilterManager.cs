@@ -39,6 +39,8 @@ namespace VPM.Services
         public bool FilterDuplicates { get; set; } = false;
         public bool FilterNoDependents { get; set; } = false;
         public bool FilterNoDependencies { get; set; } = false;
+        public bool FilterCustomDependents { get; set; } = false;
+        public Func<VarMetadata, bool> HasCustomDependentsFunc { get; set; } = null;
         public bool HideArchivedPackages { get; set; } = true;
 
         // Content tag filtering (clothing and hair)
@@ -78,6 +80,7 @@ namespace VPM.Services
             FilterDuplicates = false;
             FilterNoDependents = false;
             FilterNoDependencies = false;
+            FilterCustomDependents = false;
             SelectedClothingTags.Clear();
             SelectedHairTags.Clear();
             RequireAllTags = false;
@@ -104,6 +107,7 @@ namespace VPM.Services
             FilterDuplicates = false;
             FilterNoDependents = false;
             FilterNoDependencies = false;
+            FilterCustomDependents = false;
         }
 
         public void ClearLicenseFilter()
@@ -193,6 +197,7 @@ namespace VPM.Services
                 FilterDuplicates = FilterDuplicates,
                 FilterNoDependents = FilterNoDependents,
                 FilterNoDependencies = FilterNoDependencies,
+                FilterCustomDependents = FilterCustomDependents,
                 DateFilter = new DateFilter 
                 { 
                     FilterType = DateFilter.FilterType,
@@ -201,6 +206,7 @@ namespace VPM.Services
                 },
                 FavoritesManager = FavoritesManager,
                 AutoInstallManager = AutoInstallManager,
+                HasCustomDependentsFunc = HasCustomDependentsFunc,
                 FileSizeTinyMax = FileSizeTinyMax,
                 FileSizeSmallMax = FileSizeSmallMax,
                 FileSizeMediumMax = FileSizeMediumMax,
@@ -512,7 +518,16 @@ namespace VPM.Services
             if (state.FilterNoDependencies && metadata.DependencyCount > 0)
                 return false;
 
-            // 14. Date filter
+            // 14. Custom Dependents filter (packages that have at least one custom dependent)
+            if (state.FilterCustomDependents)
+            {
+                if (state.HasCustomDependentsFunc == null)
+                    return false;
+                if (!state.HasCustomDependentsFunc(metadata))
+                    return false;
+            }
+
+            // 15. Date filter
             if (state.DateFilter.FilterType != DateFilterType.AllTime)
             {
                 var dateToCheck = metadata.ModifiedDate ?? metadata.CreatedDate;
@@ -520,14 +535,14 @@ namespace VPM.Services
                     return false;
             }
 
-            // 15. File size filter
+            // 16. File size filter
             if (state.SelectedFileSizeRanges.Count > 0)
             {
                 if (!MatchesFileSizeFilter(metadata.FileSize, state))
                     return false;
             }
 
-            // 16. Subfolders filter
+            // 17. Subfolders filter
             if (state.SelectedSubfolders.Count > 0)
             {
                 var subfolder = ExtractSubfolderFromMetadata(metadata);
@@ -535,7 +550,7 @@ namespace VPM.Services
                     return false;
             }
 
-            // 17. Damaged filter
+            // 18. Damaged filter
             if (!string.IsNullOrEmpty(state.SelectedDamagedFilter))
             {
                 if (state.SelectedDamagedFilter.Contains("Damaged"))
@@ -550,21 +565,21 @@ namespace VPM.Services
                 }
             }
 
-            // 18. Clothing tag filter
+            // 19. Clothing tag filter
             if (state.SelectedClothingTags.Count > 0)
             {
                 if (!MatchesTagFilter(metadata.ClothingTags, state.SelectedClothingTags, state.RequireAllTags))
                     return false;
             }
 
-            // 19. Hair tag filter
+            // 20. Hair tag filter
             if (state.SelectedHairTags.Count > 0)
             {
                 if (!MatchesTagFilter(metadata.HairTags, state.SelectedHairTags, state.RequireAllTags))
                     return false;
             }
 
-            // 20. External destination filter
+            // 21. External destination filter
             if (state.SelectedDestinations.Count > 0)
             {
                 if (!metadata.IsExternal || string.IsNullOrEmpty(metadata.ExternalDestinationName))

@@ -277,6 +277,12 @@ namespace VPM
                     using (view.DeferRefresh())
                     {
                         view.SortDescriptions.Clear();
+                        if (_showingDependents)
+                        {
+                            view.SortDescriptions.Add(new System.ComponentModel.SortDescription(
+                                "CustomSortGroup",
+                                System.ComponentModel.ListSortDirection.Ascending));
+                        }
                         view.SortDescriptions.Add(new System.ComponentModel.SortDescription(
                             propertyName,
                             isAscending ? System.ComponentModel.ListSortDirection.Ascending : System.ComponentModel.ListSortDirection.Descending));

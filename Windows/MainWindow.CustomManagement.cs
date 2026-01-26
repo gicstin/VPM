@@ -18,6 +18,8 @@ namespace VPM
     public partial class MainWindow
     {
         private List<CustomAtomItem> _originalCustomAtomItems = new List<CustomAtomItem>();
+        private bool _customAtomLoadStarted = false;
+        private bool _customDependencyIndexBuilt = false;
         
         // Search text for custom atom filtering (used by CollectionView.Filter)
         private string _customAtomSearchText = "";
@@ -58,6 +60,11 @@ namespace VPM
             {
                 return;
             }
+            if (_customAtomLoadStarted)
+            {
+                return;
+            }
+            _customAtomLoadStarted = true;
 
             try
             {
@@ -71,6 +78,11 @@ namespace VPM
                         // Store original items for filtering
                         _originalCustomAtomItems = new List<CustomAtomItem>(items);
                         RebuildCustomDependencyIndex(items);
+                        _customDependencyIndexBuilt = true;
+                        if (_currentContentMode == "Packages" && _packageManager?.PackageMetadata != null && _packageManager.PackageMetadata.Count > 0)
+                        {
+                            RefreshFilterLists();
+                        }
                         
                         // Check if each item is marked as favorite or hidden
                         foreach (var item in items)
@@ -110,39 +122,42 @@ namespace VPM
         /// </summary>
         private void RebuildCustomDependencyIndex(IEnumerable<CustomAtomItem> items)
         {
-            _customDependencyIndex.Clear();
-            if (items == null)
-                return;
-            
-            foreach (var item in items)
+            lock (_customDependencyIndexLock)
             {
-                if (item == null)
-                    continue;
-                if (!string.Equals(item.ContentType, "Scene", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (item.Dependencies == null || item.Dependencies.Count == 0)
-                    continue;
+                _customDependencyIndex.Clear();
+                if (items == null)
+                    return;
                 
-                foreach (var dep in item.Dependencies)
+                foreach (var item in items)
                 {
-                    if (string.IsNullOrWhiteSpace(dep))
+                    if (item == null)
+                        continue;
+                    if (!string.Equals(item.ContentType, "Scene", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (item.Dependencies == null || item.Dependencies.Count == 0)
                         continue;
                     
-                    var depInfo = DependencyVersionInfo.Parse(dep);
-                    if (string.IsNullOrEmpty(depInfo.BaseName))
-                        continue;
-                    
-                    if (!_customDependencyIndex.TryGetValue(depInfo.BaseName, out var links))
+                    foreach (var dep in item.Dependencies)
                     {
-                        links = new List<CustomDependencyLink>();
-                        _customDependencyIndex[depInfo.BaseName] = links;
+                        if (string.IsNullOrWhiteSpace(dep))
+                            continue;
+                        
+                        var depInfo = DependencyVersionInfo.Parse(dep);
+                        if (string.IsNullOrEmpty(depInfo.BaseName))
+                            continue;
+                        
+                        if (!_customDependencyIndex.TryGetValue(depInfo.BaseName, out var links))
+                        {
+                            links = new List<CustomDependencyLink>();
+                            _customDependencyIndex[depInfo.BaseName] = links;
+                        }
+                        
+                        links.Add(new CustomDependencyLink
+                        {
+                            Item = item,
+                            DependencyInfo = depInfo
+                        });
                     }
-                    
-                    links.Add(new CustomDependencyLink
-                    {
-                        Item = item,
-                        DependencyInfo = depInfo
-                    });
                 }
             }
         }

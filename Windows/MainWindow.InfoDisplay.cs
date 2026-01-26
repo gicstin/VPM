@@ -688,25 +688,58 @@ namespace VPM
 
         #region Dependencies Display
 
-        private List<CustomDependencyLink> GetCustomDependents(VarMetadata packageMetadata)
-        {
-            if (packageMetadata == null)
-                return new List<CustomDependencyLink>();
+        		private List<CustomDependencyLink> GetCustomDependents(VarMetadata packageMetadata)
+		{
+			if (packageMetadata == null)
+				return new List<CustomDependencyLink>();
             
             var baseName = $"{packageMetadata.CreatorName}.{packageMetadata.PackageName}";
             if (string.IsNullOrEmpty(baseName))
                 return new List<CustomDependencyLink>();
             
-            if (_customDependencyIndex == null || !_customDependencyIndex.TryGetValue(baseName, out var links) || links == null || links.Count == 0)
-                return new List<CustomDependencyLink>();
+			List<CustomDependencyLink> links;
+			lock (_customDependencyIndexLock)
+			{
+				if (_customDependencyIndex == null || !_customDependencyIndex.TryGetValue(baseName, out var indexLinks) || indexLinks == null || indexLinks.Count == 0)
+					return new List<CustomDependencyLink>();
+				links = new List<CustomDependencyLink>(indexLinks);
+			}
             
             var version = packageMetadata.Version;
-            return links
-                .Where(l => l?.Item != null && l.DependencyInfo != null && l.DependencyInfo.IsSatisfiedBy(version))
-                .GroupBy(l => l.Item.FilePath ?? l.Item.Name, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
-                .ToList();
-        }
+						return links
+				.Where(l => l?.Item != null && l.DependencyInfo != null && l.DependencyInfo.IsSatisfiedBy(version))
+				.GroupBy(l => l.Item.FilePath ?? l.Item.Name, StringComparer.OrdinalIgnoreCase)
+				.Select(g => g.First())
+				.ToList();
+		}
+
+		private bool HasCustomDependents(VarMetadata packageMetadata)
+		{
+			if (packageMetadata == null)
+				return false;
+			
+			var baseName = $"{packageMetadata.CreatorName}.{packageMetadata.PackageName}";
+			if (string.IsNullOrEmpty(baseName))
+				return false;
+			
+			List<CustomDependencyLink> links;
+			lock (_customDependencyIndexLock)
+			{
+				if (_customDependencyIndex == null || !_customDependencyIndex.TryGetValue(baseName, out var indexLinks) || indexLinks == null || indexLinks.Count == 0)
+					return false;
+				links = new List<CustomDependencyLink>(indexLinks);
+			}
+			
+			var version = packageMetadata.Version;
+			for (int i = 0; i < links.Count; i++)
+			{
+				var link = links[i];
+				if (link?.Item != null && link.DependencyInfo != null && link.DependencyInfo.IsSatisfiedBy(version))
+					return true;
+			}
+			
+			return false;
+		}
 
         private void UpdateBothTabCounts(PackageItem packageItem)
         {
@@ -1108,6 +1141,10 @@ namespace VPM
             {
                 ReapplyDependenciesSortingInternal(depsSort, depsState.IsAscending);
             }
+            else
+            {
+                ReapplyDependenciesSortingInternal(DependencySortOption.Name, true);
+            }
 
             UpdateToolbarButtons();
         }
@@ -1207,8 +1244,7 @@ namespace VPM
             }
             if (allDependents.Any() || allCustomDependents.Any())
             {
-                // Sort dependencies by name
-                foreach (var dependent in allDependents.Values.Concat(allCustomDependents.Values).OrderBy(d => d.Name))
+                foreach (var dependent in allDependents.Values.Concat(allCustomDependents.Values))
                 {
                     Dependencies.Add(dependent);
                     _originalDependencies.Add(dependent);
@@ -1230,6 +1266,10 @@ namespace VPM
             if (depsState?.CurrentSortOption is DependencySortOption depsSort)
             {
                 ReapplyDependenciesSortingInternal(depsSort, depsState.IsAscending);
+            }
+            else
+            {
+                ReapplyDependenciesSortingInternal(DependencySortOption.Name, true);
             }
 
             UpdateToolbarButtons();

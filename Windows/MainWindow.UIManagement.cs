@@ -1445,7 +1445,6 @@ namespace VPM
                 return true;
             }
             
-            // Non-external packages go through normal filtering
             return _filterManager.MatchesFilters(metadata, filterSnapshot, key);
         }
         
@@ -1777,12 +1776,20 @@ namespace VPM
                 var statusCounts = _filterManager.GetStatusCounts(packagesToCount);
                 var optCounts = _filterManager.GetOptimizationStatusCounts(packagesToCount);
                 var versionCounts = _filterManager.GetVersionStatusCounts(packagesToCount);
+                var depCounts = _filterManager.GetDependencyStatusCounts(packagesToCount);
                 var licenseCounts = _filterManager.GetLicenseCounts(packagesToCount);
                 var fileSizeCounts = _filterManager.GetFileSizeCounts(packagesToCount);
                 var subfolderCounts = _filterManager.GetSubfolderCounts(packagesToCount);
                 var dateCounts = GetDateFilterCounts(packagesToCount);
                 var destinationCountsFiltered = _filterManager.GetDestinationCounts(packagesToCount);
                 var destinationCountsAll = _filterManager.GetDestinationCounts(_packageManager.PackageMetadata);
+
+                var customDependentCount = 0;
+                foreach (var pkg in packagesToCount.Values)
+                {
+                    if (HasCustomDependents(pkg))
+                        customDependentCount++;
+                }
 
                 // Build set of nested destination names to exclude from filter list
                 var nestedDestinationNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1941,7 +1948,7 @@ namespace VPM
                             string itemText = item?.ToString() ?? "";
                             if (!string.IsNullOrEmpty(itemText))
                             {
-                                var statusName = itemText.Split('(')[0].Trim();
+                                var statusName = ExtractFilterValue(itemText);
                                 if (statusName.Equals("Duplicates", StringComparison.OrdinalIgnoreCase))
                                 {
                                     statusName = "Duplicate";
@@ -1962,7 +1969,7 @@ namespace VPM
                                 StatusFilterList.SelectedItems.Add(displayText);
                             }
                         }
-
+                            
                         foreach (var opt in optCounts.OrderBy(s => s.Key))
                         {
                             var displayText = $"{opt.Key} ({opt.Value:N0})";
@@ -1986,7 +1993,6 @@ namespace VPM
                         }
 
                         // Add dependency status counts (No Dependents / No Dependencies)
-                        var depCounts = _filterManager.GetDependencyStatusCounts(_packageManager.PackageMetadata);
                         foreach (var dep in depCounts.OrderBy(s => s.Key))
                         {
                             var displayText = $"{dep.Key} ({dep.Value:N0})";
@@ -1996,6 +2002,14 @@ namespace VPM
                             {
                                 StatusFilterList.SelectedItems.Add(displayText);
                             }
+                        }
+
+                        // Add custom dependents count
+                        var customDisplayText = $"Dependents (Custom) ({customDependentCount:N0})";
+                        StatusFilterList.Items.Add(customDisplayText);
+                        if (selectedStatuses.Contains("Dependents (Custom)"))
+                        {
+                            StatusFilterList.SelectedItems.Add(customDisplayText);
                         }
 
                         // Add External/Local package type filters

@@ -107,6 +107,8 @@ namespace VPM
         // Cache for dependents counts
         private Dictionary<string, int> _currentDependentsCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         
+        private readonly object _customDependencyIndexLock = new object();
+        
         private readonly Dictionary<string, List<CustomDependencyLink>> _customDependencyIndex = new Dictionary<string, List<CustomDependencyLink>>(StringComparer.OrdinalIgnoreCase);
         
         private sealed class CustomDependencyLink
@@ -182,6 +184,7 @@ namespace VPM
 
             _filterManager = new FilterManager();
             _reactiveFilterManager = new ReactiveFilterManager(_filterManager);
+            _filterManager.HasCustomDependentsFunc = HasCustomDependents;
             
             // Sync file size filter settings from AppSettings to FilterManager
             _filterManager.FileSizeTinyMax = _settingsManager.Settings.FileSizeTinyMax;

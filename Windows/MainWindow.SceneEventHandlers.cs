@@ -120,6 +120,15 @@ namespace VPM
                 if (CustomAtomDataGrid != null)
                     CustomAtomDataGrid.Visibility = Visibility.Collapsed;
                 
+                if (CustomAtomItems.Count == 0)
+                {
+                    _ = LoadCustomAtomItemsAsync();
+                }
+                else if (_customDependencyIndexBuilt && _packageManager?.PackageMetadata != null && _packageManager.PackageMetadata.Count > 0)
+                {
+                    RefreshFilterLists();
+                }
+                
                 if (PackageSearchBoxContainer != null)
                     PackageSearchBoxContainer.Visibility = Visibility.Visible;
                 PackageSearchBox.Text = "";
