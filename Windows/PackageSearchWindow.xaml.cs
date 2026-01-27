@@ -537,10 +537,24 @@ namespace VPM
             if (string.IsNullOrWhiteSpace(trimmed))
                 return;
 
+            static string NormalizeLatestSuffix(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    return value;
+
+                const string latestSuffix = ".latest";
+                if (value.EndsWith(latestSuffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return value.Substring(0, value.Length - latestSuffix.Length);
+                }
+
+                return value;
+            }
+
             // Try to extract package name using regex first (handles all formats)
             // This matches patterns like: Creator.PackageName.Version
             // Supports special characters like &, [], (), _, -, etc. in package names
-            var packagePattern = @"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-\[\]\(\)&\s]+(?:\.\d+)+)";
+            var packagePattern = @"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-\[\]\(\)&\s]+(?:\.(?:\d+|latest))+)";
             var matches = Regex.Matches(trimmed, packagePattern, RegexOptions.IgnoreCase);
             
             if (matches.Count > 0)
@@ -548,7 +562,7 @@ namespace VPM
                 // Found package name(s) with regex - add all matches
                 foreach (Match match in matches)
                 {
-                    var packageName = match.Groups[1].Value.Trim();
+                    var packageName = NormalizeLatestSuffix(match.Groups[1].Value.Trim());
                     if (!string.IsNullOrWhiteSpace(packageName))
                     {
                         packageNames.Add(packageName);
@@ -561,7 +575,7 @@ namespace VPM
             // Just use it directly to preserve special characters like &, [], etc.
             if (trimmed.Contains("."))
             {
-                packageNames.Add(trimmed);
+                packageNames.Add(NormalizeLatestSuffix(trimmed));
             }
         }
 

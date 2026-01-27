@@ -693,8 +693,7 @@ namespace VPM.Services
                     // Skip directories and irrelevant files for performance
                     if (!entry.Key.EndsWith("/") && IsRelevantContent(entry.Key))
                     {
-                        // Intern paths to reduce duplicate string memory
-                        contentList.Add(StringPool.InternPath(entry.Key));
+                        contentList.Add(entry.Key);
                     }
                 }
                 
