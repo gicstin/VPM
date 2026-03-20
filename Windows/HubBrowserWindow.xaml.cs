@@ -232,6 +232,18 @@ namespace VPM.Windows
             if (string.IsNullOrWhiteSpace(dependencyBaseName))
                 return null;
 
+            // Fast path: use cached highest version
+            if (_localPackageVersions != null && _localPackageVersions.TryGetValue(dependencyBaseName, out var cachedVersion))
+            {
+                var fastName1 = $"{dependencyBaseName}.{cachedVersion}";
+                var fastName2 = $"{dependencyBaseName}.{cachedVersion}.var";
+                
+                if (_localPackagePaths.TryGetValue(fastName1, out var p1) && !string.IsNullOrEmpty(p1) && File.Exists(p1))
+                    return p1;
+                if (_localPackagePaths.TryGetValue(fastName2, out var p2) && !string.IsNullOrEmpty(p2) && File.Exists(p2))
+                    return p2;
+            }
+
             // Try exact base match from our already-built local index of paths
             // (keys in _localPackagePaths are package names without .var)
             string bestPath = null;
@@ -246,6 +258,9 @@ namespace VPM.Windows
 
                 var baseName = GetBasePackageName(pkgName);
                 if (!string.Equals(baseName, dependencyBaseName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!File.Exists(path))
                     continue;
 
                 var v = ExtractVersionNumber(pkgName);
@@ -422,6 +437,18 @@ namespace VPM.Windows
             if (string.IsNullOrEmpty(baseName))
                 return null;
 
+            // Fast path: use cached highest version
+            if (_localPackageVersions != null && _localPackageVersions.TryGetValue(baseName, out var cachedVersion))
+            {
+                var fastName1 = $"{baseName}.{cachedVersion}";
+                var fastName2 = $"{baseName}.{cachedVersion}.var";
+                
+                if (_localPackagePaths.TryGetValue(fastName1, out var p1) && !string.IsNullOrEmpty(p1) && File.Exists(p1))
+                    return p1;
+                if (_localPackagePaths.TryGetValue(fastName2, out var p2) && !string.IsNullOrEmpty(p2) && File.Exists(p2))
+                    return p2;
+            }
+
             string bestPath = null;
             int bestVersion = -1;
 
@@ -429,10 +456,13 @@ namespace VPM.Windows
             {
                 var name = kvp.Key;
                 var p = kvp.Value;
-                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(p) || !File.Exists(p))
+                if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(p))
                     continue;
 
                 if (!string.Equals(GetBasePackageName(name), baseName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!File.Exists(p))
                     continue;
 
                 var v = ExtractVersionNumber(name);
