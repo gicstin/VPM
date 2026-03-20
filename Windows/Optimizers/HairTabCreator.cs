@@ -271,7 +271,10 @@ namespace VPM
                     // Skip hair without density if checkbox is checked
                     if (skipNoDensity && hair.CurveDensity <= 0)
                         continue;
-                    
+                    // Skip if the target density is greater than the current
+                    if (targetDensity >= hair.CurveDensity)
+                        continue;
+
                     if (targetDensity == -1)
                         hair.KeepUnchanged = true;
                     else if (targetDensity == 32)
