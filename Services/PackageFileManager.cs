@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.IO;
@@ -809,8 +809,12 @@ namespace VPM.Services
                     {
                         lastError = $"Copy attempt {copyAttempt} failed: {ex.Message}";
                         await ReleaseAppFileHandlesAsync(src);
-                        GC.Collect();
-                        GC.WaitForPendingFinalizers();
+                        // Only force GC on subsequent retries — first retry can succeed without a full collection
+                        if (copyAttempt > 1)
+                        {
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                        }
                         await Task.Delay(100 * copyAttempt);
                     }
                     catch (IOException ex)
@@ -842,8 +846,12 @@ namespace VPM.Services
                     {
                         lastError = $"Delete attempt {deleteAttempt} failed: {ex.Message}";
                         await ReleaseAppFileHandlesAsync(src);
-                        GC.Collect();
-                        GC.WaitForPendingFinalizers();
+                        // Only force GC on subsequent retries — first retry can succeed without a full collection
+                        if (deleteAttempt > 1)
+                        {
+                            GC.Collect();
+                            GC.WaitForPendingFinalizers();
+                        }
                         await Task.Delay(100 * deleteAttempt);
                     }
                     catch (IOException ex)
@@ -1195,10 +1203,46 @@ namespace VPM.Services
         }
 
         /// <summary>
+        /// Resolves source file paths in AddonPackages for a list of package names.
+        /// Used to pre-release file handles in batch before the parallel unload loop.
+        /// </summary>
+        private List<string> ResolveAddonPackagePaths(IEnumerable<string> packageNames)
+        {
+            var paths = new List<string>();
+            foreach (var packageName in packageNames)
+            {
+                try
+                {
+                    var depInfo = DependencyVersionInfo.Parse(packageName);
+                    var baseName = depInfo.BaseName;
+
+                    string sourcePath;
+                    if (depInfo.VersionType == DependencyVersionType.Exact)
+                        sourcePath = FindExactPackagePath(packageName, new[] { _addonPackagesFolder });
+                    else if (depInfo.VersionType == DependencyVersionType.Minimum)
+                        sourcePath = FindMinimumVersionPackage(baseName, depInfo.VersionNumber ?? 0, _addonPackagesFolder);
+                    else
+                        sourcePath = FindLatestPackageVersion(baseName, _addonPackagesFolder);
+
+                    if (string.IsNullOrEmpty(sourcePath))
+                        sourcePath = FindExactPackagePath(packageName, new[] { _addonPackagesFolder });
+
+                    if (!string.IsNullOrEmpty(sourcePath))
+                        paths.Add(sourcePath);
+                }
+                catch
+                {
+                    // Skip packages that can't be resolved — they'll be handled individually
+                }
+            }
+            return paths;
+        }
+
+        /// <summary>
         /// Unloads a package by moving it from AddonPackages to AllPackages.
         /// Handles .latest, .min[NUMBER], and exact version references.
         /// </summary>
-        public async Task<(bool success, string error, string filePath)> UnloadPackageInternalAsync(string packageName, bool suppressIndexUpdate = false)
+        public async Task<(bool success, string error, string filePath)> UnloadPackageInternalAsync(string packageName, bool suppressIndexUpdate = false, bool handlesAlreadyReleased = false)
         {
 
             var operationKey = $"unload_{packageName}";
@@ -1273,11 +1317,13 @@ namespace VPM.Services
                 {
                     try
                     {
-                        // CRITICAL: Invalidate all image caches for this package BEFORE file operations
-                        // This ensures no image references are held when the file is deleted
-                        _imageManager?.InvalidatePackageCache(packageName);
-                        
-                        if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
+                        if (!handlesAlreadyReleased)
+                        {
+                            // CRITICAL: Invalidate all image caches for this package BEFORE file operations
+                            // This ensures no image references are held when the file is deleted
+                            _imageManager?.InvalidatePackageCache(packageName);
+                            if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
+                        }
                         
                         // Delete the loaded copy (retry on transient failures)
                         string lastDeleteError = null;
@@ -1285,7 +1331,6 @@ namespace VPM.Services
                         {
                             try
                             {
-                                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
                                 FileAccessController.Instance.InvalidateFile(sourceFile);
 
                                 File.Delete(sourceFile);
@@ -1313,8 +1358,11 @@ namespace VPM.Services
                         var sourceDirectory = Path.GetDirectoryName(sourceFile);
                         RemoveEmptyDirectories(sourceDirectory, _addonPackagesFolder);
                         
-                        UpdatePackageStatusInIndex(packageName, "Available");
-                        InvalidatePackageIndex();
+                        if (!suppressIndexUpdate)
+                        {
+                            UpdatePackageStatusInIndex(packageName, "Available");
+                            InvalidatePackageIndex();
+                        }
                         
                         OperationCompleted?.Invoke(this, new PackageOperationEventArgs
                         {
@@ -1342,11 +1390,13 @@ namespace VPM.Services
                     }
                 }
 
-                // CRITICAL: Invalidate all image caches for this package BEFORE file operations
-                // This ensures no image references are held when the file is moved
-                _imageManager?.InvalidatePackageCache(packageName);
-                
-                if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
+                if (!handlesAlreadyReleased)
+                {
+                    // CRITICAL: Invalidate all image caches for this package BEFORE file operations
+                    // This ensures no image references are held when the file is moved
+                    _imageManager?.InvalidatePackageCache(packageName);
+                    if (_imageManager != null) await _imageManager.CloseFileHandlesAsync(sourceFile);
+                }
                 
                 // Move the file (skip validation to allow corrupt VARs to move)
                 // SafeMoveFileAsync includes retry logic with exponential backoff for transient failures
@@ -1497,7 +1547,22 @@ namespace VPM.Services
             var packageList = packageNames.ToList();
             var results = new ConcurrentBag<(string packageName, bool success, string error)>();
             var successfullyProcessedPaths = new ConcurrentBag<string>();
-            
+
+            // Fire progress event for batch start (parity with LoadPackagesAsync)
+            OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
+            {
+                Completed = 0,
+                Total = packageList.Count,
+                CurrentPackage = "Starting batch operation..."
+            });
+
+            // Pre-release all file handles in a single batched pass before the parallel loop.
+            // This collapses N × CloseFileHandlesAsync (each with its own fixed delays) into one call,
+            // which is the primary performance win for batch unloads over batch loads.
+            var sourcePaths = ResolveAddonPackagePaths(packageList);
+            if (_imageManager != null && sourcePaths.Count > 0)
+                await _imageManager.BatchCloseFileHandlesAsync(sourcePaths);
+
             var completedCount = 0;
 
             await Parallel.ForEachAsync(packageList, new ParallelOptions 
@@ -1508,7 +1573,7 @@ namespace VPM.Services
             {
                 try
                 {
-                    var (success, error, filePath) = await UnloadPackageInternalAsync(packageName, suppressIndexUpdate: true);
+                    var (success, error, filePath) = await UnloadPackageInternalAsync(packageName, suppressIndexUpdate: true, handlesAlreadyReleased: true);
                     results.Add((packageName, success, error));
 
                     if (success)
@@ -1527,7 +1592,15 @@ namespace VPM.Services
                 finally
                 {
                     var currentCompleted = Interlocked.Increment(ref completedCount);
+
+                    // Report progress (parity with LoadPackagesAsync: fire both callback and event)
                     progress?.Report((currentCompleted, packageList.Count, packageName));
+                    OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
+                    {
+                        Completed = currentCompleted,
+                        Total = packageList.Count,
+                        CurrentPackage = packageName
+                    });
                 }
             });
 
@@ -1540,7 +1613,14 @@ namespace VPM.Services
                 await (_imageManager?.BuildImageIndexFromVarsAsync(successfullyProcessedPaths.ToList(), forceRebuild: false) ?? Task.CompletedTask);
             }
 
+            // Final progress report (parity with LoadPackagesAsync)
             progress?.Report((packageList.Count, packageList.Count, ""));
+            OperationProgress?.Invoke(this, new PackageOperationProgressEventArgs
+            {
+                Completed = packageList.Count,
+                Total = packageList.Count,
+                CurrentPackage = "Batch operation completed"
+            });
             
             return results.ToList();
         }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -2256,9 +2256,18 @@ namespace VPM.Services
             try
             {
                 var packageName = Path.GetFileNameWithoutExtension(varPath);
-                
-                // Small delay to allow any pending operations to begin cancellation
-                await Task.Delay(50);
+
+                // Check upfront whether there are open archive pools for this path.
+                // The fixed delay is only needed when there are live handles that need time to drain.
+                var poolKeysToRemove = _sharedArchivePools.Keys
+                    .Where(k => k.Equals(varPath, StringComparison.OrdinalIgnoreCase) ||
+                               Path.GetFileName(k).Equals(Path.GetFileName(varPath), StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                bool hasOpenPools = poolKeysToRemove.Count > 0;
+
+                // Delay only when there are open handles that need time to begin draining
+                if (hasOpenPools)
+                    await Task.Delay(50);
                 
                 // CRITICAL: Cancel any pending image loads for this package
                 // This prevents new file handles from being opened while we try to close existing ones
@@ -2266,17 +2275,13 @@ namespace VPM.Services
 
                 // CRITICAL: Dispose shared archive pools that hold FileStream handles to this package
                 // These pools keep handles open for 30 seconds for performance, but must be disposed before file operations
-                // Check both the full path and variations (different folder paths may reference same package)
-                var poolKeysToRemove = _sharedArchivePools.Keys
-                    .Where(k => k.Equals(varPath, StringComparison.OrdinalIgnoreCase) ||
-                               Path.GetFileName(k).Equals(Path.GetFileName(varPath), StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                
+                bool disposedAnyPools = false;
                 foreach (var poolKey in poolKeysToRemove)
                 {
                     if (_sharedArchivePools.TryRemove(poolKey, out var pool))
                     {
                         pool.Dispose();
+                        disposedAnyPools = true;
                     }
                 }
                 
@@ -2345,8 +2350,76 @@ namespace VPM.Services
                     _varArchiveLock.ExitWriteLock();
                 }
                 
-                // Wait for file system to release locks (increased to 500ms to allow pending operations to complete)
-                await Task.Delay(100);
+                // Wait for file system to release locks only when handles were actually disposed
+                if (disposedAnyPools)
+                    await Task.Delay(100);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        /// <summary>
+        /// Batched equivalent of CloseFileHandlesAsync for multiple VAR paths.
+        /// Releases all handles, pools, and caches in a single coordinated pass, sharing
+        /// the fixed Task.Delay overhead across all paths instead of paying it N times.
+        /// Call this before a batch unload operation to avoid N × 150 ms delay stacking.
+        /// </summary>
+        public async Task BatchCloseFileHandlesAsync(IEnumerable<string> varPaths)
+        {
+            var pathList = varPaths?.Where(p => !string.IsNullOrEmpty(p))
+                                   .Distinct(StringComparer.OrdinalIgnoreCase)
+                                   .ToList();
+            if (pathList == null || pathList.Count == 0) return;
+
+            try
+            {
+                // Check upfront whether any path has open archive pools so we only delay when needed
+                bool hasOpenPools = pathList.Any(p => _sharedArchivePools.Keys.Any(k =>
+                    k.Equals(p, StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileName(k).Equals(Path.GetFileName(p), StringComparison.OrdinalIgnoreCase)));
+
+                // Single shared upfront delay for the whole batch (vs. N × Task.Delay(50))
+                if (hasOpenPools)
+                    await Task.Delay(50);
+
+                // Invalidate per-package caches and cancel pending async operations for every path
+                foreach (var varPath in pathList)
+                {
+                    var packageName = Path.GetFileNameWithoutExtension(varPath);
+                    InvalidatePackageCache(packageName);
+                    _asyncPool.CancelPendingForPackage(varPath);
+                }
+
+                // Dispose archive pools and invalidate lock-free reader for every path
+                bool disposedAnyPools = false;
+                foreach (var varPath in pathList)
+                {
+                    var keysToRemove = _sharedArchivePools.Keys
+                        .Where(k => k.Equals(varPath, StringComparison.OrdinalIgnoreCase) ||
+                                   Path.GetFileName(k).Equals(Path.GetFileName(varPath), StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    foreach (var key in keysToRemove)
+                    {
+                        if (_sharedArchivePools.TryRemove(key, out var pool))
+                        {
+                            pool.Dispose();
+                            disposedAnyPools = true;
+                        }
+                    }
+                    _asyncPool.LockFreeReader.InvalidateArchive(varPath);
+                }
+
+                // Release all file locks in a single batched call
+                await _asyncPool.ReleaseFileLocksAsync(pathList);
+
+                // Invalidate FileAccessController state for all paths
+                foreach (var varPath in pathList)
+                    FileAccessController.Instance.InvalidateFile(varPath);
+
+                // Single trailing delay only if we actually disposed open handles (vs. N × Task.Delay(100))
+                if (disposedAnyPools)
+                    await Task.Delay(100);
             }
             catch (Exception)
             {
