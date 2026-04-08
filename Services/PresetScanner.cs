@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using VPM.Models;
 
 namespace VPM.Services
@@ -12,6 +13,13 @@ namespace VPM.Services
     /// </summary>
     public class PresetScanner
     {
+        // Matches AUTHOR.NAME.VERSION or AUTHOR.NAME.VERSION:/path
+        // NAME allows hyphens (e.g. Plugin-AutoFlutterTongue)
+        // VERSION: integer, "latest", or "minN"
+        private static readonly Regex DepPattern = new Regex(
+            @"\b([A-Za-z0-9_]+)\.([A-Za-z0-9_-]+)\.(latest|min\d+|[A-Za-z0-9_]+)(?:\.var)?(?::/[^\s""',\]\}]*)?\b",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase
+        );
         /// <summary>
         /// Parses a .vap file and extracts dependencies and metadata
         /// </summary>
@@ -76,8 +84,12 @@ namespace VPM.Services
                         }
                     }
 
-                    // Apply parsed data to preset
-                    preset.Dependencies = dependencySet.ToList();
+                    // Regex scan: walk every string value in the entire JSON
+                    // to catch deps in fields the structured parser doesn't know about
+                    ScanAllStringsForDependencies(root, dependencySet);
+
+                    // Apply parsed data to preset, keeping only the highest version per package
+                    preset.Dependencies = DeduplicateByHighestVersion(dependencySet);
                     preset.HairItems = hairItems;
                     preset.ClothingItems = clothingItems;
                     preset.MorphItems = morphItems;
@@ -249,6 +261,117 @@ namespace VPM.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Error parsing generic storable: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Recursively walks every string value in a JsonElement and extracts
+        /// dependency references using the regex pattern.
+        /// </summary>
+        private static void ScanAllStringsForDependencies(JsonElement element, HashSet<string> dependencies)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.String:
+                    var value = element.GetString();
+                    if (!string.IsNullOrEmpty(value))
+                        ExtractDependenciesWithRegex(value, dependencies);
+                    break;
+                case JsonValueKind.Object:
+                    foreach (var prop in element.EnumerateObject())
+                        ScanAllStringsForDependencies(prop.Value, dependencies);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                        ScanAllStringsForDependencies(item, dependencies);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Applies the dep regex to a string and adds all valid matches to the set.
+        /// </summary>
+        private static void ExtractDependenciesWithRegex(string value, HashSet<string> dependencies)
+        {
+            foreach (Match m in DepPattern.Matches(value))
+            {
+                var author  = m.Groups[1].Value;
+                var name    = m.Groups[2].Value;
+                var version = m.Groups[3].Value;
+
+                if (IsValidDepMatch(author, name, version))
+                    dependencies.Add($"{author}.{name}.{version}");
+            }
+        }
+
+        /// <summary>
+        /// Validates a regex match: version must be a recognised token and both
+        /// author and name must contain at least one letter (filters float-like noise).
+        /// </summary>
+        private static bool IsValidDepMatch(string author, string name, string version)
+        {
+            // Version must be "latest", "minN", or start with a digit
+            var v = version.ToLowerInvariant();
+            if (v != "latest" &&
+                !Regex.IsMatch(v, @"^min\d+$") &&
+                !char.IsDigit(version[0]))
+                return false;
+
+            // Author and name must each contain at least one letter
+            if (!author.Any(char.IsLetter) || !name.Any(char.IsLetter))
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Returns a deduplicated list keeping only the highest version per
+        /// author.name base (case-sensitive). Ranking: latest > numeric > minN.
+        /// </summary>
+        private static List<string> DeduplicateByHighestVersion(HashSet<string> deps)
+        {
+            // key = "Author.Name", value = (fullRef, rank, versionNum)
+            var best = new Dictionary<string, (string FullRef, int Rank, int VersionNum)>(StringComparer.Ordinal);
+
+            foreach (var dep in deps)
+            {
+                var parts = dep.Split('.');
+                if (parts.Length < 3)
+                {
+                    if (!best.ContainsKey(dep))
+                        best[dep] = (dep, -1, 0);
+                    continue;
+                }
+
+                // Base = everything except the last segment (the version)
+                var baseName = string.Join(".", parts.Take(parts.Length - 1));
+                var version  = parts[parts.Length - 1];
+                var (rank, versionNum) = GetVersionRank(version);
+
+                if (!best.TryGetValue(baseName, out var current) ||
+                    rank > current.Rank ||
+                    (rank == current.Rank && versionNum > current.VersionNum))
+                {
+                    best[baseName] = (dep, rank, versionNum);
+                }
+            }
+
+            return best.Values.Select(v => v.FullRef).ToList();
+        }
+
+        private static (int Rank, int VersionNum) GetVersionRank(string version)
+        {
+            if (string.Equals(version, "latest", StringComparison.OrdinalIgnoreCase))
+                return (2, 0);
+
+            var minMatch = Regex.Match(version, @"^min(\d+)$", RegexOptions.IgnoreCase);
+            if (minMatch.Success)
+                return (0, int.Parse(minMatch.Groups[1].Value));
+
+            var numMatch = Regex.Match(version, @"^(\d+)");
+            if (numMatch.Success)
+                return (1, int.Parse(numMatch.Groups[1].Value));
+
+            return (1, 0);
         }
 
         /// <summary>

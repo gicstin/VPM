@@ -2592,10 +2592,27 @@ namespace VPM
                 var metadata = kvp.Value;
                 var packageFullName = $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}";
                 var displayName = Path.GetFileNameWithoutExtension(metadata.Filename);
-                
-                // Get dependents count from the graph
+
+                // Get dependents count from the graph (var-to-var)
                 var count = _packageManager.GetPackageDependentsCount(packageFullName);
-                
+
+                // Also count custom dependents (local scene/look files)
+                var baseName = $"{metadata.CreatorName}.{metadata.PackageName}";
+                List<CustomDependencyLink> customLinks = null;
+                lock (_customDependencyIndexLock)
+                {
+                    if (_customDependencyIndex.TryGetValue(baseName, out var indexLinks) && indexLinks?.Count > 0)
+                        customLinks = new List<CustomDependencyLink>(indexLinks);
+                }
+                if (customLinks != null)
+                {
+                    var customCount = customLinks
+                        .Where(l => l?.Item != null && l.DependencyInfo != null && l.DependencyInfo.IsSatisfiedBy(metadata.Version))
+                        .GroupBy(l => l.Item.FilePath ?? l.Item.Name, StringComparer.OrdinalIgnoreCase)
+                        .Count();
+                    count += customCount;
+                }
+
                 if (count > 0)
                 {
                     dependentsCount[displayName] = count;

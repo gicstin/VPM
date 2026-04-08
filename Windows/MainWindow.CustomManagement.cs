@@ -122,6 +122,9 @@ namespace VPM
         /// </summary>
         private void RebuildCustomDependencyIndex(IEnumerable<CustomAtomItem> items)
         {
+            // Invalidate the dependents count cache since custom dependents will change
+            _cachedDependentsCount = null;
+
             lock (_customDependencyIndexLock)
             {
                 _customDependencyIndex.Clear();

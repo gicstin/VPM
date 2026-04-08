@@ -31,3 +31,6 @@ Thumbs.db
 /VPM-TODO.md
 /generate_support_json.py
 /.zencoder/rules
+/.claude
+/1775479698.json
+/test_dep_scan.py
