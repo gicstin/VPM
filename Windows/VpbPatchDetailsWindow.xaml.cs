@@ -16,6 +16,7 @@ namespace VPM.Windows
         private string _gitRef;
         private CancellationTokenSource _cts;
         private VpbPatchCheckResult _check;
+        private bool _runCompleted;
 
         public VpbPatchDetailsWindow(string gameFolder, string gitRef, VpbPatchCheckResult check)
         {
@@ -105,7 +106,7 @@ namespace VPM.Windows
 
             PrimaryActionButton.IsEnabled = !busy && _check != null && _check.Status != VpbPatchStatus.UpToDate;
             UninstallButton.IsEnabled = !busy;
-            CancelButton.Content = busy ? "Close" : "Cancel";
+            CancelButton.Content = busy || _runCompleted ? "Close" : "Cancel";
         }
 
         private async Task RefreshCheckAsync()
@@ -119,6 +120,7 @@ namespace VPM.Windows
         private async Task RunInstallOrUpdateAsync()
         {
             var force = ForceReinstallCheckBox.IsChecked == true;
+            _runCompleted = false;
             SetBusy(true, "Applying patch...");
 
             var progress = new Progress<VpbPatcherProgress>(p =>
@@ -135,10 +137,29 @@ namespace VPM.Windows
             try
             {
                 using var patcher = new VpbPatcherService();
-                await patcher.InstallOrUpdateAsync(_gameFolder, _gitRef, force, progress, _cts.Token).ConfigureAwait(true);
+                var applyResult = await patcher.InstallOrUpdateAsync(_gameFolder, _gitRef, force, progress, _cts.Token).ConfigureAwait(true);
+                if (applyResult.FailedFiles is { Count: > 0 } failed)
+                {
+                    var report = new StringBuilder();
+                    report.AppendLine("Some patch files could not be updated:");
+                    report.AppendLine();
+                    var show = Math.Min(failed.Count, 12);
+                    for (var i = 0; i < show; i++)
+                        report.AppendLine($"• {failed[i].RelativePath}: {failed[i].ErrorMessage}");
+                    if (failed.Count > show)
+                        report.AppendLine($"... and {failed.Count - show} more.");
+                    report.AppendLine();
+                    report.AppendLine("Common causes: VaM or a plugin still has the file open (close the game and Hub), or antivirus locking the folder.");
+                    CustomMessageBox.Show(
+                        report.ToString(),
+                        "VPB Patch — Partial failure",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
             }
             finally
             {
+                _runCompleted = true;
                 SetBusy(false, string.Empty);
             }
 
@@ -147,6 +168,7 @@ namespace VPM.Windows
 
         private async Task RunUninstallAsync()
         {
+            _runCompleted = false;
             SetBusy(true, "Uninstalling patch...");
 
             var progress = new Progress<VpbPatcherProgress>(p =>
@@ -167,6 +189,7 @@ namespace VPM.Windows
             }
             finally
             {
+                _runCompleted = true;
                 SetBusy(false, string.Empty);
             }
 

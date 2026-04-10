@@ -196,7 +196,24 @@ namespace VPM.Services
                     return;
                 }
 
-                if (entry.BlobSha != "UNKNOWN")
+                if (entry.BlobSha == "UNKNOWN")
+                {
+                    lock (issuesByPath)
+                    {
+                        outdated.Add(reqPath);
+                        issuesByPath[reqPath] = new VpbPatchFileIssue
+                        {
+                            IssueType = VpbPatchIssueType.Outdated,
+                            RelativePath = reqPath,
+                            IsDirectory = false,
+                            IsRequired = true,
+                            Reason = "Cannot verify against GitHub (tree metadata missing or API error). Re-apply the patch; ensure api.github.com is reachable and not rate-limited.",
+                            ExpectedSha = entry.BlobSha
+                        };
+                    }
+                    return;
+                }
+
                 {
                     var localSha = await Task.Run(() => ComputeGitBlobSha1Hex(destPath), ct);
                     if (!string.Equals(localSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
@@ -365,11 +382,16 @@ namespace VPM.Services
                     }
 
                     var needsWrite = force || !File.Exists(destPath);
-                    
+
                     if (!needsWrite && entry.BlobSha != "UNKNOWN")
                     {
                         var localSha = await Task.Run(() => ComputeGitBlobSha1Hex(destPath), ct);
                         needsWrite = !string.Equals(localSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase);
+                    }
+                    else if (!needsWrite)
+                    {
+                        // Without a blob SHA we cannot trust the on-disk file; fetch raw content and compare.
+                        needsWrite = true;
                     }
 
                     if (!needsWrite)
@@ -415,8 +437,43 @@ namespace VPM.Services
                             if (!string.Equals(downloadedSha, entry.BlobSha, StringComparison.OrdinalIgnoreCase))
                                 throw new InvalidDataException($"Downloaded file checksum mismatch: {entry.RelativePath}");
                         }
+                        else if (File.Exists(destPath) && SameGitBlobFileContent(destPath, tempPath))
+                        {
+                            try
+                            {
+                                File.Delete(tempPath);
+                            }
+                            catch
+                            {
+                            }
 
-                        File.Move(tempPath, destPath, true);
+                            Interlocked.Increment(ref skipped);
+                            progress?.Report(new VpbPatcherProgress
+                            {
+                                Index = idxDownload,
+                                Total = manifest.Count,
+                                RelativePath = entry.RelativePath,
+                                Message = "Up to date"
+                            });
+                            return;
+                        }
+
+                        try
+                        {
+                            File.Move(tempPath, destPath, true);
+                        }
+                        catch (IOException ex)
+                        {
+                            throw new IOException(
+                                $"Could not replace '{entry.RelativePath}'. Close VaM, Hub, and any BepInEx tools that load this file, then retry. Details: {ex.Message}",
+                                ex);
+                        }
+                        catch (UnauthorizedAccessException ex)
+                        {
+                            throw new IOException(
+                                $"Access denied when writing '{entry.RelativePath}'. Close programs using this file or run VPM with sufficient permissions. Details: {ex.Message}",
+                                ex);
+                        }
                         Interlocked.Increment(ref updated);
 
                         progress?.Report(new VpbPatcherProgress
@@ -775,9 +832,13 @@ namespace VPM.Services
                     var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                     var treeResponse = JsonSerializer.Deserialize<GitHubTreeResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-                    remoteFiles = treeResponse?.Tree
-                        .Where(x => x.Type == "blob" && x.Path.StartsWith(PatchRoot, StringComparison.OrdinalIgnoreCase))
-                        .ToDictionary(x => x.Path, x => x.Sha, StringComparer.OrdinalIgnoreCase);
+                    // Partial trees would leave many paths without SHAs and silently skip updates — treat as unavailable.
+                    if (treeResponse?.Truncated == true)
+                        remoteFiles = null;
+                    else
+                        remoteFiles = treeResponse?.Tree
+                            .Where(x => x.Type == "blob" && x.Path.StartsWith(PatchRoot, StringComparison.OrdinalIgnoreCase))
+                            .ToDictionary(x => x.Path, x => x.Sha, StringComparer.OrdinalIgnoreCase);
                 }
 
                 foreach (var item in requiredItems)
@@ -816,6 +877,21 @@ namespace VPM.Services
             }
 
             return manifest;
+        }
+
+        private static bool SameGitBlobFileContent(string pathA, string pathB)
+        {
+            if (!File.Exists(pathA) || !File.Exists(pathB))
+                return false;
+
+            var lenA = new FileInfo(pathA).Length;
+            var lenB = new FileInfo(pathB).Length;
+            if (lenA != lenB)
+                return false;
+
+            var shaA = ComputeGitBlobSha1Hex(pathA);
+            var shaB = ComputeGitBlobSha1Hex(pathB);
+            return string.Equals(shaA, shaB, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ComputeGitBlobSha1Hex(string filePath)
