@@ -1512,6 +1512,57 @@ namespace VPM
             }
         }
 
+        private void ToggleBrowserAssistIntegration_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem)
+                return;
+
+            bool enabled = menuItem.IsChecked;
+
+            // Disabling never needs confirmation
+            if (!enabled)
+            {
+                _settingsManager.Settings.BrowserAssistIntegration = false;
+                if (_packageFileManager != null)
+                    _packageFileManager.BrowserAssistIntegration = false;
+                RefreshPackages();
+                return;
+            }
+
+            // Check if VAR management is enabled first
+            if (!Services.BrowserAssistService.IsVarManagementEnabled(_settingsManager.Settings.SelectedFolder))
+            {
+                CustomMessageBox.Show(
+                    "VAR Management is not enabled in BrowserAssist.\n\nThis integration is only useful if BrowserAssist is actively configured to manage your offloaded VARs.",
+                    "Integration Unavailable", 
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Information);
+                
+                menuItem.IsChecked = false;
+                return;
+            }
+
+            // First-time enable: show the setup dialog
+            if (!(_settingsManager.Settings.HasSeenBrowserAssistIntro))
+            {
+                var dialog = new BrowserAssistSetupDialog { Owner = this };
+                dialog.ShowDialog();
+
+                if (!dialog.Confirmed)
+                {
+                    menuItem.IsChecked = false;
+                    return;
+                }
+
+                _settingsManager.Settings.HasSeenBrowserAssistIntro = true;
+            }
+
+            _settingsManager.Settings.BrowserAssistIntegration = true;
+            if (_packageFileManager != null)
+                _packageFileManager.BrowserAssistIntegration = true;
+            RefreshPackages();
+        }
+
         private void About_Click(object sender, RoutedEventArgs e)
         {
             var aboutWindow = new AboutWindow
@@ -2497,9 +2548,8 @@ namespace VPM
                     .Where(p => p.Status == "Available")
                     .ToList();
 
-                if (selectedPackages.Count > 0)
+                if (selectedPackages.Count > 0 && LoadPackagesWithDepsButton.IsEnabled)
                 {
-                    // Trigger load with deps button click
                     LoadPackagesWithDepsButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     e.Handled = true;
                     // Restore focus to DataGrid cell after operation
@@ -2546,7 +2596,11 @@ namespace VPM
                         
                         if (status == "Available")
                         {
-                            // Trigger load button click
+                            if (!LoadPackagesButton.IsEnabled)
+                            {
+                                e.Handled = true;
+                                return;
+                            }
                             LoadPackagesButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                             e.Handled = true;
                             // Restore focus to selected row in DataGrid after operation
@@ -4438,15 +4492,24 @@ namespace VPM
                 string addonPackagesPath = Path.Combine(_selectedFolder, "AddonPackages");
                 string allPackagesPath = Path.Combine(_selectedFolder, "AllPackages");
                 var externalDestinations = _settingsManager?.Settings?.MoveToDestinations;
-                
+
+                string offloadedVarsPath = null;
+                if (_settingsManager?.Settings?.BrowserAssistIntegration == true)
+                {
+                    var path = Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder);
+                    if (Directory.Exists(path)) offloadedVarsPath = path;
+                }
+
                 // Open the duplicate management window
-                var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations)
+                var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
+                    baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
+                    offloadedVarsPath: offloadedVarsPath)
                 {
                     Owner = this
                 };
-                
+
                 var result = duplicateWindow.ShowDialog();
-                
+
                 // If user fixed duplicates, refresh the package list
                 if (result == true)
                 {
@@ -4496,9 +4559,18 @@ namespace VPM
                 string addonPackagesPath = Path.Combine(_selectedFolder, "AddonPackages");
                 string allPackagesPath = Path.Combine(_selectedFolder, "AllPackages");
                 var externalDestinations = _settingsManager?.Settings?.MoveToDestinations;
-                
+
+                string offloadedVarsPath = null;
+                if (_settingsManager?.Settings?.BrowserAssistIntegration == true)
+                {
+                    var path = Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder);
+                    if (Directory.Exists(path)) offloadedVarsPath = path;
+                }
+
                 // Open the duplicate management window
-                var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations)
+                var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
+                    baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
+                    offloadedVarsPath: offloadedVarsPath)
                 {
                     Owner = this
                 };
@@ -6625,10 +6697,22 @@ namespace VPM
                         var hasAvailable = selectedPackages.Any(p => p.Status == "Available");
                         var hasExternal = selectedPackages.Any(p => p.IsExternal);
 
+                        bool baBlocks = (hasAvailable || hasExternal) && IsAnyPackageBaManaged(selectedPackages);
+
                         if (loadContextMenuItem != null)
                         {
                             loadContextMenuItem.Visibility = Visibility.Visible;
-                            loadContextMenuItem.IsEnabled = duplicateCount == 0 && (hasAvailable || hasExternal);
+                            if (baBlocks)
+                            {
+                                loadContextMenuItem.IsEnabled = false;
+                                loadContextMenuItem.ToolTip = "Disabled while BrowserAssist is managing packages";
+                                ToolTipService.SetShowOnDisabled(loadContextMenuItem, true);
+                            }
+                            else
+                            {
+                                loadContextMenuItem.IsEnabled = duplicateCount == 0 && (hasAvailable || hasExternal);
+                                loadContextMenuItem.ToolTip = null;
+                            }
                         }
                         if (unloadContextMenuItem != null)
                         {
@@ -6659,7 +6743,19 @@ namespace VPM
                 // Populate Move To submenu with configured destinations
                 if (moveToMenuItem != null)
                 {
-                    PopulateMoveToMenu(moveToMenuItem, isPackageMenu: true);
+                    var movePkgs = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList();
+                    if (movePkgs != null && movePkgs.Count > 0 && IsAnyPackageBaManaged(movePkgs))
+                    {
+                        moveToMenuItem.IsEnabled = false;
+                        moveToMenuItem.ToolTip = "Disabled while BrowserAssist is managing packages";
+                        ToolTipService.SetShowOnDisabled(moveToMenuItem, true);
+                    }
+                    else
+                    {
+                        moveToMenuItem.IsEnabled = true;
+                        moveToMenuItem.ToolTip = null;
+                        PopulateMoveToMenu(moveToMenuItem, isPackageMenu: true);
+                    }
                 }
 
                 // Populate Add to Playlist submenu with playlists
@@ -7735,6 +7831,13 @@ namespace VPM
             {
                 DarkMessageBox.Show("No packages selected.", "Move To",
                     MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            if (IsAnyPackageBaManaged(selectedPackages))
+            {
+                DarkMessageBox.Show("Disabled while BrowserAssist is managing packages.", "Move To",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
