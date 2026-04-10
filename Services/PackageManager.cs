@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -1142,7 +1143,7 @@ namespace VPM.Services
             return results.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
         }
 
-        public async Task<(List<string> installed, List<string> available)> ScanVarFilesAsync(string installedFolder, string allPackagesFolder)
+        public async Task<(List<string> installed, List<string> available)> ScanVarFilesAsync(string installedFolder, string allPackagesFolder, bool enableBrowserAssistIntegration = false)
         {
             var installed = new List<string>();
             var available = new List<string>();
@@ -1211,6 +1212,30 @@ namespace VPM.Services
                 }));
             }
 
+            // Scan BrowserAssist OffloadedVARs - VARs the BA plugin has moved out of AddonPackages.
+            // Treat as Available so they satisfy dependency checks and appear in the UI.
+            string offloadedVarsFolder = enableBrowserAssistIntegration
+                ? BrowserAssistService.GetOffloadedVarsFolder(rootFolder)
+                : null;
+            if (offloadedVarsFolder != null && Directory.Exists(offloadedVarsFolder))
+            {
+                scanTasks.Add(Task.Run(() =>
+                {
+                    try
+                    {
+                        var files = SymlinkSafeFileSystem.EnumerateFilesSafe(offloadedVarsFolder, "*.var", true);
+                        lock (available)
+                        {
+                            available.AddRange(files);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[BA] OffloadedVARs scan failed: {ex.Message}");
+                    }
+                }));
+            }
+
             // Wait for all scanning tasks to complete
             await Task.WhenAll(scanTasks);
 
@@ -1221,11 +1246,12 @@ namespace VPM.Services
         /// Scans VAR files including external destinations
         /// </summary>
         public async Task<(List<string> installed, List<string> available, Dictionary<string, List<string>> external)> ScanVarFilesWithExternalAsync(
-            string installedFolder, 
-            string allPackagesFolder, 
-            List<MoveToDestination> externalDestinations)
+            string installedFolder,
+            string allPackagesFolder,
+            List<MoveToDestination> externalDestinations,
+            bool enableBrowserAssistIntegration = false)
         {
-            var (installed, available) = await ScanVarFilesAsync(installedFolder, allPackagesFolder);
+            var (installed, available) = await ScanVarFilesAsync(installedFolder, allPackagesFolder, enableBrowserAssistIntegration);
             var external = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
             if (externalDestinations == null || externalDestinations.Count == 0)
