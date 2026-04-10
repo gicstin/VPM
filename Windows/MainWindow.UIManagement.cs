@@ -525,6 +525,11 @@ namespace VPM
             {
                 CheckForAppUpdatesMenuItem.IsChecked = settings.CheckForAppUpdates;
             }
+            // Update integrations menu items
+            if (BrowserAssistIntegrationMenuItem != null)
+            {
+                BrowserAssistIntegrationMenuItem.IsChecked = settings.BrowserAssistIntegration;
+            }
 
             if (!_settingsPropertyChangedHooked && settings != null)
             {
@@ -993,7 +998,8 @@ namespace VPM
                 List<string> installedFiles, availableFiles;
                 Dictionary<string, List<string>> externalFiles;
                 (installedFiles, availableFiles, externalFiles) = await _packageManager.ScanVarFilesWithExternalAsync(
-                    addonPackagesFolder, allPackagesFolder, externalDestinations);
+                    addonPackagesFolder, allPackagesFolder, externalDestinations,
+                    _settingsManager?.Settings?.BrowserAssistIntegration ?? false);
 
 
                 var externalCount = externalFiles.Values.Sum(l => l.Count);
@@ -1016,6 +1022,11 @@ namespace VPM
                 {
                     _reactiveFilterManager.Initialize(_packageManager.PackageMetadata);
                 }
+
+                // Refresh BA VAR management cache so button bar checks don't hit disk on every selection
+                _baVarManagementEnabled = _settingsManager?.Settings?.BrowserAssistIntegration == true
+                    ? Services.BrowserAssistService.IsVarManagementEnabled(_selectedFolder)
+                    : false;
 
                 // Copy preview image index from ImageManager
                 var totalImages = _imageManager.PreviewImageIndex.Values.Sum(list => list.Count);
@@ -2549,8 +2560,11 @@ namespace VPM
             {
                 if (!string.IsNullOrEmpty(_selectedFolder))
                 {
-                    _packageFileManager = new PackageFileManager(_selectedFolder, _imageManager);
-                    
+                    _packageFileManager = new PackageFileManager(_selectedFolder, _imageManager)
+                    {
+                        BrowserAssistIntegration = _settingsManager?.Settings?.BrowserAssistIntegration ?? false
+                    };
+
                     // Initialize package downloader
                     InitializePackageDownloader();
                 }

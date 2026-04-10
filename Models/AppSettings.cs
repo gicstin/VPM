@@ -110,6 +110,10 @@ namespace VPM.Models
         // Package Downloader Settings
         private bool _enableAutoDownload = false;
 
+        // Integration Settings
+        private bool _browserAssistIntegration = false;
+        private bool _hasSeenBrowserAssistIntro = false;
+
         // App Update Settings
         private bool _checkForAppUpdates = true;
         
@@ -645,6 +649,18 @@ namespace VPM.Models
         {
             get => _enableAutoDownload;
             set => SetProperty(ref _enableAutoDownload, value);
+        }
+
+        public bool BrowserAssistIntegration
+        {
+            get => _browserAssistIntegration;
+            set => SetProperty(ref _browserAssistIntegration, value);
+        }
+
+        public bool HasSeenBrowserAssistIntro
+        {
+            get => _hasSeenBrowserAssistIntro;
+            set => SetProperty(ref _hasSeenBrowserAssistIntro, value);
         }
 
         public bool CheckForAppUpdates

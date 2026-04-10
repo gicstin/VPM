@@ -387,6 +387,16 @@
                             <TextBlock FontSize="12" Text="" />
                         </MenuItem.Icon>
                     </MenuItem>
+                    
+                    <!--  Integrations Section  -->
+                    <MenuItem Header="🔌 _Integrations">
+                        <MenuItem
+                            x:Name="BrowserAssistIntegrationMenuItem"
+                            Click="ToggleBrowserAssistIntegration_Click"
+                            Header="_JayJayWon's BrowserAssist (BA) Integration"
+                            IsCheckable="True"
+                            ToolTip="Scan BA's OffloadedVARs folder so offloaded packages satisfy dependency checks, and clean up BA's cache when moving packages out of OffloadedVARs." />
+                    </MenuItem>
 
                     <Separator />
                     <MenuItem Click="SupportButton_Click" Header="❤️ _Support">
@@ -3645,6 +3655,7 @@
                                     FontSize="14"
                                     FontWeight="SemiBold"
                                     ToolTip="Load selected packages"
+                                    ToolTipService.ShowOnDisabled="True"
                                     Visibility="Collapsed">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
@@ -3769,6 +3780,7 @@
                                     FontSize="14"
                                     FontWeight="SemiBold"
                                     ToolTip="Load selected packages and their dependencies"
+                                    ToolTipService.ShowOnDisabled="True"
                                     Visibility="Collapsed">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
@@ -4484,6 +4496,7 @@
                                     FontSize="12"
                                     FontWeight="SemiBold"
                                     ToolTip="Load selected dependencies"
+                                    ToolTipService.ShowOnDisabled="True"
                                     Visibility="Collapsed">
                                     <Button.Style>
                                         <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">

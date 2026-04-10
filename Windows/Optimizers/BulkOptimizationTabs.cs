@@ -1141,7 +1141,7 @@ namespace VPM
             return tab;
         }
 
-        private TabItem CreateBulkSummaryTab(List<PackageItem> packages, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, DependencyScanner.DependencyScanResult dependencyResult, Window parentDialog)
+        private TabItem CreateBulkSummaryTab(List<PackageItem> packages, TextureValidator.ValidationResult textureResult, HairOptimizer.OptimizationResult hairResult, DependencyScanner.DependencyScanResult dependencyResult, Window parentDialog, bool isBaManaged = false)
         {
             var tab = new TabItem
             {
@@ -1447,7 +1447,19 @@ namespace VPM
             };
             contentPanel.Children.Add(dependencyHeader);
 
-            if (dependencyResult != null && dependencyResult.Success)
+            if (isBaManaged)
+            {
+                var baText = new TextBlock
+                {
+                    Text = "  Disabled while BrowserAssist is managing packages",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Color.FromRgb(150, 150, 150)),
+                    FontStyle = FontStyles.Italic,
+                    Margin = new Thickness(15, 0, 0, 15)
+                };
+                contentPanel.Children.Add(baText);
+            }
+            else if (dependencyResult != null && dependencyResult.Success)
             {
                 var disabledDeps = dependencyResult.Dependencies.Where(d => !d.IsEnabled).ToList();
                 // Only count dependencies that will actually be changed (not already .latest)
@@ -1458,7 +1470,6 @@ namespace VPM
                 if (disabledDeps.Count > 0 || forceLatestDeps.Count > 0)
                 {
                     var depInfoPanel = new StackPanel { Margin = new Thickness(15, 0, 0, 15) };
-                    
                     if (disabledDeps.Count > 0)
                     {
                         var disabledDepsByPackage = disabledDeps.GroupBy(d => d.PackageName).OrderBy(g => g.Key);
@@ -1471,7 +1482,7 @@ namespace VPM
                         };
                         depInfoPanel.Children.Add(disabledCountText);
                     }
-                    
+
                     if (forceLatestDeps.Count > 0)
                     {
                         var forceLatestDepsByPackage = forceLatestDeps.GroupBy(d => d.PackageName).OrderBy(g => g.Key);
@@ -1484,7 +1495,7 @@ namespace VPM
                         };
                         depInfoPanel.Children.Add(forceLatestCountText);
                     }
-                    
+
                     contentPanel.Children.Add(depInfoPanel);
                 }
                 else

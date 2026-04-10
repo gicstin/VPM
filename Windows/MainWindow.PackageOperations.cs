@@ -842,6 +842,14 @@ namespace VPM
             {
                 if (!EnsureVamFolderSelected()) return;
 
+                var parentPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList();
+                if (parentPackages != null && parentPackages.Count > 0 && IsAnyPackageBaManaged(parentPackages))
+                {
+                    DarkMessageBox.Show("Loading dependencies is disabled while BrowserAssist is managing this package.", "BrowserAssist Integration",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
                 // Include Available, Outdated, Archived, and external dependencies (hex color status indicates external)
                 var selectedDependencies = DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
                     .Where(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || (d.Status?.StartsWith("#") == true))
@@ -1485,6 +1493,32 @@ namespace VPM
         #region Button Bar Management
 
         /// <summary>
+        /// Returns true if any of the given packages are in BA's OffloadedVARs folder
+        /// and BA's VAR management is enabled, meaning VPM must not move them.
+        /// </summary>
+        private bool IsAnyPackageBaManaged(IEnumerable<PackageItem> packages)
+        {
+            if (_settingsManager?.Settings?.BrowserAssistIntegration != true)
+                return false;
+
+            string offloadedVarsFolder = Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder);
+            if (!System.IO.Directory.Exists(offloadedVarsFolder))
+                return false;
+
+            bool anyInOffloadedVars = packages
+                .Where(p => p.Status == "Available" || p.IsExternal)
+                .Any(p =>
+                {
+                    string key = !string.IsNullOrEmpty(p.MetadataKey) ? p.MetadataKey : p.Name;
+                    return _packageManager?.PackageMetadata?.TryGetValue(key, out var meta) == true
+                        && !string.IsNullOrEmpty(meta?.FilePath)
+                        && Services.BrowserAssistService.IsPathInOffloadedVars(meta.FilePath, offloadedVarsFolder);
+                });
+
+            return anyInOffloadedVars && (_baVarManagementEnabled ?? false);
+        }
+
+        /// <summary>
         /// Updates the visibility and state of buttons in the package button bar based on selected packages
         /// </summary>
         private void UpdatePackageButtonBar()
@@ -1607,6 +1641,11 @@ namespace VPM
                 // Show Load +Deps button if any packages are Available or External OR if there are available dependencies
                 LoadPackagesWithDepsButton.Visibility = (hasAvailable || hasExternal || hasAvailableDependencies) ? Visibility.Visible : Visibility.Collapsed;
 
+                bool baBlocksLoad = (hasAvailable || hasExternal) && IsAnyPackageBaManaged(selectedPackages);
+
+                LoadPackagesButton.IsEnabled = !baBlocksLoad;
+                LoadPackagesWithDepsButton.IsEnabled = !baBlocksLoad;
+
                 // Check if all selected packages have the same normalized status (for keyboard shortcut hint)
                 // For EXTERNAL packages, treat them as "Available" for status comparison
                 var normalizedStatuses = selectedPackages.Select(p => p.IsExternal ? "Available" : p.Status).Distinct().ToList();
@@ -1619,8 +1658,15 @@ namespace VPM
                     // Count both available and external packages for load operations
                     var loadableCount = selectedPackages.Count(p => p.Status == "Available" || p.IsExternal);
 
+                    if (baBlocksLoad)
+                    {
+                        LoadPackagesButton.Content = "📥 Load";
+                        LoadPackagesButton.ToolTip = "Disabled while BrowserAssist is managing packages";
+                        LoadPackagesWithDepsButton.Content = "📥 Load +Deps";
+                        LoadPackagesWithDepsButton.ToolTip = "Disabled while BrowserAssist is managing packages";
+                    }
                     // Show keyboard shortcut if all selected items have same normalized status
-                    if (allSameStatus && normalizedStatuses[0] == "Available")
+                    else if (allSameStatus && normalizedStatuses[0] == "Available")
                     {
                         LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
                         LoadPackagesButton.ToolTip = loadableCount == 1 ? "Load selected package" : $"Load {loadableCount} selected packages";
@@ -1757,6 +1803,14 @@ namespace VPM
                 // Show Load button if any dependencies are Available, Outdated, Archived, or External
                 // Outdated/Archived means an old version exists but can still be loaded
                 LoadDependenciesButton.Visibility = (hasAvailable || hasOutdated || hasArchived || hasExternal) ? Visibility.Visible : Visibility.Collapsed;
+
+                // Disable Load button when BrowserAssist owns the parent package
+                var parentPackagesForDeps = PackageDataGrid?.SelectedItems?.Cast<PackageItem>()?.ToList();
+                bool baBlocksDepsLoad = parentPackagesForDeps != null && parentPackagesForDeps.Count > 0 && IsAnyPackageBaManaged(parentPackagesForDeps);
+                LoadDependenciesButton.IsEnabled = !baBlocksDepsLoad;
+                LoadDependenciesButton.ToolTip = baBlocksDepsLoad
+                    ? "Disabled while BrowserAssist is managing this package"
+                    : "Load selected dependencies";
 
                 // Show Unload button if any dependencies are Loaded
                 UnloadDependenciesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
@@ -2267,6 +2321,9 @@ namespace VPM
                             }
 
                             Interlocked.Increment(ref movedCount);
+
+                            // Clean up BA companion JSON and thumbnail cache if the file came from OffloadedVARs
+                            _packageFileManager?.CleanupBrowserAssistCacheIfOffloaded(sourceFile);
                         }
                     }
                     catch (Exception ex)
@@ -2278,7 +2335,7 @@ namespace VPM
                         }
                     }
                 });
-                
+
                 SetStatus($"Archived {movedCount} old version(s). Failed: {failedCount}");
                 
                 var message = $"Successfully archived {movedCount} old version package(s) to:\n{oldPackagesFolder}";

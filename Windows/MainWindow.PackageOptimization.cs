@@ -106,24 +106,23 @@ namespace VPM
                 // MetadataKey is the actual filename from the metadata dictionary
                 string lookupKey = !string.IsNullOrEmpty(package.MetadataKey) ? package.MetadataKey : package.Name;
                 
-                // First check if package is in PackageManager metadata (handles external packages)
+                // First check PackageManager metadata for a direct FilePath
+                // (covers external packages, OffloadedVARs, and any non-standard location)
                 if (_packageManager?.PackageMetadata != null)
                 {
                     if (_packageManager.PackageMetadata.TryGetValue(lookupKey, out var metadata))
                     {
-                        // Check if it's an external package with a valid FilePath
-                        if (metadata.IsExternal && !string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
+                        if (!string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
                         {
                             return metadata.FilePath;
                         }
                     }
                 }
-                
+
                 // Try to get the package file info from standard locations
                 var fileInfo = _packageFileManager.GetPackageFileInfo(lookupKey);
                 if (fileInfo != null && !string.IsNullOrEmpty(fileInfo.CurrentPath))
                 {
-                    // Check if it's a .var file
                     if (System.IO.File.Exists(fileInfo.CurrentPath))
                     {
                         return fileInfo.CurrentPath;
@@ -1283,13 +1282,28 @@ namespace VPM
                 
 
                 string packagePath = pkgInfo.CurrentPath;
-                
+
                 // Only support VAR files
                 if (!packagePath.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
                 {
-                    MessageBox.Show("Package optimization is only supported for .var files, not unarchived packages.", 
+                    MessageBox.Show("Package optimization is only supported for .var files, not unarchived packages.",
                                   "Unsupported Format", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
+                }
+                // Determine BA-managed status early so dep inputs are gated before flag computation
+                string offloadedFolder = _settingsManager?.Settings?.BrowserAssistIntegration == true
+                    ? Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder)
+                    : null;
+                bool isInOffloadedVars = Services.BrowserAssistService.IsPathInOffloadedVars(packagePath, offloadedFolder);
+
+                // Gate dep inputs: BA-managed packages must not have their dependencies modified
+                if (isInOffloadedVars)
+                {
+                    disabledDependencies = new List<string>();
+                    latestConversionCount = 0;
+                    hasDependencyChanges = false;
+                    hasAnyChanges = selectedTextures.Count > 0 || selectedHairs.Count > 0 ||
+                                    selectedMirrors.Count > 0 || selectedLights.Count > 0;
                 }
 
                 // Check if package already has optimizations and if there are actual changes
@@ -1532,12 +1546,11 @@ namespace VPM
                     // Set mirrors flag
                     config.DisableMirrors = disableMirrors;
                     
-                    // Set force latest dependencies flag from settings
-                    config.ForceLatestDependencies = _settingsManager?.Settings?.ForceLatestDependencies ?? false;
-                    
-                    // Add disabled dependencies
+                    // Set dependency modifications (already gated for BA-managed packages after packagePath resolution)
+                    config.ForceLatestDependencies = !isInOffloadedVars &&
+                        (latestConversionCount > 0 || (_settingsManager?.Settings?.ForceLatestDependencies ?? false));
                     config.DisabledDependencies = disabledDependencies;
-                    
+
                     // Set disable morph preload flag from settings
                     config.DisableMorphPreload = _settingsManager?.Settings?.DisableMorphPreload ?? true;
                     
@@ -1570,8 +1583,8 @@ namespace VPM
                     texturesConverted = optimizationResult.TexturesConverted;
                     hairsModified = optimizationResult.HairsModified;
                     
-                    // Remove disabled dependencies if any
-                    if (disabledDependencies.Count > 0)
+                    // Remove disabled dependencies if any (skipped for BA-managed packages)
+                    if (!isInOffloadedVars && disabledDependencies.Count > 0)
                     {
                         await System.Threading.Tasks.Task.Run(() =>
                         {
@@ -2076,6 +2089,9 @@ namespace VPM
                 };
                 tabControl.Items.Add(summaryTab);
 
+                // Pre-compute BA state here so both the SelectionChanged and Loaded closures can capture it
+                bool isBaManaged = IsAnyPackageBaManaged(packages);
+
                 // Add SelectionChanged handler to refresh summary tab when selected
                 // This handler will be called after tabs are populated
                 tabControl.SelectionChanged += (s, e) =>
@@ -2085,7 +2101,7 @@ namespace VPM
                     if (selectedTab?.Header is string header && header == "Summary")
                     {
                         // Recreate summary tab content with current data
-                        var newSummaryTab = CreateBulkSummaryTab(packages, textureResult, hairResult, dependencyResult, dialog);
+                        var newSummaryTab = CreateBulkSummaryTab(packages, textureResult, hairResult, dependencyResult, dialog, isBaManaged);
                         selectedTab.Content = newSummaryTab.Content;
                     }
                 };
@@ -2388,7 +2404,7 @@ namespace VPM
                 };
                 
                 // Populate tabs after window is shown - use Dispatcher to ensure UI updates properly
-                dialog.Loaded += (s, e) => 
+                dialog.Loaded += (s, e) =>
                 {
                     updateTabWidths();
                     
@@ -2435,13 +2451,20 @@ namespace VPM
                             }
                             dependenciesTab = CreateBulkDependenciesTab(dependencyResult, _settingsManager?.Settings?.ForceLatestDependencies ?? false, dialog);
                             tabControl.Items.Insert(dependenciesIndex, dependenciesTab);
-                            
+
+                            if (isBaManaged)
+                            {
+                                dependenciesTab.IsEnabled = false;
+                                dependenciesTab.ToolTip = "Disabled while BrowserAssist is managing packages";
+                                ToolTipService.SetShowOnDisabled(dependenciesTab, true);
+                            }
+
                             int summaryIndex = tabControl.Items.Count > 5 ? 5 : tabControl.Items.Count;
                             if (tabControl.Items.Count > summaryIndex)
                             {
                                 tabControl.Items.RemoveAt(summaryIndex);
                             }
-                            summaryTab = CreateBulkSummaryTab(packages, textureResult, hairResult, dependencyResult, dialog);
+                            summaryTab = CreateBulkSummaryTab(packages, textureResult, hairResult, dependencyResult, dialog, isBaManaged);
                             tabControl.Items.Insert(summaryIndex, summaryTab);
                             
                             // Select the first tab (Textures)
@@ -2546,17 +2569,24 @@ namespace VPM
                 var mirrorsByPackage = hairResult.MirrorItems.Where(m => m.Disable == m.IsCurrentlyOn).GroupBy(m => m.PackageName).ToDictionary(g => g.Key, g => g.ToList());
                 var lightsByPackage = hairResult.LightItems.Where(l => l.HasActualShadowConversion).GroupBy(l => l.PackageName).ToDictionary(g => g.Key, g => g.ToList());
                 
-                // Group dependencies by package
-                var disabledDepsByPackage = dependencyResult?.Dependencies?.Where(d => !d.IsEnabled).GroupBy(d => d.PackageName).ToDictionary(g => g.Key, g => g.ToList()) ?? new Dictionary<string, List<DependencyItemModel>>();
-                
+                // BA-managed packages must not have their dependencies modified
+                bool baBatchManaged = IsAnyPackageBaManaged(packages);
+
+                // Group dependencies by package (empty when BA owns the batch)
+                var disabledDepsByPackage = !baBatchManaged
+                    ? dependencyResult?.Dependencies?.Where(d => !d.IsEnabled).GroupBy(d => d.PackageName).ToDictionary(g => g.Key, g => g.ToList()) ?? new Dictionary<string, List<DependencyItemModel>>()
+                    : new Dictionary<string, List<DependencyItemModel>>();
+
                 // Count dependencies that will be converted to .latest
                 // Include dependencies where ForceLatest is true AND they will be converted (not already .latest)
                 // Also check the global ForceLatestDependencies setting
-                bool forceLatestGlobalSetting = _settingsManager?.Settings?.ForceLatestDependencies ?? false;
-                var latestDepsToConvert = dependencyResult?.Dependencies?.Where(d => 
-                    d.IsEnabled && 
-                    (d.ForceLatest || forceLatestGlobalSetting) && 
-                    d.WillBeConvertedToLatest).ToList() ?? new List<DependencyItemModel>();
+                bool forceLatestGlobalSetting = !baBatchManaged && (_settingsManager?.Settings?.ForceLatestDependencies ?? false);
+                var latestDepsToConvert = !baBatchManaged
+                    ? dependencyResult?.Dependencies?.Where(d =>
+                        d.IsEnabled &&
+                        (d.ForceLatest || forceLatestGlobalSetting) &&
+                        d.WillBeConvertedToLatest).ToList() ?? new List<DependencyItemModel>()
+                    : new List<DependencyItemModel>();
                 var latestDepsByPackage = latestDepsToConvert.GroupBy(d => d.PackageName).ToDictionary(g => g.Key, g => g.ToList()) ?? new Dictionary<string, List<DependencyItemModel>>();
                 
                 // Also detect packages where dependencies have changed (including re-enabled dependencies)
@@ -3177,16 +3207,29 @@ namespace VPM
                 throw new Exception("Package optimization is only supported for .var files");
             }
 
+            // Determine BA-managed status early so dep inputs can be gated before flag computation
+            string coreOffloadedFolder = _settingsManager?.Settings?.BrowserAssistIntegration == true
+                ? Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder)
+                : null;
+            bool corePackageIsInOffloadedVars = Services.BrowserAssistService.IsPathInOffloadedVars(packagePath, coreOffloadedFolder);
+
+            // Gate dep inputs: BA-managed packages must not have their dependencies modified
+            if (corePackageIsInOffloadedVars)
+            {
+                disabledDependencies = null;
+                latestDependencies = null;
+            }
+
             // Check if package already has optimizations and if there are actual changes
             VarMetadata packageMetadata = null;
             if (_packageManager?.PackageMetadata != null)
             {
                 _packageManager.PackageMetadata.TryGetValue(packageName, out packageMetadata);
             }
-            
+
             bool isAlreadyOptimized = packageMetadata != null && packageMetadata.IsOptimized;
-            
-            // Check for dependency changes
+
+            // Check for dependency changes (already gated above for BA-managed packages)
             int disabledDepsCount = disabledDependencies?.Count ?? 0;
             int latestDepsCount = latestDependencies?.Count ?? 0;
             bool hasDependencyChanges = disabledDepsCount > 0 || latestDepsCount > 0;
@@ -3298,10 +3341,9 @@ namespace VPM
             // Set IsMorphAsset flag
             config.IsMorphAsset = packageMetadata?.IsMorphAsset ?? false;
             
-            // Set dependency modifications
-            // Check both the passed dependencies and the global setting
-            bool shouldForceLatest = latestDepsCount > 0 || (_settingsManager?.Settings?.ForceLatestDependencies ?? false);
-            config.ForceLatestDependencies = shouldForceLatest;
+            // Set dependency modifications (already gated for BA-managed packages at method entry)
+            config.ForceLatestDependencies = !corePackageIsInOffloadedVars &&
+                (latestDepsCount > 0 || (_settingsManager?.Settings?.ForceLatestDependencies ?? false));
             if (disabledDependencies != null)
             {
                 config.DisabledDependencies = disabledDependencies

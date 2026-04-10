@@ -1657,6 +1657,12 @@ namespace VPM
                         var packageItem = imageItem.PackageItem;
                         if (packageItem != null && _packageFileManager != null)
                         {
+                            if (_baVarManagementEnabled == true &&
+                                Services.BrowserAssistService.IsPathInOffloadedVars(
+                                    _packageManager?.PackageMetadata?.GetValueOrDefault(packageItem.MetadataKey ?? packageItem.Name)?.FilePath,
+                                    Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder)))
+                                return;
+
                             // Cancel any pending image loading operations to free up file handles
                             _imageLoadingCts?.Cancel();
                             _imageLoadingCts = new System.Threading.CancellationTokenSource();

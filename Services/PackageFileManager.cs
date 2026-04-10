@@ -50,6 +50,25 @@ namespace VPM.Services
         private readonly Dictionary<string, (int fileCount, long lastWriteTicks)> _statusIndexDirectorySignatures = new Dictionary<string, (int, long)>(StringComparer.OrdinalIgnoreCase);
 
 
+        // Integration flags
+        private bool _browserAssistIntegration;
+        public bool BrowserAssistIntegration
+        {
+            get => _browserAssistIntegration;
+            set
+            {
+                if (_browserAssistIntegration != value)
+                {
+                    _browserAssistIntegration = value;
+                    // Status index includes/excludes OffloadedVARs based on this flag
+                    lock (_statusIndexLock)
+                    {
+                        _statusIndexBuilt = false;
+                    }
+                }
+            }
+        }
+
         // Disposal tracking
         private bool _disposed;
         
@@ -897,12 +916,41 @@ namespace VPM.Services
                 var (moved, moveError) = await TryFastRenameMoveAsync(sourceInfo, sourcePath, destinationPath, fastAttempts);
                 if (moved)
                 {
+                    CleanupBrowserAssistCacheIfOffloaded(sourcePath);
                     return (true, "");
                 }
             }
 
             // Fallback: robust copy+delete (works across volumes and when rename is blocked).
-            return await CopyDeleteFallbackAsync(sourceInfo, sourcePath, destinationPath, maxRetries);
+            var result = await CopyDeleteFallbackAsync(sourceInfo, sourcePath, destinationPath, maxRetries);
+            if (result.success)
+            {
+                CleanupBrowserAssistCacheIfOffloaded(sourcePath);
+            }
+            return result;
+        }
+
+        // BA stores companion .json files and caches alongside offloaded VARs; leaving them orphaned
+        // causes BA to re-download or show stale entries, so we clean up proactively after moves/deletes.
+        internal void CleanupBrowserAssistCacheIfOffloaded(string sourcePath)
+        {
+            if (!BrowserAssistIntegration)
+                return;
+
+            try
+            {
+                string offloadedVarsFolder = BrowserAssistService.GetOffloadedVarsFolder(_rootFolder);
+                if (string.IsNullOrEmpty(offloadedVarsFolder) ||
+                    !BrowserAssistService.IsPathInOffloadedVars(sourcePath, offloadedVarsFolder))
+                    return;
+
+                BrowserAssistService.DeleteCompanionJson(sourcePath);
+                BrowserAssistService.CleanCacheForPackage(_rootFolder, Path.GetFileName(sourcePath));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BA] Cache cleanup failed for {sourcePath}: {ex.Message}");
+            }
         }
 
         private SemaphoreSlim GetPackageLock(string packageName)
@@ -953,9 +1001,16 @@ namespace VPM.Services
                 var depInfo = DependencyVersionInfo.Parse(packageName);
                 var baseName = depInfo.BaseName;
                 
-                // Determine the best version available across BOTH folders
+                // Determine the best version available across all known locations,
+                // including OffloadedVARs when BA integration is active.
                 string targetFile;
-                var searchDirs = new[] { _addonPackagesFolder, _allPackagesFolder };
+                string offloadedVarsFolder = BrowserAssistIntegration
+                    ? BrowserAssistService.GetOffloadedVarsFolder(_rootFolder)
+                    : null;
+                var searchDirsList = new List<string> { _addonPackagesFolder, _allPackagesFolder };
+                if (!string.IsNullOrEmpty(offloadedVarsFolder) && Directory.Exists(offloadedVarsFolder))
+                    searchDirsList.Add(offloadedVarsFolder);
+                var searchDirs = searchDirsList.ToArray();
                 
                 if (depInfo.VersionType == DependencyVersionType.Exact)
                 {
@@ -974,6 +1029,23 @@ namespace VPM.Services
                 if (string.IsNullOrEmpty(targetFile))
                 {
                     targetFile = FindExactPackagePath(packageName, searchDirs);
+                }
+
+                // Block the move if BA's VAR manager owns this package
+                if (!string.IsNullOrEmpty(targetFile) &&
+                    !string.IsNullOrEmpty(offloadedVarsFolder) &&
+                    BrowserAssistService.IsPathInOffloadedVars(targetFile, offloadedVarsFolder) &&
+                    BrowserAssistService.IsVarManagementEnabled(_rootFolder))
+                {
+                    var baErrorMsg = $"Disabled while BrowserAssist is managing packages.";
+                    OperationCompleted?.Invoke(this, new PackageOperationEventArgs
+                    {
+                        PackageName = packageName,
+                        Operation = "Load",
+                        Success = false,
+                        ErrorMessage = baErrorMsg
+                    });
+                    return (false, baErrorMsg, null);
                 }
 
                 if (string.IsNullOrEmpty(targetFile))
@@ -1796,45 +1868,89 @@ namespace VPM.Services
                     }
                 }
                 
+                // Scan BrowserAssist OffloadedVARs (Available packages not in AddonPackages or AllPackages)
+                if (BrowserAssistIntegration)
+                {
+                    var offloadedVarsFolder = BrowserAssistService.GetOffloadedVarsFolder(_rootFolder);
+                    if (Directory.Exists(offloadedVarsFolder))
+                    {
+                        var offloadedFiles = SymlinkSafeFileSystem.EnumerateFilesSafe(offloadedVarsFolder, "*.var", true);
+                        foreach (var file in offloadedFiles)
+                        {
+                            var filename = Path.GetFileNameWithoutExtension(file);
+                            var fullPackageName = ExtractFullPackageNameFromFilename(filename);
+                            if (!string.IsNullOrEmpty(fullPackageName))
+                            {
+                                _packageStatusIndex.TryAdd(fullPackageName, "Available");
+                                var depInfo = DependencyVersionInfo.Parse(fullPackageName);
+                                _packageStatusIndex.TryAdd(depInfo.BaseName, "Available");
+                            }
+                        }
+                    }
+                }
+
                 // Update directory signatures for next check
                 UpdateDirectorySignatures();
                 _statusIndexBuilt = true;
             }
         }
-        
+
+        private string[] GetStatusIndexDirectories()
+        {
+            var dirs = new[] { _addonPackagesFolder, _allPackagesFolder, _archivedPackagesFolder };
+            if (!BrowserAssistIntegration)
+                return dirs;
+
+            var offloadedFolder = BrowserAssistService.GetOffloadedVarsFolder(_rootFolder);
+            if (string.IsNullOrEmpty(offloadedFolder))
+                return dirs;
+
+            return new[] { _addonPackagesFolder, _allPackagesFolder, _archivedPackagesFolder, offloadedFolder };
+        }
+
         /// <summary>
         /// Checks if any package directories have changed since last scan
         /// </summary>
         private bool HasDirectoriesChanged()
         {
-            var directories = new[] { _addonPackagesFolder, _allPackagesFolder, _archivedPackagesFolder };
-            
+            var directories = GetStatusIndexDirectories();
+
             foreach (var dir in directories)
             {
                 if (!Directory.Exists(dir))
                     continue;
-                
+
                 var dirInfo = new DirectoryInfo(dir);
-                var currentSignature = (SymlinkSafeFileSystem.EnumerateFilesSafe(dir, "*.var", true).Count(), 
+                var currentSignature = (SymlinkSafeFileSystem.EnumerateFilesSafe(dir, "*.var", true).Count(),
                                        dirInfo.LastWriteTimeUtc.Ticks);
-                
-                if (!_statusIndexDirectorySignatures.TryGetValue(dir, out var lastSignature) || 
+
+                if (!_statusIndexDirectorySignatures.TryGetValue(dir, out var lastSignature) ||
                     lastSignature != currentSignature)
                 {
                     return true;
                 }
             }
-            
+
             return false;
         }
-        
+
         /// <summary>
         /// Updates directory signatures for change detection
         /// </summary>
         private void UpdateDirectorySignatures()
         {
-            var directories = new[] { _addonPackagesFolder, _allPackagesFolder, _archivedPackagesFolder };
-            
+            var directories = GetStatusIndexDirectories();
+            var directorySet = new HashSet<string>(directories, StringComparer.OrdinalIgnoreCase);
+
+            // Remove stale entries no longer in the tracking list
+            var staleKeys = _statusIndexDirectorySignatures.Keys
+                    .Where(k => !directorySet.Contains(k))
+                    .ToList();
+                foreach (var key in staleKeys)
+                {
+                    _statusIndexDirectorySignatures.Remove(key);
+                }
+
             foreach (var dir in directories)
             {
                 if (!Directory.Exists(dir))

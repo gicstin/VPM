@@ -105,6 +105,9 @@ namespace VPM
         
         // Cache for dependents counts
         private Dictionary<string, int> _currentDependentsCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // Cached result of BA's VAR management enabled flag, refreshed after each package scan
+        private bool? _baVarManagementEnabled;
         
         private readonly object _customDependencyIndexLock = new object();
         
