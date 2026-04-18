@@ -35,8 +35,11 @@ namespace VPM.Services
             _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.v3+json");
         }
 
-        public async Task<VpbPluginCheckResult> CheckAsync(string vamRoot)
+        public async Task<VpbPluginCheckResult> CheckAsync(string vamRoot, string gitRef = "main")
         {
+            if (string.IsNullOrWhiteSpace(gitRef))
+                gitRef = "main";
+
             var result = new VpbPluginCheckResult();
             var localPath = Path.Combine(vamRoot, "BepInEx", "plugins", "VPB.dll");
 
@@ -61,7 +64,7 @@ namespace VPM.Services
             try
             {
                 // Get SHA
-                var contentUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{FilePath}?ref=main";
+                var contentUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{FilePath}?ref={Uri.EscapeDataString(gitRef)}";
                 var contentResponse = await _httpClient.GetAsync(contentUrl);
                 
                 if (contentResponse.IsSuccessStatusCode)
@@ -82,7 +85,7 @@ namespace VPM.Services
                 }
 
                 // Get Date (Commit)
-                var commitsUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/commits?path={FilePath}&per_page=1&sha=main";
+                var commitsUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/commits?path={FilePath}&per_page=1&sha={Uri.EscapeDataString(gitRef)}";
                 var commitsResponse = await _httpClient.GetAsync(commitsUrl);
 
                 if (commitsResponse.IsSuccessStatusCode)

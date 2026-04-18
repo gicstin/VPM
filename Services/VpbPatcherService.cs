@@ -793,6 +793,25 @@ namespace VPM.Services
             return relativePath.Replace('\\', '/').TrimStart('/');
         }
 
+        public async Task<IReadOnlyList<string>> GetBranchesAsync(CancellationToken cancellationToken = default)
+        {
+            var url = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/branches";
+            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var items = JsonSerializer.Deserialize<List<GitHubBranchItem>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            var names = items?
+                .Select(b => b.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .OrderBy(n => n == "main" ? 0 : 1)
+                .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            return names;
+        }
+
         private async Task<List<ManifestEntry>> GetManifestAsync(string gitRef, CancellationToken cancellationToken)
         {
             var treeUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/trees/{gitRef}?recursive=1";
@@ -952,6 +971,11 @@ namespace VPM.Services
             public string Type { get; set; }
             public string Sha { get; set; }
             public long Size { get; set; }
+        }
+
+        private sealed class GitHubBranchItem
+        {
+            public string Name { get; set; }
         }
     }
 }

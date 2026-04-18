@@ -33,10 +33,11 @@ namespace VPM
                 Task<VpbPluginCheckResult> vpbTask = null;
                 if (!string.IsNullOrEmpty(_selectedFolder))
                 {
-                    vpbTask = Task.Run(async () => 
+                    var branch = _settingsManager?.Settings?.VpbPreferredBranch is { Length: > 0 } b ? b : "main";
+                    vpbTask = Task.Run(async () =>
                     {
                         using var checker = new VpbPluginChecker();
-                        return await checker.CheckAsync(_selectedFolder);
+                        return await checker.CheckAsync(_selectedFolder, branch);
                     });
                 }
 

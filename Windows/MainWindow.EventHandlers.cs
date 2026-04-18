@@ -5136,10 +5136,12 @@ namespace VPM
             {
                 SetStatus("Checking VPB patch status...");
 
-                using var patcher = new VpbPatcherService();
-                var check = await patcher.CheckAsync(_selectedFolder, "main");
+                var branch = _settingsManager?.Settings?.VpbPreferredBranch is { Length: > 0 } b ? b : "main";
 
-                var detailsWindow = new Windows.VpbPatchDetailsWindow(_selectedFolder, check.GitRef, check)
+                using var patcher = new VpbPatcherService();
+                var check = await patcher.CheckAsync(_selectedFolder, branch);
+
+                var detailsWindow = new Windows.VpbPatchDetailsWindow(_selectedFolder, check.GitRef, check, _settingsManager)
                 {
                     Owner = this
                 };

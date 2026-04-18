@@ -13,17 +13,22 @@ namespace VPM.Windows
     public partial class VpbPatchDetailsWindow : Window
     {
         private readonly string _gameFolder;
+        private readonly ISettingsManager _settingsManager;
         private string _gitRef;
         private CancellationTokenSource _cts;
         private VpbPatchCheckResult _check;
         private bool _runCompleted;
+        private bool _suppressBranchEvent;
 
-        public VpbPatchDetailsWindow(string gameFolder, string gitRef, VpbPatchCheckResult check)
+        public VpbPatchDetailsWindow(string gameFolder, string gitRef, VpbPatchCheckResult check, ISettingsManager settingsManager = null)
         {
             InitializeComponent();
 
             _gameFolder = gameFolder ?? throw new ArgumentNullException(nameof(gameFolder));
-            _gitRef = string.IsNullOrWhiteSpace(gitRef) ? "main" : gitRef;
+            _settingsManager = settingsManager;
+            _gitRef = _settingsManager?.Settings?.VpbPreferredBranch is { Length: > 0 } saved
+                ? saved
+                : (string.IsNullOrWhiteSpace(gitRef) ? "main" : gitRef);
             _check = check;
             _cts = new CancellationTokenSource();
 
@@ -37,7 +42,12 @@ namespace VPM.Windows
                 {
                 }
 
+                // Pre-populate with current branch immediately so the ComboBox is never blank
+                BranchComboBox.ItemsSource = new[] { _gitRef };
+                BranchComboBox.SelectedIndex = 0;
+
                 RefreshUiFromCheck();
+                _ = LoadBranchesAsync();
             };
         }
 
@@ -47,12 +57,19 @@ namespace VPM.Windows
                 return;
 
             FolderText.Text = _gameFolder;
-            GitRefText.Text = _check.GitRef;
+            _suppressBranchEvent = true;
+            if (BranchComboBox.SelectedItem as string != _gitRef)
+                BranchComboBox.SelectedItem = _gitRef;
+            _suppressBranchEvent = false;
             CountsText.Text = $"Patch files: {_check.TotalFiles}   Missing: {_check.MissingFiles}   Outdated: {_check.OutdatedFiles}   Patched: {_check.PatchedFiles}";
 
             MissingGrid.ItemsSource = _check.MissingDetails ?? Array.Empty<VpbPatchFileIssue>();
             OutdatedGrid.ItemsSource = _check.OutdatedDetails ?? Array.Empty<VpbPatchFileIssue>();
             PatchedGrid.ItemsSource = _check.PatchedDetails ?? Array.Empty<VpbPatchFileIssue>();
+
+            MissingTab.Header = $"Missing ({_check.MissingFiles})";
+            OutdatedTab.Header = $"Outdated ({_check.OutdatedFiles})";
+            PatchedTab.Header = $"Patched ({_check.PatchedFiles})";
 
             var patchStatus = "Not installed";
             if (_check.Status == VpbPatchStatus.UpToDate)
@@ -115,6 +132,118 @@ namespace VPM.Windows
             _check = await patcher.CheckAsync(_gameFolder, _gitRef, _cts.Token).ConfigureAwait(true);
             _gitRef = _check.GitRef;
             RefreshUiFromCheck();
+        }
+
+        private async Task LoadBranchesAsync()
+        {
+            try
+            {
+                using var patcher = new VpbPatcherService();
+                // Use a separate token so disposing _cts on branch change doesn't cancel this
+                using var loadCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var branches = await patcher.GetBranchesAsync(loadCts.Token).ConfigureAwait(true);
+
+                _suppressBranchEvent = true;
+                bool branchWasRemoved = false;
+                try
+                {
+                    BranchComboBox.ItemsSource = branches;
+                    BranchComboBox.SelectedItem = _gitRef;
+
+                    // Saved branch no longer exists on the remote — fall back to "main" or first available
+                    if (BranchComboBox.SelectedItem == null && branches.Count > 0)
+                    {
+                        var fallback = branches.Contains("main") ? "main" : branches[0];
+                        _gitRef = fallback;
+                        if (_settingsManager?.Settings != null)
+                            _settingsManager.Settings.VpbPreferredBranch = fallback;
+                        BranchComboBox.SelectedItem = fallback;
+                        branchWasRemoved = true;
+                    }
+                }
+                finally
+                {
+                    _suppressBranchEvent = false;
+                }
+
+                if (branchWasRemoved)
+                    await RefreshCheckAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Branch list is optional — silently ignore failures
+            }
+        }
+
+        private async void BranchComboBox_DropDownClosed(object sender, EventArgs e)
+        {
+            await ApplyBranchSelectionAsync().ConfigureAwait(true);
+        }
+
+        private async void BranchComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            // Only handle scroll-wheel changes (when dropdown is not open)
+            if (BranchComboBox.IsDropDownOpen)
+                return;
+            await ApplyBranchSelectionAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyBranchSelectionAsync()
+        {
+            if (_suppressBranchEvent)
+                return;
+
+            var selected = BranchComboBox.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(selected) || selected == _gitRef)
+                return;
+
+            // Save previous state so we can revert if the check fails
+            var previousGitRef = _gitRef;
+            _gitRef = selected;
+
+            if (_settingsManager?.Settings != null)
+                _settingsManager.Settings.VpbPreferredBranch = selected;
+
+            // Cancel any in-flight check before disposing — without Cancel() first,
+            // the old operation can complete after us and overwrite _check with stale data
+            try
+            {
+                _cts.Cancel();
+                _cts.Dispose();
+            }
+            catch { }
+
+            _cts = new CancellationTokenSource();
+
+            SetBusy(true, $"Checking branch '{selected}'...");
+            try
+            {
+                await RefreshCheckAsync().ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                // Triggered by a newer branch selection or window close — don't revert
+            }
+            catch (Exception ex)
+            {
+                // Check failed — revert to the previous branch so UI stays consistent
+                _gitRef = previousGitRef;
+                if (_settingsManager?.Settings != null)
+                    _settingsManager.Settings.VpbPreferredBranch = previousGitRef;
+                _suppressBranchEvent = true;
+                try { BranchComboBox.SelectedItem = previousGitRef; }
+                finally { _suppressBranchEvent = false; }
+
+                CustomMessageBox.Show(
+                    $"Failed to check branch '{selected}':\n\n{ex.Message}",
+                    "VPB Patch Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                SetBusy(false, string.Empty);
+            }
         }
 
         private async Task RunInstallOrUpdateAsync()
@@ -203,6 +332,7 @@ namespace VPM.Windows
 
             try
             {
+                _cts.Cancel();
                 _cts.Dispose();
             }
             catch
@@ -241,6 +371,7 @@ namespace VPM.Windows
 
             try
             {
+                _cts.Cancel();
                 _cts.Dispose();
             }
             catch

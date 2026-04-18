@@ -160,6 +160,9 @@ namespace VPM.Models
         // Unload other packages setting for playlist activation
         private bool _unloadOtherPackagesOnPlaylistActivation = true;
 
+        // VPB Patcher Settings
+        private string _vpbPreferredBranch = "main";
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         // First Launch Settings Properties
@@ -805,6 +808,12 @@ namespace VPM.Models
         {
             get => _unloadOtherPackagesOnPlaylistActivation;
             set => SetProperty(ref _unloadOtherPackagesOnPlaylistActivation, value);
+        }
+
+        public string VpbPreferredBranch
+        {
+            get => _vpbPreferredBranch;
+            set => SetProperty(ref _vpbPreferredBranch, string.IsNullOrWhiteSpace(value) ? "main" : value);
         }
 
         /// <summary>
