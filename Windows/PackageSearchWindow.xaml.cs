@@ -857,7 +857,7 @@ namespace VPM
                     string downloadUrl = null;
                     string onlinePackageName = null;
                     int onlineVersion = -1;
-                    
+
                     if (usingLocalLinks)
                     {
                         // Check local links.txt
@@ -885,13 +885,13 @@ namespace VPM
                                 downloadUrl = "hub";
                             }
                         }
-                        
+
                         if (string.IsNullOrEmpty(downloadUrl))
                         {
                             // Fallback to latest version
                             var baseName = ExtractBaseName(packageName);
                             var hubLatestVersion = _hubService.GetLatestVersion(baseName);
-                            
+
                             if (hubLatestVersion > 0)
                             {
                                 onlinePackageName = $"{baseName}.{hubLatestVersion}";
@@ -1021,22 +1021,27 @@ namespace VPM
                             try
                             {
                                 var hubDetail = await _hubService.GetResourceDetailAsync(packageToDownload, isPackageName: true);
-                                
+
                                 if (hubDetail != null)
                                 {
                                     // Try to get download URL from HubFiles or ExternalDownloadUrl
                                     string downloadUrl = null;
-                                    
+
                                     if (hubDetail.HubFiles != null && hubDetail.HubFiles.Count > 0)
                                     {
-                                        var hubFile = hubDetail.HubFiles[0];
+                                        // Find the HubFile whose PackageName matches the requested package.
+                                        // A release can contain multiple .var files (e.g. a skin pack bundled
+                                        // with a showcase scene), so we must not blindly take index 0.
+                                        var hubFile = hubDetail.HubFiles
+                                            .FirstOrDefault(f => string.Equals(f.PackageName, packageToDownload, StringComparison.OrdinalIgnoreCase))
+                                            ?? hubDetail.HubFiles[0];
                                         downloadUrl = hubFile.EffectiveDownloadUrl;
                                     }
                                     else if (!string.IsNullOrEmpty(hubDetail.ExternalDownloadUrl))
                                     {
                                         downloadUrl = hubDetail.ExternalDownloadUrl;
                                     }
-                                    
+
                                     if (!string.IsNullOrEmpty(downloadUrl))
                                     {
                                         downloadInfo = new PackageDownloadInfo
@@ -1044,9 +1049,6 @@ namespace VPM
                                             PackageName = packageToDownload,
                                             DownloadUrl = downloadUrl
                                         };
-                                    }
-                                    else
-                                    {
                                     }
                                 }
                                 else
