@@ -546,7 +546,21 @@ namespace VPM.Services
             if (state.SelectedSubfolders.Count > 0)
             {
                 var subfolder = ExtractSubfolderFromMetadata(metadata);
-                if (string.IsNullOrEmpty(subfolder) || !state.SelectedSubfolders.Contains(subfolder))
+                if (string.IsNullOrEmpty(subfolder))
+                    return false;
+
+                // Match exact subfolder OR any package nested inside a selected parent folder
+                bool subfolderMatch = false;
+                foreach (var selected in state.SelectedSubfolders)
+                {
+                    if (string.Equals(subfolder, selected, StringComparison.OrdinalIgnoreCase) ||
+                        subfolder.StartsWith(selected + "/", StringComparison.OrdinalIgnoreCase))
+                    {
+                        subfolderMatch = true;
+                        break;
+                    }
+                }
+                if (!subfolderMatch)
                     return false;
             }
 
@@ -961,16 +975,25 @@ namespace VPM.Services
             foreach (var package in packages.Values)
             {
                 string subfolder = ExtractSubfolderFromMetadata(package);
-                
+
                 if (!string.IsNullOrEmpty(subfolder))
                 {
+                    // Count the exact subfolder
                     if (counts.TryGetValue(subfolder, out var count))
-                    {
                         counts[subfolder] = count + 1;
-                    }
                     else
-                    {
                         counts[subfolder] = 1;
+
+                    // Also count all intermediate/parent folders so they appear as selectable entries
+                    int slashIdx = subfolder.IndexOf('/');
+                    while (slashIdx > 0)
+                    {
+                        string parentFolder = subfolder.Substring(0, slashIdx);
+                        if (counts.TryGetValue(parentFolder, out var parentCount))
+                            counts[parentFolder] = parentCount + 1;
+                        else
+                            counts[parentFolder] = 1;
+                        slashIdx = subfolder.IndexOf('/', slashIdx + 1);
                     }
                 }
             }
