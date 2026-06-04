@@ -867,7 +867,9 @@ namespace VPM.Services
                 return categories.ToArray();
             }
             
-            foreach (var content in contentList.Take(100))
+            // Scan the full list, not a prefix: large packages (e.g. TGC scene packs) bundle hundreds of
+            // support assets ahead of their scene files in archive order, so a cap would miss "Scenes".
+            foreach (var content in contentList)
             {
                 var category = DetectCategoryFromPath(content);
                 if (!string.IsNullOrEmpty(category) && category != "Unknown")

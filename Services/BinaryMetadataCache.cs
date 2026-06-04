@@ -15,7 +15,7 @@ namespace VPM.Services
     /// </summary>
     public class BinaryMetadataCache : IDisposable
     {
-        private const int CACHE_VERSION = 14; // Removed ContentList and AllFiles from cache payload
+        private const int CACHE_VERSION = 15; // Categories now detected from full content list (was capped at 100)
         private readonly string _cacheFilePath;
         private readonly string _cacheDirectory;
         private readonly Dictionary<string, CachedMetadata> _cache = new(StringComparer.OrdinalIgnoreCase);
