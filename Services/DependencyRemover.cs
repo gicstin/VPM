@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -62,11 +62,8 @@ namespace VPM.Services
             try
             {
                 using (var sourceArchive = SharpCompressHelper.OpenForRead(varPath))
-                using (var destArchive = ZipArchive.Create())
+                using (var destArchive = ZipArchive.CreateArchive())
                 {
-                    // Set maximum compression level for smaller output files
-                    destArchive.DeflateCompressionLevel = SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression;
-                    
                     foreach (var entry in sourceArchive.Entries)
                     {
                         if (entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
@@ -87,7 +84,8 @@ namespace VPM.Services
                     // Save the archive inside the using block
                     using (var destFileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
                     {
-                        destArchive.SaveTo(destFileStream, CompressionType.Deflate);
+                        // BestCompression for smaller output; level lives on ZipWriterOptions in SharpCompress 0.49+
+                        destArchive.SaveTo(destFileStream, new SharpCompress.Writers.Zip.ZipWriterOptions(CompressionType.Deflate, SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression));
                     }
                 }
 

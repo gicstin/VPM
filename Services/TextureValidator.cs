@@ -426,7 +426,7 @@ namespace VPM.Services
                 // For VAR files: Open archive ONCE and process all textures (10-50x faster)
                 if (isVarFile)
                 {
-                    using (var archive = ZipArchive.Open(packagePath))
+                    using (var archive = ZipArchive.OpenArchive(packagePath))
                     {
                         // Build entry lookup dictionary for O(1) access instead of O(n) per texture
                         var entryLookup = new Dictionary<string, IArchiveEntry>(StringComparer.OrdinalIgnoreCase);
@@ -682,7 +682,7 @@ namespace VPM.Services
             bool exists = false;
             if (isVarFile)
             {
-                using (var zipFile = ZipArchive.Open(packagePath))
+                using (var zipFile = ZipArchive.OpenArchive(packagePath))
                 {
                     exists = SharpCompressHelper.FindEntryByPath(zipFile, texturePath) != null;
                 }
@@ -861,7 +861,7 @@ namespace VPM.Services
             {
                 if (isVarFile)
                 {
-                    using (var zipFile = ZipArchive.Open(packagePath))
+                    using (var zipFile = ZipArchive.OpenArchive(packagePath))
                     {
                         var metaEntry = SharpCompressHelper.FindEntryByPath(zipFile, "meta.json");
                         if (metaEntry != null)
@@ -989,7 +989,7 @@ namespace VPM.Services
                 
                 if (isVarFile)
                 {
-                    using (var zipFile = ZipArchive.Open(packagePath))
+                    using (var zipFile = ZipArchive.OpenArchive(packagePath))
                     {
                         var entry = SharpCompressHelper.FindEntryByPath(zipFile, texturePath);
                         if (entry != null)
@@ -1074,7 +1074,7 @@ namespace VPM.Services
                     
                     if (isVarFile)
                     {
-                        using (var zipFile = ZipArchive.Open(packagePath))
+                        using (var zipFile = ZipArchive.OpenArchive(packagePath))
                         {
                             var entry = SharpCompressHelper.FindEntryByPath(zipFile, texturePath);
                             if (entry != null)
@@ -1192,7 +1192,7 @@ namespace VPM.Services
 
                 if (isVarFile)
                 {
-                    using (var zipFile = ZipArchive.Open(packagePath))
+                    using (var zipFile = ZipArchive.OpenArchive(packagePath))
                     {
                         var entry = SharpCompressHelper.FindEntryByPath(zipFile, texturePath);
                         if (entry != null)
@@ -1465,7 +1465,7 @@ namespace VPM.Services
             
             try
             {
-                using (var zipFile = ZipArchive.Open(archivePackagePath))
+                using (var zipFile = ZipArchive.OpenArchive(archivePackagePath))
                 {
                     var allEntries = SharpCompressHelper.GetAllEntries(zipFile);
                     foreach (var entry in allEntries)
@@ -1511,7 +1511,7 @@ namespace VPM.Services
             
             try
             {
-                using (var zipFile = ZipArchive.Open(archivePackagePath))
+                using (var zipFile = ZipArchive.OpenArchive(archivePackagePath))
                 {
                     var allEntries = SharpCompressHelper.GetAllEntries(zipFile);
                     foreach (var entry in allEntries)

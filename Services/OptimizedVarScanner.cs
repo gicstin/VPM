@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -72,7 +72,7 @@ namespace VPM.Services
                 result.FileSize = fileInfo.Length;
                 result.LastWriteTime = fileInfo.LastWriteTimeUtc;
 
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     var indexedEntries = new List<VarFileEntry>();
                     var pairedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -288,7 +288,7 @@ namespace VPM.Services
                 {
                     if (_archive == null && !_disposed)
                     {
-                        _archive = ZipArchive.Open(_varPath);
+                        _archive = ZipArchive.OpenArchive(_varPath);
                     }
                 }
             }

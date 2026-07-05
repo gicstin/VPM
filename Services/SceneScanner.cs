@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
@@ -78,7 +78,7 @@ namespace VPM.Services
 
                 // Get all scene entries first
                 List<IArchiveEntry> sceneEntries = new List<IArchiveEntry>();
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     var allEntries = SharpCompressHelper.GetAllEntries(zipFile);
                     // Look for scene files in Saves/scene/ path
@@ -190,7 +190,7 @@ namespace VPM.Services
             // Try to parse metadata from VAR entry
             try
             {
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     var jsonContent = SharpCompressHelper.ReadEntryAsString(zipFile, entry);
                     var metadata = ParseSceneMetadataFromJson(jsonContent);
@@ -233,7 +233,7 @@ namespace VPM.Services
             // Try to parse metadata from VAR entry
             try
             {
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     // Re-find the entry in the new ZipFile instance
                     var entryInZip = SharpCompressHelper.FindEntryByPath(zipFile, entry.Key);
@@ -280,7 +280,7 @@ namespace VPM.Services
         {
             try
             {
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     var basePath = Path.ChangeExtension(sceneEntryPath, null);
                     var extensions = new[] { ".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG" };
@@ -586,7 +586,7 @@ namespace VPM.Services
 
                 // Extract thumbnail from VAR using streaming
                 // Benefit: Efficient memory usage for thumbnail extraction
-                using (var zipFile = ZipArchive.Open(varPath))
+                using (var zipFile = ZipArchive.OpenArchive(varPath))
                 {
                     var entry = SharpCompressHelper.FindEntryByPath(zipFile, entryPath);
                     if (entry != null)

@@ -48,7 +48,7 @@ namespace VPM.Services
             
             // One archive per thread via ThreadLocal.
             using var threadLocalArchive = new ThreadLocal<IArchive>(
-                () => ZipArchive.Open(zipPath), 
+                () => ZipArchive.OpenArchive(zipPath), 
                 trackAllValues: true);
 
             try
@@ -117,7 +117,7 @@ namespace VPM.Services
 
             // ThreadLocal opens ONE archive per thread instead of per item (10-50x faster)
             using var threadLocalArchive = new ThreadLocal<IArchive>(
-                () => ZipArchive.Open(zipPath), 
+                () => ZipArchive.OpenArchive(zipPath), 
                 trackAllValues: true);
 
             try
@@ -193,7 +193,7 @@ namespace VPM.Services
 
             // ThreadLocal opens ONE archive per thread instead of per item (10-50x faster)
             using var threadLocalArchive = new ThreadLocal<IArchive>(
-                () => ZipArchive.Open(zipPath), 
+                () => ZipArchive.OpenArchive(zipPath), 
                 trackAllValues: true);
 
             try

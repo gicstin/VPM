@@ -37,7 +37,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <PackageReference Include="NetVips" Version="3.1.0" />
     <PackageReference Include="NetVips.Native" Version="8.17.3" />
-    <PackageReference Include="SharpCompress" Version="0.37.2" />
+    <PackageReference Include="SharpCompress" Version="0.49.1" />
   </ItemGroup>
   
   <ItemGroup>

@@ -182,7 +182,7 @@ namespace VPM.Services
                 // Read directory structure only - no file data yet
                 // File is opened and closed within this block
                 using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
-                using (var archive = ZipArchive.Open(fileStream))
+                using (var archive = ZipArchive.OpenArchive(fileStream))
                 {
                     foreach (var entry in archive.Entries)
                     {
@@ -323,7 +323,7 @@ namespace VPM.Services
                 // Read ONLY the requested entry - file is opened and closed within this block
                 // The archive is NOT fully loaded into memory - only the specific entry is decompressed
                 using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
-                using (var archive = ZipArchive.Open(fileStream))
+                using (var archive = ZipArchive.OpenArchive(fileStream))
                 {
                     var archiveEntry = archive.Entries.FirstOrDefault(e => 
                         e.Key.Equals(path, StringComparison.OrdinalIgnoreCase));
@@ -462,7 +462,7 @@ namespace VPM.Services
                 
                 // SINGLE file open for ALL requested entries
                 using (var fileStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false))
-                using (var archive = ZipArchive.Open(fileStream))
+                using (var archive = ZipArchive.OpenArchive(fileStream))
                 {
                     var pathSet = new HashSet<string>(uncachedPaths, StringComparer.OrdinalIgnoreCase);
                     

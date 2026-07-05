@@ -601,10 +601,8 @@ namespace VPM.Services
                                 File.Delete(tempOutputPath);
                             }
 
-                            using (var outputArchive = ZipArchive.Create())
+                            using (var outputArchive = ZipArchive.CreateArchive())
                             {
-                                outputArchive.DeflateCompressionLevel = SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression;
-
                                 foreach (var entry in archive.Archive.Entries)
                                 {
                                     if (entry.Key.Equals("meta.json", StringComparison.OrdinalIgnoreCase))
@@ -622,7 +620,8 @@ namespace VPM.Services
 
                                 using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
                                 {
-                                    outputArchive.SaveTo(outputFileStream, CompressionType.Deflate);
+                                    // BestCompression for smaller output; level lives on ZipWriterOptions in SharpCompress 0.49+
+                                    outputArchive.SaveTo(outputFileStream, new SharpCompress.Writers.Zip.ZipWriterOptions(CompressionType.Deflate, SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression));
                                 }
                             }
                         }
@@ -690,11 +689,8 @@ namespace VPM.Services
                     // Use forceGcOnDispose to ensure file handles are released before we try to delete/replace
                     using (var sourceArchive = SharpCompressHelper.OpenForReadInternal(sourcePathForProcessing, forceGcOnDispose: true))
                     using (var outputMemoryStream = new MemoryStream())
-                    using (var outputArchive = ZipArchive.Create())
+                    using (var outputArchive = ZipArchive.CreateArchive())
                     {
-                        // Set maximum compression level for smaller output files
-                        outputArchive.DeflateCompressionLevel = SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression;
-                        
                         string originalMetaJson = null;
                         DateTime? originalMetaJsonDate = null;
                         object archiveLock = new object();
@@ -1380,7 +1376,7 @@ namespace VPM.Services
                         
                         // Save the archive to the memory stream with Deflate compression for game compatibility
                         // Note: Most content is already compressed (PNG, JPG, etc.), so performance impact is minimal
-                        outputArchive.SaveTo(outputMemoryStream, SharpCompress.Common.CompressionType.Deflate);
+                        outputArchive.SaveTo(outputMemoryStream, new SharpCompress.Writers.Zip.ZipWriterOptions(SharpCompress.Common.CompressionType.Deflate, SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression));
                         
                         _performanceTimer.Stop("Archive Writing - Compression & Save");
                         _performanceTimer.Start("Archive Writing - File Write");

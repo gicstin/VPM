@@ -113,7 +113,7 @@ namespace VPM.Services
                     try
                     {
                         fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                        var archive = ZipArchive.Open(fileStream);
+                        var archive = ZipArchive.OpenArchive(fileStream);
                         fileStream = null; // Archive now owns the stream
                         
                         // Track the handle
@@ -172,7 +172,7 @@ namespace VPM.Services
                     try
                     {
                         fileStream = new FileStream(_archivePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                        var archive = ZipArchive.Open(fileStream);
+                        var archive = ZipArchive.OpenArchive(fileStream);
                         fileStream = null; // Archive now owns the stream
                         
                         // Track the handle
@@ -316,7 +316,7 @@ namespace VPM.Services
                 
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                var archive = ZipArchive.Open(fileStream);
+                var archive = ZipArchive.OpenArchive(fileStream);
                 fileStream = null; // Archive now owns the stream
                 
                 // Pass the read lock to DisposableArchive - it will release the lock when disposed
@@ -350,7 +350,7 @@ namespace VPM.Services
             {
                 // Open file with explicit seek support (FileAccess.Read, FileShare.Read)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: false);
-                var archive = ZipArchive.Open(fileStream);
+                var archive = ZipArchive.OpenArchive(fileStream);
                 fileStream = null; // Archive now owns the stream
                 
                 // No read lock - caller is responsible for ensuring exclusive access
@@ -368,7 +368,7 @@ namespace VPM.Services
         /// </summary>
         public static IArchive OpenStreamForRead(Stream stream)
         {
-            return ZipArchive.Open(stream);
+            return ZipArchive.OpenArchive(stream);
         }
 
         /// <summary>
@@ -380,7 +380,7 @@ namespace VPM.Services
             {
                 // Create and return a new archive
                 // Note: The archive will be saved to the file path when SaveTo() is called
-                return ZipArchive.Create();
+                return ZipArchive.CreateArchive();
             }
             catch (Exception ex)
             {
@@ -395,7 +395,7 @@ namespace VPM.Services
         {
             // Create a new archive that can be written to the provided stream
             // The caller should use SaveTo(stream) to write the archive
-            return ZipArchive.Create();
+            return ZipArchive.CreateArchive();
         }
 
         /// <summary>
@@ -408,7 +408,7 @@ namespace VPM.Services
             {
                 // Open file with explicit seek support (FileAccess.ReadWrite, FileShare.None for exclusive access)
                 fileStream = new FileStream(filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None, 4096, useAsync: false);
-                var archive = ZipArchive.Open(fileStream);
+                var archive = ZipArchive.OpenArchive(fileStream);
                 fileStream = null; // Archive now owns the stream
                 return archive;
             }

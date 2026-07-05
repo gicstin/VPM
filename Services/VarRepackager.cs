@@ -208,11 +208,8 @@ namespace VPM.Services
                     // Open source VAR (from archive or after moving to archive)
                     // NOTE: Use OpenForReadInternal because we already hold the write lock
                     using (var sourceArchive = SharpCompressHelper.OpenForReadInternal(sourcePathForProcessing))
-                    using (var outputArchive = ZipArchive.Create())
+                    using (var outputArchive = ZipArchive.CreateArchive())
                     {
-                        // Set maximum compression level for smaller output files
-                        outputArchive.DeflateCompressionLevel = SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression;
-                        
                         string originalMetaJson = null;
 
                         var allEntries = sourceArchive.Entries.ToList();
@@ -345,7 +342,8 @@ namespace VPM.Services
 
                         using (var outputFileStream = new FileStream(tempOutputPath, FileMode.Create, FileAccess.Write, FileShare.None))
                         {
-                            outputArchive.SaveTo(outputFileStream, CompressionType.Deflate);
+                            // BestCompression for smaller output; level lives on ZipWriterOptions in SharpCompress 0.49+
+                            outputArchive.SaveTo(outputFileStream, new SharpCompress.Writers.Zip.ZipWriterOptions(CompressionType.Deflate, SharpCompress.Compressors.Deflate.CompressionLevel.BestCompression));
                         }
                     }
                     
