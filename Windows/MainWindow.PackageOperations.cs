@@ -2004,6 +2004,24 @@ namespace VPM
         /// NOTE: Does NOT sync with filters - packages remain visible even if they no longer match filters.
         /// This is intentional so users can see the status change result.
         /// </summary>
+        private void RefreshMetadataFilePath(string metadataKey, VarMetadata metadata, string newStatus)
+        {
+            if (_packageFileManager == null || metadata == null)
+                return;
+
+            if (!string.Equals(newStatus, "Loaded", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(newStatus, "Available", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var fileInfo = _packageFileManager.GetPackageFileInfoByMetadataKey(metadataKey);
+            if (!string.IsNullOrEmpty(fileInfo?.CurrentPath) && File.Exists(fileInfo.CurrentPath))
+            {
+                metadata.FilePath = fileInfo.CurrentPath;
+            }
+        }
+
         private async Task BulkUpdatePackageStatus(List<string> packageNames, string newStatus)
         {
             if (packageNames == null || packageNames.Count == 0)
@@ -2046,6 +2064,7 @@ namespace VPM
                                     inputNameSet.Contains(baseName))
                                 {
                                     metadata.Status = newStatus;
+                                    RefreshMetadataFilePath(metadataKey, metadata, newStatus);
                                     affectedMetadataKeys.Add(metadataKey);
                                     affectedBaseNames.Add(baseName);
                                     
@@ -2053,6 +2072,7 @@ namespace VPM
                                     if (_packageManager.PackageMetadata.TryGetValue(archivedKey, out var archivedMetadata))
                                     {
                                         archivedMetadata.Status = newStatus;
+                                        RefreshMetadataFilePath(archivedKey, archivedMetadata, newStatus);
                                         affectedMetadataKeys.Add(archivedKey);
                                     }
                                 }

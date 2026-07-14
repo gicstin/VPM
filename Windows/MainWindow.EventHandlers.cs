@@ -738,6 +738,28 @@ namespace VPM
             }
         }
 
+        /// <summary>
+        /// Resolves the on-disk path for a package, falling back to PackageFileManager when metadata is stale.
+        /// </summary>
+        private string ResolvePackageFilePath(PackageItem packageItem, VarMetadata metadata)
+        {
+            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                return metadata.FilePath;
+
+            if (_packageFileManager == null)
+                return null;
+
+            PackageFileInfo fileInfo = !string.IsNullOrEmpty(packageItem.MetadataKey)
+                ? _packageFileManager.GetPackageFileInfoByMetadataKey(packageItem.MetadataKey)
+                : _packageFileManager.GetPackageFileInfo(packageItem.Name);
+
+            if (!string.IsNullOrEmpty(fileInfo?.CurrentPath) && File.Exists(fileInfo.CurrentPath))
+                return fileInfo.CurrentPath;
+
+            var resolvedPath = _packageFileManager.ResolveDependencyToFilePath(packageItem.Name);
+            return !string.IsNullOrEmpty(resolvedPath) && File.Exists(resolvedPath) ? resolvedPath : null;
+        }
+
         private void OpenPackageFolderPath(PackageItem package)
         {
             try
@@ -748,38 +770,13 @@ namespace VPM
                     return;
                 }
 
-                // First, try to get FilePath from metadata (works for both external and restored packages)
-                // This is important because restored packages may have different file signatures
-                if (_packageManager?.PackageMetadata != null)
-                {
-                    if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata))
-                    {
-                        if (!string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
-                        {
-                            OpenFolderAndSelectFile(metadata.FilePath);
-                            SetStatus($"Opened folder for: {package.Name}");
-                            return;
-                        }
-                    }
-                }
+                VarMetadata metadata = null;
+                _packageManager?.PackageMetadata?.TryGetValue(package.MetadataKey, out metadata);
+                var filePath = ResolvePackageFilePath(package, metadata);
 
-                // Fallback: Get the file path from PackageFileManager
-                // Use MetadataKey for accurate lookup (handles multiple versions of same package)
-                // MetadataKey includes version and status information for precise matching
-                PackageFileInfo fileInfo;
-                if (!string.IsNullOrEmpty(package.MetadataKey))
+                if (!string.IsNullOrEmpty(filePath))
                 {
-                    fileInfo = _packageFileManager.GetPackageFileInfoByMetadataKey(package.MetadataKey);
-                }
-                else
-                {
-                    fileInfo = _packageFileManager.GetPackageFileInfo(package.Name);
-                }
-                
-                if (fileInfo != null && !string.IsNullOrEmpty(fileInfo.CurrentPath) && System.IO.File.Exists(fileInfo.CurrentPath))
-                {
-                    // Open folder and select the file - Explorer will reuse existing window if same folder
-                    OpenFolderAndSelectFile(fileInfo.CurrentPath);
+                    OpenFolderAndSelectFile(filePath);
                     SetStatus($"Opened folder for: {package.Name}");
                 }
                 else
@@ -6038,67 +6035,64 @@ namespace VPM
                 int successCount = 0;
                 int failureCount = 0;
                 var failedPackages = new List<string>();
+                var discardedPackages = new List<PackageItem>();
                 
                 foreach (var packageItem in selectedPackages)
                 {
                     try
                     {
-                        // Get package metadata to find the file path
-                        if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
+                        VarMetadata metadata = null;
+                        _packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out metadata);
+                        var sourceFilePath = ResolvePackageFilePath(packageItem, metadata);
+
+                        if (!string.IsNullOrEmpty(sourceFilePath) && File.Exists(sourceFilePath))
                         {
-                            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                            string fileName = Path.GetFileName(sourceFilePath);
+                            string destinationPath = Path.Combine(discardedFolder, fileName);
+                            
+                            // Handle file name conflicts by appending a number
+                            int counter = 1;
+                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            while (File.Exists(destinationPath))
                             {
-                                string fileName = Path.GetFileName(metadata.FilePath);
-                                string destinationPath = Path.Combine(discardedFolder, fileName);
-                                
-                                // Handle file name conflicts by appending a number
-                                int counter = 1;
-                                string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                                string extension = Path.GetExtension(fileName);
-                                while (File.Exists(destinationPath))
-                                {
-                                    destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                    counter++;
-                                }
-                                
-                                // Release file handles before moving
+                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                counter++;
+                            }
+                            
+                            // Release file handles before moving
+                            try
+                            {
+                                if (_imageManager != null)
+                                    await _imageManager.CloseFileHandlesAsync(sourceFilePath);
+                                await Task.Delay(100); // Brief delay to ensure handles are released
+                            }
+                            catch (Exception)
+                            {
+                                // Continue even if handle release fails
+                            }
+                            
+                            // Move the file with retry logic for file lock issues
+                            int moveRetries = 3;
+                            bool fileMoved = false;
+                            while (moveRetries > 0 && !fileMoved)
+                            {
                                 try
                                 {
-                                    if (_imageManager != null)
-                                        await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
-                                    await Task.Delay(100); // Brief delay to ensure handles are released
+                                    File.Move(sourceFilePath, destinationPath, overwrite: false);
+                                    fileMoved = true;
+                                    successCount++;
+                                    discardedPackages.Add(packageItem);
                                 }
-                                catch (Exception)
+                                catch (IOException) when (moveRetries > 1)
                                 {
-                                    // Continue even if handle release fails
-                                }
-                                
-                                // Move the file with retry logic for file lock issues
-                                int moveRetries = 3;
-                                bool fileMoved = false;
-                                while (moveRetries > 0 && !fileMoved)
-                                {
-                                    try
-                                    {
-                                        File.Move(metadata.FilePath, destinationPath, overwrite: false);
-                                        fileMoved = true;
-                                        successCount++;
-                                    }
-                                    catch (IOException) when (moveRetries > 1)
-                                    {
-                                        moveRetries--;
-                                        System.Diagnostics.Debug.WriteLine($"File lock still active for package {packageItem.DisplayName}, retrying... ({moveRetries} retries left)");
-                                        await Task.Delay(300); // Wait longer before retry
-                                    }
-                                }
-                                
-                                if (!fileMoved)
-                                {
-                                    failureCount++;
-                                    failedPackages.Add(packageItem.DisplayName);
+                                    moveRetries--;
+                                    System.Diagnostics.Debug.WriteLine($"File lock still active for package {packageItem.DisplayName}, retrying... ({moveRetries} retries left)");
+                                    await Task.Delay(300); // Wait longer before retry
                                 }
                             }
-                            else
+                            
+                            if (!fileMoved)
                             {
                                 failureCount++;
                                 failedPackages.Add(packageItem.DisplayName);
@@ -6119,21 +6113,9 @@ namespace VPM
                 }
                 
                 // Remove successfully discarded packages from the UI
-                if (successCount > 0)
+                foreach (var package in discardedPackages)
                 {
-                    var packagesToRemove = selectedPackages.Where(p => 
-                    {
-                        if (_packageManager?.PackageMetadata?.TryGetValue(p.MetadataKey, out var metadata) == true)
-                        {
-                            return metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && !File.Exists(metadata.FilePath);
-                        }
-                        return false;
-                    }).ToList();
-                    
-                    foreach (var package in packagesToRemove)
-                    {
-                        Packages.Remove(package);
-                    }
+                    Packages.Remove(package);
                 }
                 
                 // Show error message only if there were failures
