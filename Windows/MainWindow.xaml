@@ -3559,6 +3559,39 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
+                    <!--  Loading Overlay for Custom Atom Items  -->
+                    <Border
+                        x:Name="CustomAtomLoadingOverlay"
+                        Grid.Row="1"
+                        Grid.Column="0"
+                        Panel.ZIndex="100"
+                        Background="#AA1E1E1E"
+                        Visibility="Collapsed">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <TextBlock
+                                x:Name="CustomAtomLoadingText"
+                                HorizontalAlignment="Center"
+                                FontSize="16"
+                                FontWeight="SemiBold"
+                                Foreground="White"
+                                Text="Loading custom items..." />
+                            <ProgressBar
+                                x:Name="CustomAtomLoadingProgress"
+                                Width="300"
+                                Height="6"
+                                Margin="0,15,0,0"
+                                Maximum="100"
+                                Value="0" />
+                            <TextBlock
+                                x:Name="CustomAtomLoadingCount"
+                                Margin="0,8,0,0"
+                                HorizontalAlignment="Center"
+                                FontSize="14"
+                                Foreground="#CCCCCC"
+                                Text="0/0" />
+                        </StackPanel>
+                    </Border>
+
                     <!--  Loading Overlay for Main Table  -->
                     <Border
                         x:Name="MainTableLoadingOverlay"

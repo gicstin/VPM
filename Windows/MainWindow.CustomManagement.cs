@@ -68,9 +68,19 @@ namespace VPM
 
             try
             {
+                // Show loading overlay
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    CustomAtomLoadingText.Text = "Scanning custom content...";
+                    CustomAtomLoadingProgress.IsIndeterminate = true;
+                    CustomAtomLoadingCount.Text = "";
+                    CustomAtomLoadingOverlay.Visibility = Visibility.Visible;
+                    CustomAtomDataGrid.Visibility = Visibility.Collapsed;
+                });
+
                 await Task.Run(() =>
                 {
-                    // Scan both presets and scenes locations
+                    // Scan all custom content locations
                     var items = _unifiedCustomContentScanner.ScanAllCustomContent();
                     
                     Application.Current.Dispatcher.Invoke(() =>
@@ -97,7 +107,7 @@ namespace VPM
                         }
                         
                         CustomAtomItems.ReplaceAll(items);
-                        SetStatus($"Loaded {items.Count} custom item(s) (presets & scenes)");
+                        SetStatus($"Loaded {items.Count} custom item(s) (presets, scenes & appearances)");
                         
                         // Populate custom content filters if we're in Custom mode
                         if (_currentContentMode == "Custom")
@@ -108,11 +118,20 @@ namespace VPM
                             PopulatePresetFileSizeFilter();
                             PopulatePresetStatusFilter();
                         }
+
+                        // Hide loading overlay, show data grid
+                        CustomAtomLoadingOverlay.Visibility = Visibility.Collapsed;
+                        CustomAtomDataGrid.Visibility = Visibility.Visible;
                     });
                 });
             }
             catch (Exception ex)
             {
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    CustomAtomLoadingOverlay.Visibility = Visibility.Collapsed;
+                    CustomAtomDataGrid.Visibility = Visibility.Visible;
+                });
                 SetStatus($"Error loading custom items: {ex.Message}");
             }
         }
