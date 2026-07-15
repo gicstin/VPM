@@ -10,10 +10,11 @@ using SharpCompress.Archives.Zip;
 namespace VPM.Services
 {
     /// <summary>
-    /// Unified scanner for custom atom presets, scenes, and custom packages
+    /// Unified scanner for custom atom presets, scenes, person appearances, and custom packages
     /// Scans:
     /// - Custom\Atom\Person folder for .vap preset files
     /// - Saves\scene folder for .json scene files
+    /// - Saves\Person\appearance folder for .json person appearance files
     /// - Custom\Assets, Custom\Clothing, Custom\Hair, Custom\SubScene folders for .vam package files
     /// </summary>
     public class UnifiedCustomContentScanner
@@ -45,6 +46,10 @@ namespace VPM.Services
             // Scan custom packages from Custom folder (Hair, Clothing, Assets, SubScene, etc.)
             var packages = _customPackageScanner.ScanCustomPackages();
             allItems.AddRange(packages);
+
+            // Scan person appearances from Saves\Person\appearance
+            var appearances = ScanPersonAppearances();
+            allItems.AddRange(appearances);
 
             return allItems;
         }
@@ -121,6 +126,92 @@ namespace VPM.Services
             }
 
             return items;
+        }
+
+        /// <summary>
+        /// Scans the Saves\Person\appearance folder for .json person appearance files
+        /// </summary>
+        private List<CustomAtomItem> ScanPersonAppearances()
+        {
+            var items = new List<CustomAtomItem>();
+            var appearanceDir = Path.Combine(_vamPath, "Saves", "Person", "appearance");
+
+            if (!Directory.Exists(appearanceDir))
+                return items;
+
+            try
+            {
+                var appearanceDirInfo = new DirectoryInfo(appearanceDir);
+                var jsonFiles = appearanceDirInfo.EnumerateFiles("*.json", SearchOption.AllDirectories)
+                    .Where(f => !f.Name.EndsWith(".fav", StringComparison.OrdinalIgnoreCase) &&
+                                !f.Name.EndsWith(".hide", StringComparison.OrdinalIgnoreCase));
+
+                foreach (var fileInfo in jsonFiles)
+                {
+                    try
+                    {
+                        var item = CreateAppearanceItemFromFile(fileInfo);
+                        if (item != null)
+                            items.Add(item);
+                    }
+                    catch (Exception)
+                    {
+                        // Error processing file - continue
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Error scanning folder
+            }
+
+            return items;
+        }
+
+        /// <summary>
+        /// Creates a CustomAtomItem from a person appearance .json file
+        /// </summary>
+        private CustomAtomItem CreateAppearanceItemFromFile(FileInfo fileInfo)
+        {
+            var fileName = Path.GetFileNameWithoutExtension(fileInfo.Name);
+
+            var appearanceDir = Path.Combine(_vamPath, "Saves", "Person", "appearance");
+            var relativePath = Path.GetDirectoryName(fileInfo.FullName).Substring(appearanceDir.Length).TrimStart(Path.DirectorySeparatorChar);
+
+            var item = new CustomAtomItem
+            {
+                Name = fileInfo.Name,
+                DisplayName = fileName,
+                FilePath = fileInfo.FullName,
+                ThumbnailPath = FindAppearanceThumbnail(fileInfo.FullName),
+                Category = "Appearance",
+                Subfolder = relativePath,
+                ModifiedDate = fileInfo.LastWriteTime,
+                FileSize = fileInfo.Length,
+                ContentType = "Appearance"
+            };
+
+            PresetScanner.ParsePresetDependencies(item);
+
+            return item;
+        }
+
+        /// <summary>
+        /// Finds thumbnail for a person appearance file
+        /// </summary>
+        private string FindAppearanceThumbnail(string jsonPath)
+        {
+            var basePath = Path.ChangeExtension(jsonPath, null);
+            var extensions = new[] { ".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG" };
+
+            foreach (var ext in extensions)
+            {
+                var thumbPath = basePath + ext;
+                if (File.Exists(thumbPath))
+                    return thumbPath;
+            }
+
+            return "";
         }
 
         /// <summary>

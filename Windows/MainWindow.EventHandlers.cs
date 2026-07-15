@@ -2791,6 +2791,20 @@ namespace VPM
                     }
                 }
 
+                // Handle Delete key to discard selected custom items
+                if (e.Key == Key.Delete && CustomAtomDataGrid.SelectedItems.Count > 0)
+                {
+                    if (e.IsRepeat)
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
+                    DiscardSelectedCustomAtoms_Click(sender, null);
+                    e.Handled = true;
+                    return;
+                }
+
                 return;
             }
         }
