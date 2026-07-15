@@ -10,6 +10,7 @@ namespace VPM.Services
     /// <summary>
     /// Determines whether Hub resources are present in the local library.
     /// Single source of truth for card/detail "In Library" and "Update" badges.
+    /// Badges consider the main package file(s) only — not the dependency stack.
     /// </summary>
     public sealed class HubLibraryStatusEvaluator
     {
@@ -24,6 +25,25 @@ namespace VPM.Services
             public bool InLibrary { get; }
             public bool UpdateAvailable { get; }
             public static StatusResult NotApplicable => new StatusResult(false, false);
+        }
+
+        public readonly struct DependencyStatusResult
+        {
+            public DependencyStatusResult(int installed, int missing, bool resolved)
+            {
+                Installed = installed;
+                Missing = missing;
+                Resolved = resolved;
+            }
+
+            public int Installed { get; }
+            public int Missing { get; }
+            public int Total => Installed + Missing;
+            public bool Resolved { get; }
+            public bool AllInstalled => Resolved && Total > 0 && Missing == 0;
+
+            public static DependencyStatusResult Unresolved => new DependencyStatusResult(0, 0, false);
+            public static DependencyStatusResult None => new DependencyStatusResult(0, 0, true);
         }
 
         private readonly HubService _hubService;
@@ -44,11 +64,10 @@ namespace VPM.Services
             if (resource == null || !resource.HubDownloadable)
                 return StatusResult.NotApplicable;
 
-            if (resource.HubFiles == null || resource.HubFiles.Count == 0)
-                return StatusResult.NotApplicable;
-
             HubResourceDetail detail = knownDetail ?? resource as HubResourceDetail;
-            if (detail == null && !string.IsNullOrEmpty(resource.ResourceId) && detailLoader != null)
+            // Only fetch detail when listing has no main files — deps are not used for badges
+            var hasListingFiles = resource.HubFiles != null && resource.HubFiles.Count > 0;
+            if (detail == null && !hasListingFiles && !string.IsNullOrEmpty(resource.ResourceId) && detailLoader != null)
             {
                 try
                 {
@@ -64,15 +83,15 @@ namespace VPM.Services
                 }
             }
 
-            var requiredFiles = CollectRequiredFiles(resource, detail);
-            if (requiredFiles.Count == 0)
+            var mainFiles = CollectMainPackageFiles(resource, detail);
+            if (mainFiles.Count == 0)
                 return StatusResult.NotApplicable;
 
             var checkedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var allInLibrary = true;
             var updateAvailable = false;
 
-            foreach (var file in requiredFiles)
+            foreach (var file in mainFiles)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -98,35 +117,128 @@ namespace VPM.Services
             return new StatusResult(allInLibrary, allInLibrary && updateAvailable);
         }
 
-        internal static List<HubFile> CollectRequiredFiles(HubResource resource, HubResourceDetail detail)
+        /// <summary>
+        /// Counts how many direct dependencies are installed vs missing for card dep badges.
+        /// Does not affect In Library / Update badges.
+        /// </summary>
+        public async Task<DependencyStatusResult> EvaluateDependencyStatusAsync(
+            HubResource resource,
+            IReadOnlyDictionary<string, HashSet<int>> localVersionsByGroup,
+            IReadOnlyCollection<string> localPackageNames,
+            Func<string, CancellationToken, Task<HubResourceDetail>> detailLoader,
+            CancellationToken cancellationToken = default,
+            HubResourceDetail knownDetail = null)
         {
-            var requiredFiles = new List<HubFile>();
+            if (resource == null || resource.IsExternallyHosted || resource.DependencyCount <= 0)
+                return DependencyStatusResult.None;
 
-            if (detail?.HubFiles != null && detail.HubFiles.Count > 0)
-                requiredFiles.AddRange(detail.HubFiles.Where(f => f != null && !string.IsNullOrEmpty(f.Filename)));
-            else if (resource?.HubFiles != null)
-                requiredFiles.AddRange(resource.HubFiles.Where(f => f != null && !string.IsNullOrEmpty(f.Filename)));
-
-            var dependenciesAvailable = resource.DependencyCount == 0 ||
-                (detail?.Dependencies != null && detail.Dependencies.Count > 0);
-
-            if (dependenciesAvailable && detail?.Dependencies != null)
+            HubResourceDetail detail = knownDetail ?? resource as HubResourceDetail;
+            if ((detail?.Dependencies == null || detail.Dependencies.Count == 0)
+                && !string.IsNullOrEmpty(resource.ResourceId)
+                && detailLoader != null)
             {
-                foreach (var depGroup in detail.Dependencies.Values)
+                try
                 {
-                    if (depGroup == null)
-                        continue;
-
-                    foreach (var depFile in depGroup)
-                    {
-                        if (depFile != null && !string.IsNullOrEmpty(depFile.Filename))
-                            requiredFiles.Add(depFile);
-                    }
+                    detail = await detailLoader(resource.ResourceId, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    detail = null;
                 }
             }
 
-            return requiredFiles;
+            return CountDependencyInstallStatus(detail, localVersionsByGroup, localPackageNames);
         }
+
+        internal static DependencyStatusResult CountDependencyInstallStatus(
+            HubResourceDetail detail,
+            IReadOnlyDictionary<string, HashSet<int>> localVersionsByGroup,
+            IReadOnlyCollection<string> localPackageNames)
+        {
+            if (detail?.Dependencies == null || detail.Dependencies.Count == 0)
+                return DependencyStatusResult.Unresolved;
+
+            var checkedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var installed = 0;
+            var missing = 0;
+
+            foreach (var kvp in detail.Dependencies)
+            {
+                var countedFromFiles = false;
+
+                if (kvp.Value != null)
+                {
+                    foreach (var file in kvp.Value)
+                    {
+                        // Hub API filenames often omit ".var" (e.g. "AcidBubbles.Timeline.178")
+                        if (file == null || string.IsNullOrEmpty(file.Filename))
+                            continue;
+
+                        if (!TryGetPackageGroup(file, out var pkgGroupName))
+                            continue;
+                        if (!checkedGroups.Add(pkgGroupName))
+                            continue;
+
+                        countedFromFiles = true;
+                        if (IsPackageGroupInstalled(pkgGroupName, localVersionsByGroup, localPackageNames, out _))
+                            installed++;
+                        else
+                            missing++;
+                    }
+                }
+
+                // Keys are often the parent package group (one key → many deps), not dep names.
+                // Only fall back to the key when this entry has no usable file list.
+                if (countedFromFiles || string.IsNullOrWhiteSpace(kvp.Key))
+                    continue;
+
+                var keyName = kvp.Key.EndsWith(".var", StringComparison.OrdinalIgnoreCase)
+                    ? kvp.Key.Substring(0, kvp.Key.Length - 4)
+                    : kvp.Key;
+                var groupFromKey = GetPackageGroupName(keyName);
+                if (string.IsNullOrEmpty(groupFromKey) || !checkedGroups.Add(groupFromKey))
+                    continue;
+
+                if (IsPackageGroupInstalled(groupFromKey, localVersionsByGroup, localPackageNames, out _))
+                    installed++;
+                else
+                    missing++;
+            }
+
+            if (installed + missing == 0)
+                return DependencyStatusResult.Unresolved;
+
+            return new DependencyStatusResult(installed, missing, resolved: true);
+        }
+
+        /// <summary>
+        /// Main package .var file(s) only. Dependencies (including N/A) must not affect badges.
+        /// </summary>
+        internal static List<HubFile> CollectMainPackageFiles(HubResource resource, HubResourceDetail detail)
+        {
+            IEnumerable<HubFile> source = null;
+            if (detail?.HubFiles != null && detail.HubFiles.Count > 0)
+                source = detail.HubFiles;
+            else if (resource?.HubFiles != null && resource.HubFiles.Count > 0)
+                source = resource.HubFiles;
+
+            if (source == null)
+                return new List<HubFile>();
+
+            return source
+                .Where(f => f != null
+                    && !string.IsNullOrEmpty(f.Filename)
+                    && f.Filename.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        // Kept for any callers/tests still using the old name
+        internal static List<HubFile> CollectRequiredFiles(HubResource resource, HubResourceDetail detail)
+            => CollectMainPackageFiles(resource, detail);
 
         internal static bool TryGetPackageGroup(HubFile file, out string pkgGroupName)
         {

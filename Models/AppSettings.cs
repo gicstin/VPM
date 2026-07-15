@@ -46,7 +46,6 @@ namespace VPM.Models
         
         // Filter Settings
         private List<string> _selectedStatusFilters = new List<string>();
-        private List<string> _selectedOptimizationFilters = new List<string>();
         private List<string> _selectedCreatorFilters = new List<string>();
         private List<string> _selectedContentTypeFilters = new List<string>();
         private string _packageSearchText = "";
@@ -58,7 +57,6 @@ namespace VPM.Models
         // Filter List Heights
         private double _dateFilterHeight = 100;
         private double _statusFilterHeight = 120;
-        private double _optimizationFilterHeight = 80;
         private double _contentTypesFilterHeight = 180;
         private double _creatorsFilterHeight = 180;
         private double _licenseTypeFilterHeight = 120;
@@ -71,7 +69,6 @@ namespace VPM.Models
         // Filter Section Visibility
         private bool _dateFilterVisible = true;
         private bool _statusFilterVisible = true;
-        private bool _optimizationFilterVisible = true;
         private bool _contentTypesFilterVisible = true;
         private bool _creatorsFilterVisible = true;
         private bool _licenseTypeFilterVisible = true;
@@ -104,9 +101,6 @@ namespace VPM.Models
         private int _imageCacheSize = 500;
         private int _maxSafeSelection = 200;
         
-        // Texture Validation Settings
-        private bool _useThoroughTextureScan = false;
-        
         // Package Downloader Settings
         private bool _enableAutoDownload = false;
 
@@ -131,12 +125,6 @@ namespace VPM.Models
         
         // Image Area Tab Settings
         private string _preferredImageAreaTab = "Images"; // "Images" or "Hub"
-        
-        // Package Optimizer Settings
-        private bool _forceLatestDependencies = true;
-        private bool _disableMorphPreload = true;
-        private long _textureCompressionQuality = 90L;
-        private string _customArchivePath = "";
         
         // Settings versioning for migrations
         private int _settingsVersion = 2;
@@ -342,12 +330,6 @@ namespace VPM.Models
             set => SetProperty(ref _selectedStatusFilters, value ?? new List<string>());
         }
 
-        public List<string> SelectedOptimizationFilters
-        {
-            get => _selectedOptimizationFilters;
-            set => SetProperty(ref _selectedOptimizationFilters, value ?? new List<string>());
-        }
-
         public List<string> SelectedCreatorFilters
         {
             get => _selectedCreatorFilters;
@@ -401,12 +383,6 @@ namespace VPM.Models
         {
             get => _statusFilterHeight;
             set => SetProperty(ref _statusFilterHeight, Math.Max(80, Math.Min(400, value)));
-        }
-
-        public double OptimizationFilterHeight
-        {
-            get => _optimizationFilterHeight;
-            set => SetProperty(ref _optimizationFilterHeight, Math.Max(60, Math.Min(200, value)));
         }
 
         public double ContentTypesFilterHeight
@@ -468,12 +444,6 @@ namespace VPM.Models
         {
             get => _statusFilterVisible;
             set => SetProperty(ref _statusFilterVisible, value);
-        }
-
-        public bool OptimizationFilterVisible
-        {
-            get => _optimizationFilterVisible;
-            set => SetProperty(ref _optimizationFilterVisible, value);
         }
 
         public bool ContentTypesFilterVisible
@@ -640,13 +610,6 @@ namespace VPM.Models
             set => SetProperty(ref _maxSafeSelection, Math.Max(50, Math.Min(5000, value)));
         }
         
-        // Texture Validation Settings Properties
-        public bool UseThoroughTextureScan
-        {
-            get => _useThoroughTextureScan;
-            set => SetProperty(ref _useThoroughTextureScan, value);
-        }
-        
         // Package Downloader Settings Properties
         public bool EnableAutoDownload
         {
@@ -727,31 +690,6 @@ namespace VPM.Models
             set => SetProperty(ref _hubBrowserTags, value ?? new List<string>());
         }
         
-        // Package Optimizer Settings Properties
-        public bool ForceLatestDependencies
-        {
-            get => _forceLatestDependencies;
-            set => SetProperty(ref _forceLatestDependencies, value);
-        }
-        
-        public bool DisableMorphPreload
-        {
-            get => _disableMorphPreload;
-            set => SetProperty(ref _disableMorphPreload, value);
-        }
-
-        public long TextureCompressionQuality
-        {
-            get => _textureCompressionQuality;
-            set => SetProperty(ref _textureCompressionQuality, Math.Max(10, Math.Min(100, value)));
-        }
-
-        public string CustomArchivePath
-        {
-            get => _customArchivePath;
-            set => SetProperty(ref _customArchivePath, value ?? "");
-        }
-
         public int SettingsVersion
         {
             get => _settingsVersion;
@@ -865,7 +803,6 @@ namespace VPM.Models
                 ShowDependencies = true,
                 GroupImagesByPackage = true,
                 SelectedStatusFilters = new List<string>(),
-                SelectedOptimizationFilters = new List<string>(),
                 SelectedCreatorFilters = new List<string>(),
                 SelectedContentTypeFilters = new List<string>(),
                 PackageSearchText = "",
@@ -874,7 +811,6 @@ namespace VPM.Models
                 ContentTypeFilterText = "",
                 DateFilterHeight = 100,
                 StatusFilterHeight = 120,
-                OptimizationFilterHeight = 80,
                 ContentTypesFilterHeight = 180,
                 CreatorsFilterHeight = 180,
                 LicenseTypeFilterHeight = 120,
@@ -885,7 +821,6 @@ namespace VPM.Models
                 PlaylistsFilterHeight = 120,
                 DateFilterVisible = true,
                 StatusFilterVisible = true,
-                OptimizationFilterVisible = true,
                 ContentTypesFilterVisible = true,
                 CreatorsFilterVisible = true,
                 LicenseTypeFilterVisible = true,
@@ -913,10 +848,8 @@ namespace VPM.Models
                 EnableImageCaching = true,
                 ImageCacheSize = 500,
                 MaxSafeSelection = 200,
-                UseThoroughTextureScan = false,
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,
-                CustomArchivePath = "",
                 HubBrowserSearchText = "",
                 HubBrowserSource = "All",
                 HubBrowserCategory = "All",

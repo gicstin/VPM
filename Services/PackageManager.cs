@@ -347,8 +347,7 @@ namespace VPM.Services
             public void FinalizeVariants()
             {
                 _orderedVariants = _variants.Values
-                    .OrderBy(v => v.Metadata.IsOptimized ? 0 : 1)
-                    .ThenBy(v => PackageManager.GetRolePriority(v.Role))
+                    .OrderBy(v => PackageManager.GetRolePriority(v.Role))
                     .ThenBy(v => v.Path, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(v => v.LastWriteTicks)
                     .ToList();
@@ -437,10 +436,6 @@ namespace VPM.Services
                 clone.FilePath = source.FilePath;
                 clone.IsDuplicate = source.IsDuplicate;
                 clone.DuplicateLocationCount = source.DuplicateLocationCount;
-                clone.IsOptimized = source.IsOptimized;
-                clone.HasTextureOptimization = source.HasTextureOptimization;
-                clone.HasHairOptimization = source.HasHairOptimization;
-                clone.HasMirrorOptimization = source.HasMirrorOptimization;
                 clone.MorphCount = source.MorphCount;
                 clone.HairCount = source.HairCount;
                 clone.ClothingCount = source.ClothingCount;
@@ -1316,10 +1311,6 @@ namespace VPM.Services
                 Status = source.Status,
                 FilePath = source.FilePath,
                 FileSize = source.FileSize,
-                IsOptimized = source.IsOptimized,
-                HasTextureOptimization = source.HasTextureOptimization,
-                HasHairOptimization = source.HasHairOptimization,
-                HasMirrorOptimization = source.HasMirrorOptimization,
                 IsDuplicate = source.IsDuplicate,
                 DuplicateLocationCount = source.DuplicateLocationCount,
                 IsOldVersion = source.IsOldVersion,
@@ -1400,8 +1391,8 @@ namespace VPM.Services
                     metadataClone.VariantRole = descriptor.Role;
                     metadataClone.FilePath = descriptor.Path;
                     metadataClone.FileSize = descriptor.FileSize;
-                    // Don't overwrite ModifiedDate if package is optimized (it has vpmOriginalDate)
-                    if (!metadataClone.IsOptimized)
+                    // Don't overwrite ModifiedDate if package has legacy vpmOriginalDate in description
+                    if (!HasVpmOriginalDate(metadataClone))
                     {
                         metadataClone.ModifiedDate = ConvertUtcTicksToLocal(descriptor.LastWriteTicks);
                     }
@@ -1415,8 +1406,8 @@ namespace VPM.Services
                     metadata.VariantRole = descriptor.Role;
                     metadata.FilePath = descriptor.Path;
                     metadata.FileSize = descriptor.FileSize;
-                    // Don't overwrite ModifiedDate if package is optimized (it has vpmOriginalDate)
-                    if (!metadata.IsOptimized)
+                    // Don't overwrite ModifiedDate if package has legacy vpmOriginalDate in description
+                    if (!HasVpmOriginalDate(metadata))
                     {
                         metadata.ModifiedDate = ConvertUtcTicksToLocal(descriptor.LastWriteTicks);
                     }
@@ -1496,8 +1487,6 @@ namespace VPM.Services
             // Trim the StringPool to release any unused interned strings
             StringPool.TrimExcess();
 
-            int optimizedCount = PackageMetadata.Values.Count(m => m.IsOptimized);
-            
             // Detect old versions after all packages are loaded
             DetectOldVersions();
             
@@ -1714,7 +1703,7 @@ namespace VPM.Services
                                     dupMetadata.OriginalExternalDestinationName = StringPool.Intern(originalDestName);
                                     dupMetadata.OriginalExternalDestinationColorHex = StringPool.Intern(originalDestColor);
 
-                                    if (!dupMetadata.IsOptimized)
+                                    if (!HasVpmOriginalDate(dupMetadata))
                                     {
                                         dupMetadata.ModifiedDate = fileInfo.LastWriteTime;
                                     }
@@ -1754,7 +1743,7 @@ namespace VPM.Services
                         metadata.OriginalExternalDestinationName = StringPool.Intern(originalDestName);
                         metadata.OriginalExternalDestinationColorHex = StringPool.Intern(originalDestColor);
 
-                        if (!metadata.IsOptimized)
+                        if (!HasVpmOriginalDate(metadata))
                         {
                             metadata.ModifiedDate = fileInfo.LastWriteTime;
                         }
@@ -2323,8 +2312,8 @@ namespace VPM.Services
             freshMetadata.VariantRole = role;
             freshMetadata.FilePath = filePath;
             freshMetadata.FileSize = fileInfo.Length;
-            // Don't overwrite ModifiedDate if package is optimized (it has vpmOriginalDate)
-            if (!freshMetadata.IsOptimized)
+            // Don't overwrite ModifiedDate if package has legacy vpmOriginalDate in description
+            if (!HasVpmOriginalDate(freshMetadata))
             {
                 freshMetadata.ModifiedDate = fileInfo.LastWriteTime;
             }
@@ -2536,43 +2525,6 @@ namespace VPM.Services
                 // Parse VPM optimization flags from description field (VaM-compatible method)
                 // VaM doesn't support custom fields in meta.json, so we store flags in description
                 ParseVpmFlagsFromDescription(metadata);
-                
-                // Legacy: Also check for old-style VPM flags in meta.json (for backwards compatibility)
-                // These will be removed on next optimization
-                bool hasVpmOptimized = TryGetPropertyCaseInsensitive(metaData, "vpmOptimized", out var vpmOpt);
-                bool hasVpmTexture = TryGetPropertyCaseInsensitive(metaData, "vpmTextureOptimized", out var vpmTexture);
-                bool hasVpmHair = TryGetPropertyCaseInsensitive(metaData, "vpmHairOptimized", out var vpmHair);
-                bool hasVpmMirror = TryGetPropertyCaseInsensitive(metaData, "vpmMirrorOptimized", out var vpmMirror);
-                bool hasVpmOrigDate = metaData.TryGetProperty("vpmOriginalDate", out var vpmOrigDate);
-                
-                // Only use legacy flags if description-based flags weren't found
-                if (!metadata.IsOptimized && hasVpmOptimized)
-                {
-                    metadata.IsOptimized = vpmOpt.GetBoolean();
-                }
-                if (!metadata.HasTextureOptimization && hasVpmTexture)
-                {
-                    metadata.HasTextureOptimization = vpmTexture.GetBoolean();
-                }
-                if (!metadata.HasHairOptimization && hasVpmHair)
-                {
-                    metadata.HasHairOptimization = vpmHair.GetBoolean();
-                }
-                if (!metadata.HasMirrorOptimization && hasVpmMirror)
-                {
-                    metadata.HasMirrorOptimization = vpmMirror.GetBoolean();
-                }
-                
-                // Legacy: Extract VPM original date from meta.json if not found in description
-                if (metadata.CreatedDate == DateTime.MinValue && hasVpmOrigDate)
-                {
-                    var dateStr = vpmOrigDate.GetString();
-                    if (DateTime.TryParse(dateStr, out var parsedDate))
-                    {
-                        metadata.CreatedDate = parsedDate;
-                        metadata.ModifiedDate = parsedDate;
-                    }
-                }
             }
             catch (JsonException)
             {
@@ -2786,8 +2738,17 @@ namespace VPM.Services
         #endregion
 
         /// <summary>
-        /// Parses VPM optimization flags from the description field [VPM_FLAGS] section
-        /// This is the VaM-compatible way to store optimization metadata
+        /// Returns true when description contains legacy vpmOriginalDate from former optimizer runs.
+        /// </summary>
+        private static bool HasVpmOriginalDate(VarMetadata metadata)
+        {
+            return metadata != null
+                && !string.IsNullOrEmpty(metadata.Description)
+                && metadata.Description.Contains("vpmOriginalDate=", StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Parses VPM metadata flags from the description field [VPM_FLAGS] section.
         /// </summary>
         private void ParseVpmFlagsFromDescription(VarMetadata metadata)
         {
@@ -2829,22 +2790,6 @@ namespace VPM.Services
                     
                     switch (key)
                     {
-                        case "vpmOptimized":
-                            metadata.IsOptimized = ParseBooleanValue(value);
-                            break;
-                        
-                        case "vpmTextureOptimized":
-                            metadata.HasTextureOptimization = ParseBooleanValue(value);
-                            break;
-                        
-                        case "vpmHairOptimized":
-                            metadata.HasHairOptimization = ParseBooleanValue(value);
-                            break;
-                        
-                        case "vpmMirrorOptimized":
-                            metadata.HasMirrorOptimization = ParseBooleanValue(value);
-                            break;
-                        
                         case "vpmOriginalDate":
                             if (DateTime.TryParse(value, out var parsedDate))
                             {
@@ -2861,18 +2806,6 @@ namespace VPM.Services
             }
         }
 
-        /// <summary>
-        /// Parses boolean values from string (handles "true", "True", "false", "False")
-        /// </summary>
-        private bool ParseBooleanValue(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return false;
-            
-            return value.Equals("true", StringComparison.OrdinalIgnoreCase) || 
-                   value.Equals("True", StringComparison.Ordinal);
-        }
-        
         #region IDisposable
         
         /// <summary>

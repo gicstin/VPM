@@ -48,6 +48,7 @@ namespace VPM.Windows
         private readonly string _vamFolder;  // Root VaM folder for searching packages
         private readonly Dictionary<string, string> _localPackagePaths;  // Package name -> file path
         private readonly PackageManager _packageManager;  // For accessing dependency graph and missing deps
+        private readonly ImageManager _imageManager;  // Release ZipArchive pools before moving .var files
         private SettingsManager _settingsManager;  // For persisting old version handling setting
         
         // Side panel state
@@ -81,6 +82,22 @@ namespace VPM.Windows
         private bool _scrollToTopOnNextResults = false;
         private bool _allowResultsBringIntoView = false;
         private List<string> _missingDepsExportList = new List<string>();
+
+        private sealed class CardDownloadBatch
+        {
+            public HubResource Resource { get; set; }
+            public int Total { get; set; }
+            public int Completed { get; set; }
+            public HashSet<string> PackageKeys { get; set; }
+        }
+
+        // packageName -> batch (for progress updates as each download finishes)
+        private readonly Dictionary<string, CardDownloadBatch> _cardDownloadBatchByPackage =
+            new Dictionary<string, CardDownloadBatch>(StringComparer.OrdinalIgnoreCase);
+
+        private CancellationTokenSource _libraryStatusRefreshCts;
+        private int _lastDownloadUiProgressPercent = -1;
+        private bool _pendingLibraryStatusRefresh;
 
         private async Task LoadAllTagsAsync()
         {
@@ -397,13 +414,19 @@ namespace VPM.Windows
                 foreach (var kvp in _localPackagePaths)
                 {
                     var packageName = kvp.Key;
-                    if (string.IsNullOrWhiteSpace(packageName))
+                    var path = kvp.Value;
+                    if (string.IsNullOrWhiteSpace(packageName) || string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                         continue;
 
-                    _localPackageNames.Add(packageName);
+                    // Prefer on-disk filename when key is .latest but file was renamed to integer version
+                    var name = Path.GetFileNameWithoutExtension(path);
+                    if (string.IsNullOrEmpty(name))
+                        name = packageName.Replace(".var", "");
 
-                    var baseName = GetBasePackageName(packageName);
-                    var version = ExtractVersionNumber(packageName);
+                    _localPackageNames.Add(name);
+
+                    var baseName = GetBasePackageName(name);
+                    var version = ExtractVersionNumber(name);
                     if (string.IsNullOrEmpty(baseName) || version <= 0)
                         continue;
 
@@ -478,14 +501,15 @@ namespace VPM.Windows
             return bestPath;
         }
 
-        public HubBrowserWindow(string destinationFolder, Dictionary<string, string> localPackagePaths = null, PackageManager packageManager = null, SettingsManager settingsManager = null)
+        public HubBrowserWindow(string destinationFolder, Dictionary<string, string> localPackagePaths = null, PackageManager packageManager = null, SettingsManager settingsManager = null, ImageManager imageManager = null)
         {
             InitializeComponent();
-            
+
             _hubService = new HubService();
             _destinationFolder = destinationFolder;
             _localPackagePaths = localPackagePaths ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             _packageManager = packageManager;
+            _imageManager = imageManager;
             _settingsManager = settingsManager ?? new SettingsManager();
 
             _vm = new HubBrowserViewModel(_hubService, _settingsManager, _localPackagePaths);
@@ -643,6 +667,7 @@ namespace VPM.Windows
             _hubService.DownloadQueued += HubService_DownloadQueued;
             _hubService.DownloadStarted += HubService_DownloadStarted;
             _hubService.DownloadCompleted += HubService_DownloadCompleted;
+            _hubService.AllDownloadsCompleted += HubService_AllDownloadsCompleted;
 
             // Load persisted settings
             try
@@ -1874,8 +1899,15 @@ namespace VPM.Windows
         {
             // WPF will auto-scroll the ListBox to fully show the selected item.
             // This is undesirable for the Hub grid; we only want to scroll when changing pages.
+            // Also suppress during downloads — card chrome visibility changes otherwise yank scroll.
             if (_allowResultsBringIntoView)
                 return;
+
+            if (_totalDownloadsInBatch > 0 || _cardDownloadBatchByPackage.Count > 0 || _hubService?.IsDownloading == true)
+            {
+                e.Handled = true;
+                return;
+            }
 
             // Some templates raise this from nested elements; suppress whenever the source is within an item.
             if (e?.OriginalSource is DependencyObject dep && FindVisualParent<ListBoxItem>(dep) != null)
@@ -2745,26 +2777,23 @@ namespace VPM.Windows
                     ? highestVersion 
                     : ExtractVersionNumber(localPackageName);
                 
-                // Get latest version from Hub API
-                // Try multiple sources: LatestVersion property, Version property, or extract from filename
+                // Hub latest: take the max of every signal (card Update badge uses package-index fallback)
                 int hubLatestVersion = -1;
-                
-                // 1. Try LatestVersion property (used for dependencies)
+                void ConsiderHubVersion(int v)
+                {
+                    if (v > hubLatestVersion)
+                        hubLatestVersion = v;
+                }
+
                 if (!string.IsNullOrEmpty(file.LatestVersion) && int.TryParse(file.LatestVersion, out var parsedLatest))
-                {
-                    hubLatestVersion = parsedLatest;
-                }
-                // 2. Try Version property (used for main package files)
-                else if (!string.IsNullOrEmpty(file.Version) && int.TryParse(file.Version, out var parsedVersion))
-                {
-                    hubLatestVersion = parsedVersion;
-                }
-                // 3. Extract from the Hub filename (the filename on Hub represents the latest version)
-                else
-                {
-                    hubLatestVersion = ExtractVersionNumber(file.Filename);
-                }
-                
+                    ConsiderHubVersion(parsedLatest);
+                if (!string.IsNullOrEmpty(file.Version) && int.TryParse(file.Version, out var parsedVersion))
+                    ConsiderHubVersion(parsedVersion);
+                // Prefer resolved filename (Creator.Pkg.5) over original (.latest → -1)
+                ConsiderHubVersion(ExtractVersionNumber(filename));
+                ConsiderHubVersion(ExtractVersionNumber(file.Filename));
+                if (_hubService != null && !string.IsNullOrEmpty(basePackageName))
+                    ConsiderHubVersion(_hubService.GetLatestVersion(basePackageName));
                 
                 if (hubLatestVersion > 0 && localVersion > 0 && hubLatestVersion > localVersion)
                 {
@@ -2774,6 +2803,15 @@ namespace VPM.Windows
                     vm.CanDownload = true;
                     vm.ButtonText = "⬆";
                     vm.HasUpdate = true;
+
+                    // Point at latest download URL / concrete latest filename when possible
+                    if (!string.IsNullOrEmpty(file.LatestUrl) && file.LatestUrl != "null")
+                        vm.DownloadUrl = file.LatestUrl;
+                    else if (!string.IsNullOrEmpty(vm.LatestUrl) && vm.LatestUrl != "null")
+                        vm.DownloadUrl = vm.LatestUrl;
+
+                    if (!string.IsNullOrEmpty(basePackageName))
+                        vm.Filename = $"{basePackageName}.{hubLatestVersion}.var";
                 }
                 else
                 {
@@ -3317,6 +3355,194 @@ namespace VPM.Windows
                 QueueFileForDownload(file);
             }
         }
+
+        private async void CardDownloadAll_Click(object sender, RoutedEventArgs e)
+        {
+            e.Handled = true;
+
+            if (sender is not FrameworkElement element || element.DataContext is not HubResource resource)
+                return;
+
+            if (!resource.ShowsCardDownloadAll || resource.IsCardDownloading)
+                return;
+
+            if (string.IsNullOrEmpty(resource.ResourceId))
+            {
+                try { StatusText.Text = "No resource id — cannot download."; } catch { }
+                return;
+            }
+
+            resource.IsCardDownloading = true;
+            resource.CardDownloadProgress = 0;
+            var queuedOk = false;
+            try
+            {
+                try { StatusText.Text = $"Preparing download: {resource.Title}…"; } catch { }
+
+                var detail = await _hubService.GetResourceDetailAsync(resource.ResourceId);
+                if (detail == null)
+                {
+                    try { StatusText.Text = "Failed to load package details."; } catch { }
+                    return;
+                }
+
+                // Never download paid/external via card button even if detail flags disagree
+                if (!resource.HubDownloadable || resource.IsExternallyHosted || !resource.IsPayTypeFree)
+                    return;
+
+                HubDependencyResolution resolution = null;
+                try
+                {
+                    var includeIndirect = _includeIndirectDependenciesInDownloadAll;
+                    resolution = await _hubService.InspectPackageDependenciesTwoLevelAsync(
+                        detail,
+                        includeIndirect: includeIndirect);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Card download dep inspect failed: {ex}");
+                }
+
+                BuildLocalPackageLookups();
+
+                var toDownload = new List<HubFileViewModel>();
+                var seenPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                void TryAdd(HubFile file, bool isDependency)
+                {
+                    if (file == null || string.IsNullOrEmpty(file.Filename))
+                        return;
+
+                    var vm = CreateFileViewModel(file, isDependency);
+                    // Queue missing downloads and package updates (HasUpdate ⇒ CanDownload)
+                    if (vm == null || !vm.CanDownload || string.IsNullOrEmpty(vm.DownloadUrl))
+                        return;
+
+                    var key = GetBasePackageName((vm.Filename ?? file.Filename).Replace(".var", ""));
+                    if (string.IsNullOrEmpty(key))
+                        key = (vm.Filename ?? file.Filename).Replace(".var", "");
+                    if (string.IsNullOrEmpty(key) || !seenPackages.Add(key))
+                        return;
+
+                    toDownload.Add(vm);
+                }
+
+                if (detail.HubFiles != null)
+                {
+                    foreach (var file in detail.HubFiles)
+                        TryAdd(file, false);
+                }
+
+                void AddDepGroups(Dictionary<string, List<HubFile>> groups)
+                {
+                    if (groups == null)
+                        return;
+                    foreach (var group in groups.Values)
+                    {
+                        if (group == null)
+                            continue;
+                        foreach (var file in group)
+                            TryAdd(file, true);
+                    }
+                }
+
+                if (resolution?.DirectDependencies != null && resolution.DirectDependencies.Count > 0)
+                    AddDepGroups(resolution.DirectDependencies);
+                else
+                    AddDepGroups(detail.Dependencies);
+
+                if (_includeIndirectDependenciesInDownloadAll)
+                    AddDepGroups(resolution?.IndirectDependencies);
+
+                if (toDownload.Count == 0)
+                {
+                    try { StatusText.Text = $"Nothing to download — already in library ({resource.Title})."; } catch { }
+                    resource.CardDownloadStatusReady = true;
+                    return;
+                }
+
+                var batch = new CardDownloadBatch
+                {
+                    Resource = resource,
+                    Total = toDownload.Count,
+                    Completed = 0,
+                    PackageKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                };
+
+                _totalDownloadsInBatch = toDownload.Count;
+                _completedDownloadsInBatch = 0;
+                _currentDownloadingPackage = "";
+
+                try { StatusText.Text = $"Queued {toDownload.Count} download/update(s): {resource.Title}"; } catch { }
+
+                foreach (var file in toDownload)
+                {
+                    var queuedName = QueueFileForDownload(file);
+                    if (!string.IsNullOrEmpty(queuedName))
+                    {
+                        batch.PackageKeys.Add(queuedName);
+                        _cardDownloadBatchByPackage[queuedName] = batch;
+                    }
+                }
+
+                UpdateDownloadQueueUI();
+                queuedOk = true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[HubBrowserWindow] CardDownloadAll failed: {ex}");
+                try { StatusText.Text = $"Download failed: {ex.Message}"; } catch { }
+            }
+            finally
+            {
+                // Keep ring visible while queue runs; clear only if we failed to queue
+                if (!queuedOk)
+                {
+                    resource.IsCardDownloading = false;
+                    resource.CardDownloadProgress = 0;
+                }
+            }
+        }
+
+        private void NotifyCardDownloadBatchProgress(params string[] packageNames)
+        {
+            CardDownloadBatch batch = null;
+            foreach (var name in packageNames)
+            {
+                if (string.IsNullOrEmpty(name))
+                    continue;
+                if (_cardDownloadBatchByPackage.TryGetValue(name, out var found))
+                {
+                    batch = found;
+                    break;
+                }
+            }
+
+            if (batch == null)
+                return;
+
+            foreach (var name in packageNames)
+            {
+                if (!string.IsNullOrEmpty(name))
+                    _cardDownloadBatchByPackage.Remove(name);
+            }
+
+            batch.Completed++;
+            var pct = batch.Total > 0 ? (batch.Completed * 100.0 / batch.Total) : 100;
+            // Throttle PathGeometry rebuilds on the card (arc converter is not free)
+            var prev = batch.Resource.CardDownloadProgress;
+            if (batch.Completed >= batch.Total || prev <= 0 || Math.Abs(pct - prev) >= 5)
+                batch.Resource.CardDownloadProgress = pct;
+
+            if (batch.Completed < batch.Total)
+                return;
+
+            batch.Resource.IsCardDownloading = false;
+            batch.Resource.CardDownloadProgress = 100;
+            // Safe to refresh grid badges now that this card's downloads finished
+            if (_cardDownloadBatchByPackage.Count == 0)
+                ScheduleLibraryStatusRefresh(force: true);
+        }
         
         private void CancelAllDetailDownloads_Click(object sender, RoutedEventArgs e)
         {
@@ -3397,6 +3623,9 @@ namespace VPM.Windows
             DownloadProgressText.Text = "✓ All Downloads Complete";
             DownloadProgressDetail.Text = "";
             DownloadAllProgressBar.Value = 100;
+
+            // Full-grid status refresh was deferred during downloads to avoid scroll jumps
+            ScheduleLibraryStatusRefresh(force: true);
             
             // After a delay, check if we should show button or "All Installed"
             Task.Delay(1500).ContinueWith(_ =>
@@ -3442,7 +3671,7 @@ namespace VPM.Windows
             }
         }
         
-        private void QueueFileForDownload(HubFileViewModel file)
+        private string QueueFileForDownload(HubFileViewModel file)
         {
             // Determine which URL to use:
             // - For dependency updates: use LatestUrl if available
@@ -3453,7 +3682,7 @@ namespace VPM.Windows
                 : file.DownloadUrl;
                 
             if (!file.CanDownload || string.IsNullOrEmpty(downloadUrl))
-                return;
+                return null;
 
             // Get the package name from the download URL
             string packageName;
@@ -3490,14 +3719,31 @@ namespace VPM.Windows
             // Subscribe to property changes on the queued download to update file UI
             queuedDownload.PropertyChanged += (s, e) =>
             {
-                // Use BeginInvoke to prevent UI blocking - progress updates are frequent
-                Dispatcher.BeginInvoke(() =>
+                // DownloadedBytes fires constantly — never marshal those onto the UI thread
+                if (e.PropertyName != nameof(QueuedDownload.Status) &&
+                    e.PropertyName != nameof(QueuedDownload.ProgressPercentage))
+                    return;
+
+                if (e.PropertyName == nameof(QueuedDownload.ProgressPercentage))
+                {
+                    var pct = queuedDownload.ProgressPercentage;
+                    // Throttle percent UI updates so the dispatcher is not flooded
+                    if (pct == _lastDownloadUiProgressPercent)
+                        return;
+                    if (pct < 100 && _lastDownloadUiProgressPercent >= 0 &&
+                        Math.Abs(pct - _lastDownloadUiProgressPercent) < 2)
+                        return;
+                    _lastDownloadUiProgressPercent = pct;
+                }
+
+                Dispatcher.BeginInvoke(new Action(() =>
                 {
                     if (e.PropertyName == nameof(QueuedDownload.Status))
                     {
                         switch (queuedDownload.Status)
                         {
                             case DownloadStatus.Downloading:
+                                _lastDownloadUiProgressPercent = -1;
                                 file.Status = file.HasUpdate ? "Updating..." : "Downloading...";
                                 file.StatusColor = new SolidColorBrush(Colors.Yellow);
                                 file.IsDownloading = true;
@@ -3511,8 +3757,15 @@ namespace VPM.Windows
                                 break;
                                 
                             case DownloadStatus.Completed:
-                                var downloadedFilename = packageName + ".var";
-                                var downloadedPath = Path.Combine(_destinationFolder, downloadedFilename);
+                                // Prefer real path from download (.latest may have been renamed to integer .var)
+                                var downloadedPath = queuedDownload.DownloadedFilePath;
+                                if (string.IsNullOrEmpty(downloadedPath) || !System.IO.File.Exists(downloadedPath))
+                                    downloadedPath = Path.Combine(_destinationFolder, packageName + ".var");
+
+                                var resolvedPackageName = Path.GetFileNameWithoutExtension(downloadedPath);
+                                if (string.IsNullOrEmpty(resolvedPackageName))
+                                    resolvedPackageName = packageName;
+                                var downloadedFilename = resolvedPackageName + ".var";
                                 
                                 // Check if this was an update before clearing the flag
                                 bool wasUpdate = file.HasUpdate;
@@ -3526,72 +3779,46 @@ namespace VPM.Windows
                                 file.LocalPath = downloadedPath;
                                 file.Filename = downloadedFilename;
                                 
-                                _localPackagePaths[packageName] = downloadedPath;
-                                
-                                // Update PackageManager metadata so the Hub reflects the new local package.
-                                if (_packageManager != null && System.IO.File.Exists(downloadedPath))
+                                _localPackagePaths[resolvedPackageName] = downloadedPath;
+                                // Drop stale .latest key so lookups don't point at a missing file
+                                if (!string.Equals(resolvedPackageName, packageName, StringComparison.OrdinalIgnoreCase))
+                                    _localPackagePaths.Remove(packageName);
+
+                                BuildLocalPackageLookups();
+                                NotifyCardDownloadBatchProgress(packageName, resolvedPackageName);
+
+                                // Heavy metadata parse off the UI thread
+                                var pathForMeta = downloadedPath;
+                                var resolvedForMeta = resolvedPackageName;
+                                var queuedNameForMeta = packageName;
+                                _ = Task.Run(() =>
                                 {
+                                    if (_packageManager == null || !System.IO.File.Exists(pathForMeta))
+                                        return;
                                     try
                                     {
-                                        // Parse the downloaded package's metadata
-                                        var metadata = _packageManager.ParseVarMetadataComplete(downloadedPath);
-                                        if (metadata != null)
+                                        var metadata = _packageManager.ParseVarMetadataComplete(pathForMeta);
+                                        if (metadata == null)
+                                            return;
+                                        metadata.FilePath = pathForMeta;
+                                        metadata.Status = "Loaded";
+                                        Dispatcher.BeginInvoke(new Action(() =>
                                         {
-                                            metadata.FilePath = downloadedPath;
-                                            metadata.Status = "Loaded";
-                                            _packageManager.PackageMetadata[packageName] = metadata;
-                                            
-                                            // Rebuild local package lookups so future checks use the updated data
-                                            BuildLocalPackageLookups();
-                                        }
-                                        
-                                        // Remove from MissingDependencies so the panel updates after download.
-                                        _packageManager.RemoveFromMissingDependencies(packageName);
+                                            _packageManager.PackageMetadata[resolvedForMeta] = metadata;
+                                            if (!string.Equals(resolvedForMeta, queuedNameForMeta, StringComparison.OrdinalIgnoreCase))
+                                                _packageManager.PackageMetadata.Remove(queuedNameForMeta);
+                                            _packageManager.RemoveFromMissingDependencies(resolvedForMeta);
+                                            if (!string.Equals(resolvedForMeta, queuedNameForMeta, StringComparison.OrdinalIgnoreCase))
+                                                _packageManager.RemoveFromMissingDependencies(queuedNameForMeta);
+                                        }), System.Windows.Threading.DispatcherPriority.Background);
                                     }
                                     catch (Exception)
                                     {
-                                        // If parsing fails, at least update the lookups from _localPackagePaths
-                                        BuildLocalPackageLookups();
                                     }
-                                }
+                                });
 
-                                // Refresh library status for all visible Hub results and update the current detail badge.
-                                if (_vm != null)
-                                {
-                                    _ = Dispatcher.BeginInvoke(new Action(async () =>
-                                    {
-                                        try
-                                        {
-                                            await _vm.RefreshLibraryStatusesAsync();
-
-                                            if (_currentResource != null && !string.IsNullOrEmpty(_currentResource.ResourceId))
-                                            {
-                                                var refreshed = _vm.Results?.FirstOrDefault(r =>
-                                                    string.Equals(r.ResourceId, _currentResource.ResourceId, StringComparison.OrdinalIgnoreCase));
-
-                                                if (refreshed != null)
-                                                {
-                                                    _currentResource.InLibrary = refreshed.InLibrary;
-                                                    _currentResource.UpdateAvailable = refreshed.UpdateAvailable;
-                                                    _currentResource.UpdateMessage = refreshed.UpdateMessage;
-                                                }
-
-                                                if (_currentDetail != null)
-                                                {
-                                                    _currentDetail.InLibrary = _currentResource.InLibrary;
-                                                    _currentDetail.UpdateAvailable = _currentResource.UpdateAvailable;
-                                                    _currentDetail.UpdateMessage = _currentResource.UpdateMessage;
-                                                    DetailInLibraryBadge.Visibility = _currentDetail.InLibrary ? Visibility.Visible : Visibility.Collapsed;
-                                                    DetailUpdateBadge.Visibility = _currentDetail.UpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
-                                                }
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Debug.WriteLine($"[HubBrowserWindow] Failed to refresh library statuses after download: {ex}");
-                                        }
-                                    }));
-                                }
+                                // Debounced refresh — per-file RefreshLibraryStatusesAsync froze the UI
+                                ScheduleLibraryStatusRefresh();
 
                                 // Optional: Load the downloaded package + its dependencies into AddonPackages
                                 if (_loadPackageAndDependenciesAfterDownload)
@@ -3614,11 +3841,11 @@ namespace VPM.Windows
                                 // Handle old versions if this was an update
                                 if (wasUpdate)
                                 {
-                                    HandleOldVersions(packageName);
+                                    _ = HandleOldVersionsAsync(resolvedPackageName);
                                 }
                                 
                                 // Update missing dependencies panel if we're viewing it
-                                UpdateMissingDepsPanelAfterDownload(packageName);
+                                UpdateMissingDepsPanelAfterDownload(resolvedPackageName);
                                 
                                 // Update batch progress
                                 _completedDownloadsInBatch++;
@@ -3639,6 +3866,7 @@ namespace VPM.Windows
                                 file.CanDownload = true;
                                 file.ButtonText = "⬇";
                                 _downloadingFiles.Remove(packageName);
+                                NotifyCardDownloadBatchProgress(packageName);
                                 
                                 // Hide cancel button if no more active downloads
                                 UpdateCancelAllButtonVisibility();
@@ -3662,6 +3890,7 @@ namespace VPM.Windows
                                 file.CanDownload = true;
                                 file.ButtonText = "⬇";
                                 _downloadingFiles.Remove(packageName);
+                                NotifyCardDownloadBatchProgress(packageName);
                                 
                                 // Hide cancel button if no more active downloads
                                 UpdateCancelAllButtonVisibility();
@@ -3688,10 +3917,93 @@ namespace VPM.Windows
                                 : $"Downloading... {queuedDownload.ProgressPercentage}%";
                         }
                     }
-                });
+                }), System.Windows.Threading.DispatcherPriority.Background);
             };
 
             UpdateDownloadAllButton();
+            return packageName;
+        }
+
+        /// <summary>
+        /// Coalesce library refreshes. Mid-download full-grid refresh flips card chrome
+        /// visibility and makes VirtualizingWrapPanel jump scroll — defer until idle.
+        /// </summary>
+        private void ScheduleLibraryStatusRefresh(bool force = false)
+        {
+            var downloadsStillRunning =
+                (_totalDownloadsInBatch > 0 && _completedDownloadsInBatch < _totalDownloadsInBatch) ||
+                _cardDownloadBatchByPackage.Count > 0 ||
+                (_hubService?.IsDownloading == true);
+
+            if (!force && downloadsStillRunning)
+            {
+                _pendingLibraryStatusRefresh = true;
+                return;
+            }
+
+            _pendingLibraryStatusRefresh = false;
+
+            try
+            {
+                _libraryStatusRefreshCts?.Cancel();
+                _libraryStatusRefreshCts?.Dispose();
+            }
+            catch { }
+
+            var cts = new CancellationTokenSource();
+            _libraryStatusRefreshCts = cts;
+            var token = cts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(force ? 400 : 750, token).ConfigureAwait(false);
+                    if (token.IsCancellationRequested || _vm == null)
+                        return;
+
+                    // Still downloading? Wait again rather than thrashing the grid.
+                    if (_hubService?.IsDownloading == true || _cardDownloadBatchByPackage.Count > 0)
+                    {
+                        _pendingLibraryStatusRefresh = true;
+                        return;
+                    }
+
+                    await _vm.RefreshLibraryStatusesAsync(token).ConfigureAwait(false);
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (_currentResource == null || string.IsNullOrEmpty(_currentResource.ResourceId))
+                            return;
+
+                        var refreshed = _vm.Results?.FirstOrDefault(r =>
+                            string.Equals(r.ResourceId, _currentResource.ResourceId, StringComparison.OrdinalIgnoreCase));
+
+                        if (refreshed != null)
+                        {
+                            _currentResource.InLibrary = refreshed.InLibrary;
+                            _currentResource.UpdateAvailable = refreshed.UpdateAvailable;
+                            _currentResource.UpdateMessage = refreshed.UpdateMessage;
+                        }
+
+                        if (_currentDetail != null)
+                        {
+                            _currentDetail.InLibrary = _currentResource.InLibrary;
+                            _currentDetail.UpdateAvailable = _currentResource.UpdateAvailable;
+                            _currentDetail.UpdateMessage = _currentResource.UpdateMessage;
+                            DetailInLibraryBadge.Visibility = _currentDetail.InLibrary ? Visibility.Visible : Visibility.Collapsed;
+                            DetailUpdateBadge.Visibility = _currentDetail.UpdateAvailable ? Visibility.Visible : Visibility.Collapsed;
+                        }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Debounced library status refresh failed: {ex}");
+                }
+            }, token);
         }
 
         #endregion
@@ -3701,7 +4013,7 @@ namespace VPM.Windows
         /// <summary>
         /// Handle old versions of a package based on the selected option
         /// </summary>
-        private void HandleOldVersions(string packageName)
+        private async Task HandleOldVersionsAsync(string packageName)
         {
             if (_oldVersionHandling == "No Change")
                 return;
@@ -3734,129 +4046,126 @@ namespace VPM.Windows
                 
                 if (_oldVersionHandling == "Archive All Old")
                 {
-                    ArchiveAllOldVersions(oldVersions);
+                    var archiveFolder = Path.Combine(_vamFolder, "ArchivedPackages", "OldPackages");
+                    await MoveOldVersionsToFolderAsync(oldVersions, archiveFolder);
                 }
                 else if (_oldVersionHandling == "Discard All Old")
                 {
-                    DiscardAllOldVersions(oldVersions);
+                    var discardFolder = Path.Combine(_vamFolder, "DiscardedPackages");
+                    await MoveOldVersionsToFolderAsync(oldVersions, discardFolder);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Handle exception
+                Debug.WriteLine($"[HubBrowserWindow] HandleOldVersionsAsync failed: {ex}");
             }
         }
-        
+
         /// <summary>
-        /// Archive all old versions to \ArchivedPackages\OldPackages\ in the game folder
+        /// Move old package versions into archive/discard folder.
+        /// Releases ImageManager archive pools first — required in Release/published builds.
         /// </summary>
-        private void ArchiveAllOldVersions(List<string> oldVersionPackages)
+        private async Task MoveOldVersionsToFolderAsync(List<string> oldVersionPackages, string destinationFolder)
         {
-            try
+            Directory.CreateDirectory(destinationFolder);
+
+            var pathsToRelease = new List<string>();
+            var namesToRelease = new List<string>();
+            foreach (var packageName in oldVersionPackages)
             {
-                // Create archive path in game folder: \ArchivedPackages\OldPackages\
-                var archiveFolder = Path.Combine(_vamFolder, "ArchivedPackages", "OldPackages");
-                Directory.CreateDirectory(archiveFolder);
-                
-                foreach (var packageName in oldVersionPackages)
-                {
-                    if (_localPackagePaths.TryGetValue(packageName, out var filePath))
-                    {
-                        try
-                        {
-                            // Check file exists before attempting move
-                            if (!File.Exists(filePath))
-                            {
-                                _localPackagePaths.Remove(packageName);
-                                continue;
-                            }
-                            
-                            var filename = Path.GetFileName(filePath);
-                            var archivePath = Path.Combine(archiveFolder, filename);
-                            
-                            // If file already exists in archive, delete it first
-                            try
-                            {
-                                if (File.Exists(archivePath))
-                                {
-                                    File.Delete(archivePath);
-                                }
-                            }
-                            catch (Exception)
-                            {
-                                // Handle exception
-                            }
-                            
-                            SymlinkSafeFileSystem.MoveFileSafe(filePath, archivePath);
-                            _localPackagePaths.Remove(packageName);
-                        }
-                        catch (Exception)
-                        {
-                            // Handle exception
-                        }
-                    }
-                }
+                if (!_localPackagePaths.TryGetValue(packageName, out var filePath) || string.IsNullOrEmpty(filePath))
+                    continue;
+
+                pathsToRelease.Add(filePath);
+                namesToRelease.Add(Path.GetFileNameWithoutExtension(filePath));
             }
-            catch (Exception)
+
+            if (_imageManager != null)
             {
-                // Handle exception
+                if (namesToRelease.Count > 0)
+                    await _imageManager.ReleasePackagesAsync(namesToRelease);
+                if (pathsToRelease.Count > 0)
+                    await _imageManager.BatchCloseFileHandlesAsync(pathsToRelease);
+            }
+
+            foreach (var packageName in oldVersionPackages)
+            {
+                if (!_localPackagePaths.TryGetValue(packageName, out var filePath))
+                    continue;
+
+                try
+                {
+                    if (!File.Exists(filePath))
+                    {
+                        _localPackagePaths.Remove(packageName);
+                        continue;
+                    }
+
+                    var filename = Path.GetFileName(filePath);
+                    var destPath = Path.Combine(destinationFolder, filename);
+
+                    try
+                    {
+                        if (File.Exists(destPath))
+                            File.Delete(destPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"[HubBrowserWindow] Failed to clear existing dest '{destPath}': {ex.Message}");
+                    }
+
+                    var moved = await TryMoveOldVersionFileAsync(filePath, destPath);
+                    if (moved)
+                        _localPackagePaths.Remove(packageName);
+                    else
+                        Debug.WriteLine($"[HubBrowserWindow] Failed to move old version '{packageName}' to '{destPath}'");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Error moving old version '{packageName}': {ex.Message}");
+                }
             }
         }
-        
-        /// <summary>
-        /// Move all old versions to \DiscardedPackages\ in the game folder
-        /// </summary>
-        private void DiscardAllOldVersions(List<string> oldVersionPackages)
+
+        private async Task<bool> TryMoveOldVersionFileAsync(string sourcePath, string destinationPath)
         {
-            try
+            const int maxAttempts = 5;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                // Create discard path in game folder: \DiscardedPackages\
-                var discardFolder = Path.Combine(_vamFolder, "DiscardedPackages");
-                Directory.CreateDirectory(discardFolder);
-                
-                foreach (var packageName in oldVersionPackages)
+                try
                 {
-                    if (_localPackagePaths.TryGetValue(packageName, out var filePath))
+                    if (_imageManager != null)
+                        await _imageManager.CloseFileHandlesAsync(sourcePath);
+
+                    try
                     {
-                        try
-                        {
-                            // Check file exists before attempting move
-                            if (!File.Exists(filePath))
-                            {
-                                _localPackagePaths.Remove(packageName);
-                                continue;
-                            }
-                            
-                            var filename = Path.GetFileName(filePath);
-                            var discardPath = Path.Combine(discardFolder, filename);
-                            
-                            // If file already exists in discard folder, delete it first
-                            try
-                            {
-                                if (File.Exists(discardPath))
-                                {
-                                    File.Delete(discardPath);
-                                }
-                            }
-                            catch (Exception)
-                            {
-                                // Handle exception
-                            }
-                            
-                            SymlinkSafeFileSystem.MoveFileSafe(filePath, discardPath);
-                            _localPackagePaths.Remove(packageName);
-                        }
-                        catch (Exception)
-                        {
-                            // Handle exception
-                        }
+                        FileAccessController.Instance.InvalidateFile(sourcePath);
                     }
+                    catch
+                    {
+                    }
+
+                    SymlinkSafeFileSystem.MoveFileSafe(sourcePath, destinationPath);
+                    return true;
+                }
+                catch (IOException ex) when (attempt < maxAttempts)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Old-version move locked '{sourcePath}', retry {attempt}/{maxAttempts}: {ex.Message}");
+                    await Task.Delay(100 * attempt);
+                }
+                catch (UnauthorizedAccessException ex) when (attempt < maxAttempts)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Old-version move access denied '{sourcePath}', retry {attempt}/{maxAttempts}: {ex.Message}");
+                    await Task.Delay(100 * attempt);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[HubBrowserWindow] Old-version move failed '{sourcePath}': {ex.Message}");
+                    return false;
                 }
             }
-            catch (Exception)
-            {
-                // Handle exception
-            }
+
+            return false;
         }
         
         #endregion
@@ -3905,6 +4214,15 @@ namespace VPM.Windows
                 }
                 UpdateDownloadQueueUI();
             });
+        }
+
+        private void HubService_AllDownloadsCompleted(object sender, EventArgs e)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_pendingLibraryStatusRefresh || _totalDownloadsInBatch == 0)
+                    ScheduleLibraryStatusRefresh(force: true);
+            }, System.Windows.Threading.DispatcherPriority.Background);
         }
         
         private void UpdateDownloadQueueUI()
@@ -4884,6 +5202,64 @@ namespace VPM.Windows
                 return isEmpty ? Visibility.Visible : Visibility.Collapsed;
             
             return isEmpty ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Maps 0–100 progress to a circular arc PathGeometry (24x24, starts at top).
+    /// </summary>
+    public class ProgressToArcConverter : System.Windows.Data.IValueConverter
+    {
+        private const double Size = 24;
+        private const double Radius = 10.5;
+
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            double pct = 0;
+            try { pct = System.Convert.ToDouble(value); } catch { pct = 0; }
+            pct = Math.Clamp(pct, 0, 100);
+
+            if (pct < 0.5)
+                return Geometry.Empty;
+
+            // Avoid ArcSegment full-circle singularity at exactly 360°
+            var angle = pct >= 100 ? 359.999 : pct / 100.0 * 360.0;
+            const double startDeg = -90;
+            var endDeg = startDeg + angle;
+
+            double cx = Size / 2.0;
+            double cy = Size / 2.0;
+
+            static Point Polar(double deg, double cX, double cY)
+            {
+                var rad = deg * Math.PI / 180.0;
+                return new Point(cX + Radius * Math.Cos(rad), cY + Radius * Math.Sin(rad));
+            }
+
+            var start = Polar(startDeg, cx, cy);
+            var end = Polar(endDeg, cx, cy);
+
+            var figure = new PathFigure
+            {
+                StartPoint = start,
+                IsClosed = false,
+                IsFilled = false
+            };
+            figure.Segments.Add(new ArcSegment
+            {
+                Point = end,
+                Size = new Size(Radius, Radius),
+                IsLargeArc = angle > 180,
+                SweepDirection = SweepDirection.Clockwise,
+                IsStroked = true
+            });
+
+            return new PathGeometry(new[] { figure });
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)

@@ -67,12 +67,6 @@ namespace VPM.Models
         public string Status { get; set; } = "Unknown"; // Loaded, Available, Missing, etc.
         public string FilePath { get; set; } = "";
         public long FileSize { get; set; } = 0;
-        
-        // Optimization tracking
-        public bool IsOptimized { get; set; } = false;
-        public bool HasTextureOptimization { get; set; } = false;
-        public bool HasHairOptimization { get; set; } = false;
-        public bool HasMirrorOptimization { get; set; } = false;
 
         // Snapshot helpers
         public string VariantRole { get; set; } = "Unknown"; // Loaded, Available, Archived, Duplicate

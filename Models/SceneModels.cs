@@ -30,7 +30,6 @@ namespace VPM.Models
         private List<string> _hairItems = new List<string>();
         private List<string> _clothingItems = new List<string>();
         private List<string> _morphItems = new List<string>();
-        private bool _isOptimized = false;
         private bool _isFavorite = false;
         private bool _isHidden = false;
 
@@ -255,21 +254,6 @@ namespace VPM.Models
         }
 
         /// <summary>
-        /// Whether the scene has been optimized
-        /// </summary>
-        public bool IsOptimized
-        {
-            get => _isOptimized;
-            set
-            {
-                if (SetProperty(ref _isOptimized, value))
-                {
-                    OnPropertyChanged(nameof(OptimizationIcon));
-                }
-            }
-        }
-
-        /// <summary>
         /// Whether the scene is marked as favorite
         /// </summary>
         public bool IsFavorite
@@ -298,8 +282,6 @@ namespace VPM.Models
             "VAR" => "📦",
             _ => "?"
         };
-
-        public string OptimizationIcon => IsOptimized ? "⚡" : "";
 
         public string AtomCountDisplay => AtomCount > 0 ? $"{AtomCount} atoms" : "Unknown";
 
@@ -355,7 +337,6 @@ namespace VPM.Models
         private long _fileSize = 0;
         private bool _isFavorite = false;
         private bool _isHidden = false;
-        private bool _isOptimized = false;
         private string _status = "";
         private string _statusIcon = "";
 
@@ -478,22 +459,7 @@ namespace VPM.Models
         }
 
         /// <summary>
-        /// Whether the preset has been optimized
-        /// </summary>
-        public bool IsOptimized
-        {
-            get => _isOptimized;
-            set
-            {
-                if (SetProperty(ref _isOptimized, value))
-                {
-                    OnPropertyChanged(nameof(OptimizationIcon));
-                }
-            }
-        }
-
-        /// <summary>
-        /// Optimization status of the preset
+        /// Display status of the preset
         /// </summary>
         public string Status
         {
@@ -570,7 +536,6 @@ namespace VPM.Models
         public int DependencyCount => Dependencies?.Count ?? 0;
         public string FileSizeFormatted => FormatHelper.FormatFileSize(FileSize);
         public string DateFormatted => ModifiedDate?.ToString("MMM dd, yyyy") ?? "Unknown";
-        public string OptimizationIcon => IsOptimized ? "⚡" : "";
 
         protected virtual bool SetProperty<T>(ref T backingStore, T value, [CallerMemberName] string propertyName = "")
         {

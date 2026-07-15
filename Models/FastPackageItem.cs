@@ -18,8 +18,6 @@ namespace VPM.Models
         public bool IsLatestVersion { get; set; } = true;
         public int DependencyCount { get; set; } = 0;
         public int DependentsCount { get; set; } = 0;
-        public bool IsOptimized { get; set; } = false;
-
         // Pre-computed display strings (set once, never change)
         public string DisplayName { get; set; } = "";
         public string FileSizeFormatted { get; set; } = "";
@@ -33,7 +31,7 @@ namespace VPM.Models
         /// Creates a FastPackageItem with pre-computed display values
         /// </summary>
         public static FastPackageItem Create(string name, string status, string creator, 
-            long fileSize, DateTime? modifiedDate, bool isLatestVersion, int dependencyCount, int dependentsCount = 0, bool isOptimized = false)
+            long fileSize, DateTime? modifiedDate, bool isLatestVersion, int dependencyCount, int dependentsCount = 0)
         {
             return new FastPackageItem
             {
@@ -45,7 +43,6 @@ namespace VPM.Models
                 IsLatestVersion = isLatestVersion,
                 DependencyCount = dependencyCount,
                 DependentsCount = dependentsCount,
-                IsOptimized = isOptimized,
                 
                 // Pre-compute all display values
                 DisplayName = name,

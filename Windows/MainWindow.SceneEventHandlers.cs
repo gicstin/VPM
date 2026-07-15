@@ -169,13 +169,6 @@ namespace VPM
                     ApplyFilterVisibilityStates(_settingsManager.Settings);
                     ApplyFilterPositions();
                 }
-                
-                if (OptimizeToggleButton != null)
-                {
-                    OptimizeToggleButton.IsEnabled = true;
-                    OptimizeToggleButton.Opacity = 1.0;
-                    OptimizeToggleButton.ToolTip = "Optimize selected packages";
-                }
             }
             else if (mode == "Custom")
             {
@@ -245,13 +238,6 @@ namespace VPM
                     ApplyFilterVisibilityStates(_settingsManager.Settings);
                     ApplyFilterPositions();
                 }
-                
-                if (OptimizeToggleButton != null)
-                {
-                    OptimizeToggleButton.IsEnabled = true;
-                    OptimizeToggleButton.Opacity = 1.0;
-                    OptimizeToggleButton.ToolTip = "Optimize selected items";
-                }
             }
         }
 
@@ -260,9 +246,8 @@ namespace VPM
         /// </summary>
         private void ScenesDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            // Update toolbar buttons and optimize counter immediately
+            // Update toolbar buttons immediately
             UpdateToolbarButtons();
-            UpdateOptimizeCounter();
             UpdateFavoriteCounter();
             UpdateAutoinstallCounter();
             UpdateHideCounter();
@@ -1113,10 +1098,6 @@ namespace VPM
                         counts["❤️ Favorite"] = counts.GetValueOrDefault("❤️ Favorite", 0) + 1;
                     if (scene.IsHidden)
                         counts["🙈 Hidden"] = counts.GetValueOrDefault("🙈 Hidden", 0) + 1;
-                    if (scene.IsOptimized)
-                        counts["⚡ Optimized"] = counts.GetValueOrDefault("⚡ Optimized", 0) + 1;
-                    else
-                        counts["🔧 Unoptimized"] = counts.GetValueOrDefault("🔧 Unoptimized", 0) + 1;
                     if (!scene.IsFavorite && !scene.IsHidden)
                         counts["📁 Normal"] = counts.GetValueOrDefault("📁 Normal", 0) + 1;
                 }
@@ -1124,8 +1105,6 @@ namespace VPM
                 // Add status options with counts
                 SceneStatusFilterList.Items.Add($"❤️ Favorite ({counts.GetValueOrDefault("❤️ Favorite", 0)})");
                 SceneStatusFilterList.Items.Add($"🙈 Hidden ({counts.GetValueOrDefault("🙈 Hidden", 0)})");
-                SceneStatusFilterList.Items.Add($"⚡ Optimized ({counts.GetValueOrDefault("⚡ Optimized", 0)})");
-                SceneStatusFilterList.Items.Add($"🔧 Unoptimized ({counts.GetValueOrDefault("🔧 Unoptimized", 0)})");
                 SceneStatusFilterList.Items.Add($"📁 Normal ({counts.GetValueOrDefault("📁 Normal", 0)})");
             }
             catch (Exception ex)
@@ -1452,7 +1431,7 @@ namespace VPM
                     // Apply status filter
                     if (SceneStatusFilterList?.SelectedItems.Count > 0)
                     {
-                        if (!PassesStatusFilter(scene.IsFavorite, scene.IsHidden, scene.IsOptimized, SceneStatusFilterList.SelectedItems.Cast<string>()))
+                        if (!PassesStatusFilter(scene.IsFavorite, scene.IsHidden, SceneStatusFilterList.SelectedItems.Cast<string>()))
                             return false;
                     }
 
@@ -1547,7 +1526,7 @@ namespace VPM
                     // Apply status filter
                     if (PresetStatusFilterList?.SelectedItems.Count > 0)
                     {
-                        if (!PassesStatusFilter(preset.IsFavorite, preset.IsHidden, false, PresetStatusFilterList.SelectedItems.Cast<string>()))
+                        if (!PassesStatusFilter(preset.IsFavorite, preset.IsHidden, PresetStatusFilterList.SelectedItems.Cast<string>()))
                             return false;
                     }
 
@@ -1644,7 +1623,7 @@ namespace VPM
         /// <summary>
         /// Checks if an item passes the status filter
         /// </summary>
-        private bool PassesStatusFilter(bool isFavorite, bool isHidden, bool isOptimized, IEnumerable<string> selectedFilters)
+        private bool PassesStatusFilter(bool isFavorite, bool isHidden, IEnumerable<string> selectedFilters)
         {
             foreach (var filter in selectedFilters)
             {
@@ -1658,12 +1637,6 @@ namespace VPM
                         break;
                     case "🙈 Hidden":
                         if (isHidden) return true;
-                        break;
-                    case "⚡ Optimized":
-                        if (isOptimized) return true;
-                        break;
-                    case "🔧 Unoptimized":
-                        if (!isOptimized) return true;
                         break;
                     case "📁 Normal":
                         if (!isFavorite && !isHidden) return true;

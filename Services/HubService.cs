@@ -1656,9 +1656,10 @@ namespace VPM.Services
                     });
 
                     bool success = false;
+                    string downloadedPath = null;
                     try
                     {
-                        var downloadedPath = await DownloadPackageAsync(
+                        downloadedPath = await DownloadPackageAsync(
                             download.DownloadUrl,
                             download.DestinationPath,
                             download.PackageName,
@@ -1685,6 +1686,7 @@ namespace VPM.Services
                     }
                     else if (success)
                     {
+                        download.DownloadedFilePath = downloadedPath;
                         download.Status = DownloadStatus.Completed;
                         download.ProgressPercentage = 100;
                     }

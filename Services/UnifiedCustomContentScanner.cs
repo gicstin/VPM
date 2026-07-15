@@ -154,7 +154,6 @@ namespace VPM.Services
             };
 
             PresetScanner.ParsePresetDependencies(item);
-            item.IsOptimized = IsPresetOptimized(vapPath);
 
             // Try to find parent files
             var parentName = PresetScanner.GetParentItemName(vapPath);
@@ -276,33 +275,6 @@ namespace VPM.Services
             }
 
             return "";
-        }
-
-        /// <summary>
-        /// Checks if a preset has been optimized
-        /// </summary>
-        private bool IsPresetOptimized(string filePath)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
-                    return false;
-
-                string jsonContent = File.ReadAllText(filePath);
-                using var doc = JsonDocument.Parse(jsonContent);
-
-                if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                {
-                    if (doc.RootElement.TryGetProperty("_VPM_Optimized", out var optimizedProp))
-                        return optimizedProp.ValueKind == JsonValueKind.True;
-                }
-
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
         }
 
         /// <summary>

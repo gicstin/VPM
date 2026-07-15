@@ -48,10 +48,12 @@ namespace VPM.Models
             get => _downloadedBytes;
             set
             {
-                if (SetProperty(ref _downloadedBytes, value))
-                {
-                    OnPropertyChanged(nameof(ProgressText));
-                }
+                // Do not raise ProgressText here — byte-level updates flood the UI thread
+                // when the download queue list is bound. ProgressPercentage drives ProgressText.
+                if (_downloadedBytes == value)
+                    return;
+                _downloadedBytes = value;
+                OnPropertyChanged(nameof(DownloadedBytes));
             }
         }
         
@@ -60,17 +62,24 @@ namespace VPM.Models
             get => _totalBytes;
             set
             {
-                if (SetProperty(ref _totalBytes, value))
-                {
-                    OnPropertyChanged(nameof(ProgressText));
-                }
+                if (_totalBytes == value)
+                    return;
+                _totalBytes = value;
+                OnPropertyChanged(nameof(TotalBytes));
             }
         }
         
         public int ProgressPercentage
         {
             get => _progressPercentage;
-            set => SetProperty(ref _progressPercentage, value);
+            set
+            {
+                if (_progressPercentage == value)
+                    return;
+                _progressPercentage = value;
+                OnPropertyChanged(nameof(ProgressPercentage));
+                OnPropertyChanged(nameof(ProgressText));
+            }
         }
         
         public string ErrorMessage
@@ -100,6 +109,12 @@ namespace VPM.Models
         // Download URL and destination for queue processing
         public string DownloadUrl { get; set; }
         public string DestinationPath { get; set; }
+
+        /// <summary>
+        /// Actual on-disk path after download completes.
+        /// May differ from PackageName when .latest was renamed to an integer version.
+        /// </summary>
+        public string DownloadedFilePath { get; set; }
         
         /// <summary>
         /// Whether this download can be cancelled (queued or downloading)

@@ -119,6 +119,10 @@ namespace VPM.Windows
                     resource.InLibrary = false;
                     resource.UpdateAvailable = false;
                     resource.UpdateMessage = null;
+                    resource.DependencyStatusResolved = false;
+                    resource.InstalledDependencyCount = 0;
+                    resource.MissingDependencyCount = 0;
+                    resource.CardDownloadStatusReady = true;
                 }), DispatcherPriority.Normal).Task.ConfigureAwait(false);
                 return;
             }
@@ -134,11 +138,21 @@ namespace VPM.Windows
                 cancellationToken,
                 knownDetail).ConfigureAwait(false);
 
+            var depStatus = await _libraryStatusEvaluator.EvaluateDependencyStatusAsync(
+                resource,
+                _localPackageVersions,
+                _localPackageNames,
+                LoadResourceDetailForStatusAsync,
+                cancellationToken,
+                knownDetail).ConfigureAwait(false);
+
             await _uiDispatcher.InvokeAsync(new Action(() =>
             {
                 resource.InLibrary = status.InLibrary;
                 resource.UpdateAvailable = status.UpdateAvailable;
                 resource.UpdateMessage = status.UpdateAvailable ? "Update available" : null;
+                ApplyDependencyStatus(resource, depStatus);
+                resource.CardDownloadStatusReady = true;
             }), DispatcherPriority.Normal).Task.ConfigureAwait(false);
         }
 
@@ -724,6 +738,12 @@ namespace VPM.Windows
                             {
                                 token.ThrowIfCancellationRequested();
                                 var status = await EvaluateLibraryStatusAsync(resource, token).ConfigureAwait(false);
+                                var depStatus = await _libraryStatusEvaluator.EvaluateDependencyStatusAsync(
+                                    resource,
+                                    _localPackageVersions,
+                                    _localPackageNames,
+                                    LoadResourceDetailForStatusAsync,
+                                    token).ConfigureAwait(false);
 
                                 // Apply UI-bound updates on the dispatcher thread
                                 await _uiDispatcher.InvokeAsync(new Action(() =>
@@ -731,6 +751,8 @@ namespace VPM.Windows
                                     resource.InLibrary = status.InLibrary;
                                     resource.UpdateAvailable = status.UpdateAvailable;
                                     resource.UpdateMessage = status.UpdateAvailable ? "Update available" : null;
+                                    ApplyDependencyStatus(resource, depStatus);
+                                    resource.CardDownloadStatusReady = true;
                                 }), DispatcherPriority.Background).Task.ConfigureAwait(false);
                             }
                             finally
@@ -750,6 +772,26 @@ namespace VPM.Windows
             catch (Exception)
             {
             }
+        }
+
+        private static void ApplyDependencyStatus(
+            HubResource resource,
+            HubLibraryStatusEvaluator.DependencyStatusResult depStatus)
+        {
+            if (resource == null)
+                return;
+
+            if (!depStatus.Resolved)
+            {
+                resource.InstalledDependencyCount = 0;
+                resource.MissingDependencyCount = 0;
+                resource.DependencyStatusResolved = false;
+                return;
+            }
+
+            resource.InstalledDependencyCount = depStatus.Installed;
+            resource.MissingDependencyCount = depStatus.Missing;
+            resource.DependencyStatusResolved = true;
         }
 
         private async Task<HubLibraryStatusEvaluator.StatusResult> EvaluateLibraryStatusAsync(
@@ -793,7 +835,10 @@ namespace VPM.Windows
                 if (string.IsNullOrWhiteSpace(pkg) || string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                     continue;
 
-                var name = pkg.Replace(".var", "");
+                // Prefer on-disk filename (.latest queue keys may point at renamed integer .var)
+                var name = System.IO.Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrEmpty(name))
+                    name = pkg.Replace(".var", "");
                 if (string.IsNullOrEmpty(name))
                     continue;
 

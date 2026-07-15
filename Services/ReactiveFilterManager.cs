@@ -20,7 +20,6 @@ namespace VPM.Services
         private Dictionary<string, int> _statusCounts;
         private Dictionary<string, int> _licenseCounts;
         private Dictionary<string, int> _fileSizeCounts;
-        private Dictionary<string, int> _optimizationCounts;
         
         // Filtered package cache
         private Dictionary<string, VarMetadata> _filteredPackages;
@@ -177,21 +176,6 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Get optimization status counts based on current filter state (cascade mode)
-        /// </summary>
-        public Dictionary<string, int> GetOptimizationCounts()
-        {
-            lock (_cacheLock)
-            {
-                if (_countsNeedUpdate || _optimizationCounts == null)
-                {
-                    UpdateAllCountsLocked();
-                }
-                return _optimizationCounts;
-            }
-        }
-        
-        /// <summary>
         /// Update all counts - must be called within lock
         /// </summary>
         private void UpdateAllCountsLocked()
@@ -208,7 +192,6 @@ namespace VPM.Services
             _statusCounts = _filterManager.GetStatusCounts(_filteredPackages);
             _licenseCounts = _filterManager.GetLicenseCounts(_filteredPackages);
             _fileSizeCounts = _filterManager.GetFileSizeCounts(_filteredPackages);
-            _optimizationCounts = _filterManager.GetOptimizationStatusCounts(_filteredPackages);
         }
     }
     
@@ -219,7 +202,6 @@ namespace VPM.Services
         Status,
         License,
         FileSize,
-        Optimization,
         Date
     }
 }

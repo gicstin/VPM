@@ -2460,7 +2460,6 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
                             <Button
@@ -2572,40 +2571,6 @@
                                 </Button.Style>
                             </Button>
 
-                            <Button
-                                Name="OptimizeToggleButton"
-                                Grid.Column="2"
-                                Margin="3,0,0,0"
-                                Padding="10,6"
-                                VerticalAlignment="Stretch"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                Click="OptimizeToggleButton_Click"
-                                FontSize="12"
-                                ToolTip="Optimize selected packages">
-                                <Button.Content>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                            Text="⚡ " />
-                                        <TextBlock VerticalAlignment="Center" Text="Optimize" />
-                                        <TextBlock
-                                            Name="OptimizeCountText"
-                                            Margin="4,0,0,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="11"
-                                            FontWeight="Bold"
-                                            Foreground="#FFA500"
-                                            Text="" />
-                                    </StackPanel>
-                                </Button.Content>
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
-                                </Button.Style>
-                            </Button>
                         </Grid>
 
                         <Grid
@@ -2876,11 +2841,6 @@
                                     <Separator />
                                     <MenuItem Click="DiscardSelected_Click" Header="🗑️ Discard Selected" />
                                     <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
-                                    <Separator />
-                                    <MenuItem
-                                        x:Name="RestoreOriginalMenuItem"
-                                        Click="RestoreOriginal_Click"
-                                        Header="🔄 Restore Original" />
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
 
@@ -2937,15 +2897,6 @@
                                                                 Text="A"
                                                                 ToolTip="AutoInstall package"
                                                                 Visibility="{Binding IsAutoInstall, Converter={StaticResource BoolToVis}}" />
-                                                            <!--  Optimized lightning bolt  -->
-                                                            <TextBlock
-                                                                Margin="0,0,3,0"
-                                                                FontSize="11"
-                                                                FontWeight="Bold"
-                                                                Foreground="#FFC107"
-                                                                Text="⚡"
-                                                                ToolTip="Package has been optimized by VPM"
-                                                                Visibility="{Binding IsOptimized, Converter={StaticResource BoolToVis}}" />
                                                             <!--  Old Version indicator hourglass  -->
                                                             <TextBlock
                                                                 Margin="0,0,3,0"
@@ -3193,14 +3144,6 @@
                                                     Text="🙈"
                                                     ToolTip="Hidden"
                                                     Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}" />
-                                                <TextBlock
-                                                    Margin="6,0,0,0"
-                                                    VerticalAlignment="Center"
-                                                    FontSize="14"
-                                                    FontWeight="Bold"
-                                                    Foreground="#FFD700"
-                                                    Text="{Binding OptimizationIcon}"
-                                                    ToolTip="Scene has been optimized" />
                                                 <TextBlock
                                                     Margin="6,0"
                                                     VerticalAlignment="Center"
@@ -3477,15 +3420,6 @@
                                                     Text="🙈"
                                                     ToolTip="Hidden"
                                                     Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}" />
-                                                <TextBlock
-                                                    Margin="3,0,0,0"
-                                                    VerticalAlignment="Center"
-                                                    FontSize="11"
-                                                    FontWeight="Bold"
-                                                    Foreground="#FFC107"
-                                                    Text="⚡"
-                                                    ToolTip="Package has been optimized"
-                                                    Visibility="{Binding IsOptimized, Converter={StaticResource BoolToVis}}" />
                                                 <TextBlock
                                                     Margin="3,0,0,0"
                                                     VerticalAlignment="Center"
@@ -4577,70 +4511,6 @@
                                                                 Grid.Column="0"
                                                                 Margin="0,0,0,0"
                                                                 Background="#FF2196F3"
-                                                                CornerRadius="3,0,0,3" />
-                                                            <!--  Button Content  -->
-                                                            <Border
-                                                                Grid.Column="1"
-                                                                Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="0,3,3,0">
-                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                            </Border>
-                                                        </Grid>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="Visibility" Value="Visible">
-                                                    <Trigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation
-                                                                    Storyboard.TargetProperty="Opacity"
-                                                                    From="0.0"
-                                                                    To="1.0"
-                                                                    Duration="0:0:0.15">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.EnterActions>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-                                <Button
-                                    x:Name="OptimizeDependenciesButton"
-                                    Grid.Row="1"
-                                    Grid.Column="0"
-                                    Height="33"
-                                    Margin="3"
-                                    Padding="0"
-                                    Click="OptimizeDependencies_Click"
-                                    Content="⚡ Optimize"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    ToolTip="Optimize selected dependencies"
-                                    Visibility="Collapsed">
-                                    <Button.Style>
-                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="6" />
-                                                                <ColumnDefinition Width="*" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <!--  Left Status Bar (Purple for Optimize)  -->
-                                                            <Border
-                                                                Grid.Column="0"
-                                                                Margin="0,0,0,0"
-                                                                Background="#FFA501"
                                                                 CornerRadius="3,0,0,3" />
                                                             <!--  Button Content  -->
                                                             <Border

@@ -45,7 +45,7 @@ namespace VPM
                     }
                 }
                 
-                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths, _packageManager, _settingsManager);
+                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths, _packageManager, _settingsManager, _imageManager);
                 hubWindow.Owner = this;
                 hubWindow.ShowDialog();
                 
