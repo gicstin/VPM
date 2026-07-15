@@ -207,7 +207,7 @@
                             <StackPanel Grid.Column="0">
                                 <StackPanel Orientation="Horizontal">
                                     <TextBlock Text="SharpCompress" FontWeight="SemiBold" FontSize="13"/>
-                                    <TextBlock Text="0.37.2" FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Margin="8,2,0,0"/>
+                                    <TextBlock Text="0.49.1" FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Margin="8,2,0,0"/>
                                 </StackPanel>
                                 <TextBlock Text="Archive extraction and compression library" 
                                            FontSize="11" 
@@ -216,29 +216,6 @@
                             </StackPanel>
                             <TextBlock Grid.Column="1" VerticalAlignment="Center">
                                 <Hyperlink Click="SharpCompressLink_Click">View</Hyperlink>
-                            </TextBlock>
-                        </Grid>
-                    </Border>
-                    
-                    <!-- NetVips -->
-                    <Border Style="{StaticResource DependencyCard}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="NetVips" FontWeight="SemiBold" FontSize="13"/>
-                                    <TextBlock Text="3.1.0" FontSize="11" Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}" Margin="8,2,0,0"/>
-                                </StackPanel>
-                                <TextBlock Text="High-performance image processing library (libvips bindings)" 
-                                           FontSize="11" 
-                                           Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
-                                           Margin="0,4,0,0"/>
-                            </StackPanel>
-                            <TextBlock Grid.Column="1" VerticalAlignment="Center">
-                                <Hyperlink Click="NetVipsLink_Click">View</Hyperlink>
                             </TextBlock>
                         </Grid>
                     </Border>

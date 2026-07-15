@@ -17,6 +17,7 @@ namespace VPM.Windows
         private readonly SettingsManager _settingsManager;
         private readonly Dictionary<string, string> _localPackagePaths;
         private readonly Dispatcher _uiDispatcher;
+        private readonly HubLibraryStatusEvaluator _libraryStatusEvaluator;
 
         private CancellationTokenSource _searchCts;
         private readonly DispatcherTimer _searchDebounceTimer;
@@ -95,8 +96,64 @@ namespace VPM.Windows
             if (Results == null || Results.Count == 0)
                 return;
 
-            // Use the background evaluator instead of sequential checks on UI thread
             await EvaluateStatusesAsync(Results.ToList(), cancellationToken);
+        }
+
+        /// <summary>
+        /// Re-evaluate library badges for one resource (e.g. after its detail panel loads).
+        /// </summary>
+        public async Task ApplyResourceLibraryStatusAsync(
+            HubResource resource,
+            HubResourceDetail knownDetail = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (resource == null)
+                return;
+
+            BuildLocalPackageLookups();
+
+            if (resource.IsExternallyHosted)
+            {
+                await _uiDispatcher.InvokeAsync(new Action(() =>
+                {
+                    resource.InLibrary = false;
+                    resource.UpdateAvailable = false;
+                    resource.UpdateMessage = null;
+                    resource.DependencyStatusResolved = false;
+                    resource.InstalledDependencyCount = 0;
+                    resource.MissingDependencyCount = 0;
+                    resource.CardDownloadStatusReady = true;
+                }), DispatcherPriority.Normal).Task.ConfigureAwait(false);
+                return;
+            }
+
+            if (knownDetail != null && !string.IsNullOrEmpty(knownDetail.ResourceId))
+                _resourceDetailCache[knownDetail.ResourceId] = knownDetail;
+
+            var status = await _libraryStatusEvaluator.EvaluateAsync(
+                resource,
+                _localPackageVersions,
+                _localPackageNames,
+                LoadResourceDetailForStatusAsync,
+                cancellationToken,
+                knownDetail).ConfigureAwait(false);
+
+            var depStatus = await _libraryStatusEvaluator.EvaluateDependencyStatusAsync(
+                resource,
+                _localPackageVersions,
+                _localPackageNames,
+                LoadResourceDetailForStatusAsync,
+                cancellationToken,
+                knownDetail).ConfigureAwait(false);
+
+            await _uiDispatcher.InvokeAsync(new Action(() =>
+            {
+                resource.InLibrary = status.InLibrary;
+                resource.UpdateAvailable = status.UpdateAvailable;
+                resource.UpdateMessage = status.UpdateAvailable ? "Update available" : null;
+                ApplyDependencyStatus(resource, depStatus);
+                resource.CardDownloadStatusReady = true;
+            }), DispatcherPriority.Normal).Task.ConfigureAwait(false);
         }
 
         public bool IsNotLoading => !IsLoading;
@@ -343,6 +400,7 @@ namespace VPM.Windows
             _hubService = hubService ?? throw new ArgumentNullException(nameof(hubService));
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _localPackagePaths = localPackagePaths ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            _libraryStatusEvaluator = new HubLibraryStatusEvaluator(_hubService);
 
             _uiDispatcher = Dispatcher.CurrentDispatcher;
 
@@ -651,6 +709,8 @@ namespace VPM.Windows
             if (resources == null || resources.Count == 0)
                 return;
 
+            BuildLocalPackageLookups();
+
             // Delay to allow initial UI rendering and high-priority image loading to start/finish
             try 
             {
@@ -677,14 +737,22 @@ namespace VPM.Windows
                             try
                             {
                                 token.ThrowIfCancellationRequested();
-                                var (inLibrary, updateAvailable) = await EvaluateLibraryStatusAsync(resource, token).ConfigureAwait(false);
+                                var status = await EvaluateLibraryStatusAsync(resource, token).ConfigureAwait(false);
+                                var depStatus = await _libraryStatusEvaluator.EvaluateDependencyStatusAsync(
+                                    resource,
+                                    _localPackageVersions,
+                                    _localPackageNames,
+                                    LoadResourceDetailForStatusAsync,
+                                    token).ConfigureAwait(false);
 
                                 // Apply UI-bound updates on the dispatcher thread
                                 await _uiDispatcher.InvokeAsync(new Action(() =>
                                 {
-                                    resource.InLibrary = inLibrary;
-                                    resource.UpdateAvailable = updateAvailable;
-                                    resource.UpdateMessage = updateAvailable ? "Update available" : null;
+                                    resource.InLibrary = status.InLibrary;
+                                    resource.UpdateAvailable = status.UpdateAvailable;
+                                    resource.UpdateMessage = status.UpdateAvailable ? "Update available" : null;
+                                    ApplyDependencyStatus(resource, depStatus);
+                                    resource.CardDownloadStatusReady = true;
                                 }), DispatcherPriority.Background).Task.ConfigureAwait(false);
                             }
                             finally
@@ -706,181 +774,52 @@ namespace VPM.Windows
             }
         }
 
-        private async Task<(bool InLibrary, bool UpdateAvailable)> EvaluateLibraryStatusAsync(HubResource resource, CancellationToken cancellationToken)
+        private static void ApplyDependencyStatus(
+            HubResource resource,
+            HubLibraryStatusEvaluator.DependencyStatusResult depStatus)
         {
-            if (resource?.HubFiles == null || resource.HubFiles.Count == 0)
-                return (false, false);
+            if (resource == null)
+                return;
 
-            HubResourceDetail detail = resource as HubResourceDetail;
-            if (detail == null && resource.DependencyCount > 0 && !string.IsNullOrEmpty(resource.ResourceId))
+            if (!depStatus.Resolved)
             {
-                try
-                {
-                    if (_resourceDetailCache.TryGetValue(resource.ResourceId, out var cached) && cached != null)
-                    {
-                        detail = cached;
-                    }
-                    else
-                    {
-                        detail = await _hubService.GetResourceDetailAsync(resource.ResourceId, isPackageName: false, cancellationToken).ConfigureAwait(false);
-                        if (detail != null)
-                        {
-                            _resourceDetailCache[resource.ResourceId] = detail;
-                        }
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch
-                {
-                    detail = null;
-                }
+                resource.InstalledDependencyCount = 0;
+                resource.MissingDependencyCount = 0;
+                resource.DependencyStatusResolved = false;
+                return;
             }
 
-            // Treat the resource as a collection (main + dependencies). If the Hub says there are dependencies,
-            // we must be able to enumerate them; otherwise we cannot claim the collection is complete.
-            if (resource.DependencyCount > 0 && (detail?.Dependencies == null || detail.Dependencies.Count == 0))
-            {
-                var updateFromMainOnly = false;
-                foreach (var hubFile in resource.HubFiles)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (string.IsNullOrEmpty(hubFile?.Filename))
-                        continue;
-
-                    var cleanName = hubFile.PackageName.Replace(".var", "", StringComparison.OrdinalIgnoreCase);
-                    var pkgGroupName = GetPackageGroupName(cleanName);
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var localVersions) && localVersions.Count > 0)
-                    {
-                        var latestLocal = localVersions.Max();
-                        
-                        if (_hubService.HasUpdate(pkgGroupName, latestLocal))
-                        {
-                            updateFromMainOnly = true;
-                        }
-                    }
-                }
-                return (false, updateFromMainOnly);
-            }
-
-            var requiredFiles = new List<HubFile>();
-            if (detail?.HubFiles != null)
-                requiredFiles.AddRange(detail.HubFiles);
-            else
-                requiredFiles.AddRange(resource.HubFiles);
-
-            if (detail?.Dependencies != null)
-            {
-                foreach (var depGroup in detail.Dependencies.Values)
-                {
-                    if (depGroup == null)
-                        continue;
-                    requiredFiles.AddRange(depGroup);
-                }
-            }
-
-            if (requiredFiles.Count == 0)
-                return (false, false);
-
-            var allInLibrary = true;
-            var updateAvailable = false;
-
-            foreach (var file in requiredFiles)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (file == null || string.IsNullOrEmpty(file.Filename))
-                {
-                    allInLibrary = false;
-                    continue;
-                }
-
-                var packageName = file.PackageName;
-                if (string.IsNullOrEmpty(packageName))
-                {
-                    allInLibrary = false;
-                    continue;
-                }
-
-                var cleanName = packageName.Replace(".var", "", StringComparison.OrdinalIgnoreCase);
-                var pkgGroupName = GetPackageGroupName(cleanName);
-                var hubVersion = GetHubFileVersion(file);
-
-                var hasLocal = false;
-                var localVersion = -1;
-
-                if (hubVersion > 0)
-                {
-                    // Versioned requirement: accept any local version in the group as long as it's >= required.
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var versions) && versions.Count > 0)
-                    {
-                        // Relaxed check: if we have any version of this package, consider it "In Library"
-                        // The update check later will handle flagging if it's outdated.
-                        hasLocal = true;
-
-                        if (versions.Contains(hubVersion))
-                        {
-                            localVersion = hubVersion;
-                        }
-                        else
-                        {
-                            localVersion = versions.Max();
-                        }
-                    }
-                }
-                else
-                {
-                    // Unversioned / non-numeric requirement (commonly .latest): require exact package presence.
-                    if (_localPackageNames != null && _localPackageNames.Contains(cleanName))
-                        hasLocal = true;
-
-                    // Still capture a local version (if any) for update detection, but it should not satisfy the requirement.
-                    if (_localPackageVersions != null && _localPackageVersions.TryGetValue(pkgGroupName, out var versions) && versions.Count > 0)
-                        localVersion = versions.Max();
-                }
-
-                if (!hasLocal)
-                {
-                    allInLibrary = false;
-                }
-                else if (!updateAvailable && localVersion > 0)
-                {
-                    if ((hubVersion > 0 && hubVersion > localVersion) || _hubService.HasUpdate(pkgGroupName, localVersion))
-                        updateAvailable = true;
-                }
-            }
-            return (allInLibrary, updateAvailable);
+            resource.InstalledDependencyCount = depStatus.Installed;
+            resource.MissingDependencyCount = depStatus.Missing;
+            resource.DependencyStatusResolved = true;
         }
 
-        private static int GetHubFileVersion(HubFile file)
+        private async Task<HubLibraryStatusEvaluator.StatusResult> EvaluateLibraryStatusAsync(
+            HubResource resource,
+            CancellationToken cancellationToken)
         {
-            if (file == null)
-                return -1;
+            return await _libraryStatusEvaluator.EvaluateAsync(
+                resource,
+                _localPackageVersions,
+                _localPackageNames,
+                LoadResourceDetailForStatusAsync,
+                cancellationToken,
+                knownDetail: null).ConfigureAwait(false);
+        }
 
-            if (!string.IsNullOrEmpty(file.LatestVersion) && int.TryParse(file.LatestVersion, out var parsedLatest))
-                return parsedLatest;
+        private async Task<HubResourceDetail> LoadResourceDetailForStatusAsync(string resourceId, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(resourceId))
+                return null;
 
-            if (!string.IsNullOrEmpty(file.Version) && int.TryParse(file.Version, out var parsedVersion))
-                return parsedVersion;
+            if (_resourceDetailCache.TryGetValue(resourceId, out var cached) && cached != null)
+                return cached;
 
-            if (string.IsNullOrEmpty(file.Filename))
-                return -1;
+            var detail = await _hubService.GetResourceDetailAsync(resourceId, isPackageName: false, cancellationToken).ConfigureAwait(false);
+            if (detail != null)
+                _resourceDetailCache[resourceId] = detail;
 
-            var name = file.Filename;
-            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
-
-            var lastDot = name.LastIndexOf('.');
-            if (lastDot > 0 && lastDot < name.Length - 1)
-            {
-                var versionPart = name.Substring(lastDot + 1);
-                if (int.TryParse(versionPart, out var version))
-                    return version;
-            }
-
-            return -1;
+            return detail;
         }
 
         private void BuildLocalPackageLookups()
@@ -896,49 +835,27 @@ namespace VPM.Windows
                 if (string.IsNullOrWhiteSpace(pkg) || string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
                     continue;
 
-                var name = pkg.Replace(".var", "");
+                // Prefer on-disk filename (.latest queue keys may point at renamed integer .var)
+                var name = System.IO.Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrEmpty(name))
+                    name = pkg.Replace(".var", "");
                 if (string.IsNullOrEmpty(name))
                     continue;
 
                 _localPackageNames.Add(name);
 
-                var groupName = GetPackageGroupName(name);
+                var groupName = HubLibraryStatusEvaluator.GetPackageGroupName(name);
                 var lastDot = name.LastIndexOf('.');
-                if (lastDot > 0)
+                if (lastDot > 0 && int.TryParse(name.Substring(lastDot + 1), out var version))
                 {
-                    var versionPart = name.Substring(lastDot + 1);
-                    if (int.TryParse(versionPart, out var version))
+                    if (!_localPackageVersions.TryGetValue(groupName, out var versions))
                     {
-                        if (!_localPackageVersions.TryGetValue(groupName, out var versions))
-                        {
-                            versions = new HashSet<int>();
-                            _localPackageVersions[groupName] = versions;
-                        }
-                        versions.Add(version);
+                        versions = new HashSet<int>();
+                        _localPackageVersions[groupName] = versions;
                     }
+                    versions.Add(version);
                 }
             }
-        }
-
-        private static string GetPackageGroupName(string packageName)
-        {
-            var name = packageName ?? string.Empty;
-
-            if (name.EndsWith(".var", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 4);
-
-            if (name.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                name = name.Substring(0, name.Length - 7);
-
-            var lastDot = name.LastIndexOf('.');
-            if (lastDot > 0)
-            {
-                var afterDot = name.Substring(lastDot + 1);
-                if (int.TryParse(afterDot, out _))
-                    return name.Substring(0, lastDot);
-            }
-
-            return name;
         }
 
         private void SaveState()

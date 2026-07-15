@@ -1115,7 +1115,6 @@ namespace VPM
                 Status = metadata.Status, // StatusColor is computed from Status automatically
                 FileSize = metadata.FileSize,
                 ModifiedDate = metadata.ModifiedDate ?? metadata.CreatedDate,
-                IsOptimized = metadata.IsOptimized,
                 MetadataKey = GetMetadataKeyFromMetadata(metadata),
                 MorphCount = metadata.MorphCount,
                 HairCount = metadata.HairCount,
@@ -1326,7 +1325,6 @@ namespace VPM
                             try
                             {
                                 
-                                UpdateOptimizeCounter();
                             }
                             finally
                             {
@@ -1434,7 +1432,6 @@ namespace VPM
                     (filterSnapshot.SelectedStatuses.Count > 0 && !externalExplicitlySelected && !localExplicitlySelected) ||
                     filterSnapshot.SelectedFavoriteStatuses.Count > 0 ||
                     filterSnapshot.SelectedAutoInstallStatuses.Count > 0 ||
-                    filterSnapshot.SelectedOptimizationStatuses.Count > 0 ||
                     filterSnapshot.SelectedVersionStatuses.Count > 0 ||
                     filterSnapshot.FilterDuplicates ||
                     filterSnapshot.FilterNoDependents ||
@@ -1491,7 +1488,6 @@ namespace VPM
                 FileSize = metadata.FileSize,
                 ModifiedDate = metadata.ModifiedDate,
                 IsLatestVersion = true,
-                IsOptimized = metadata.IsOptimized,
                 IsDuplicate = metadata.IsDuplicate,
                 DuplicateLocationCount = metadata.DuplicateLocationCount,
                 IsOldVersion = metadata.IsOldVersion,
@@ -1788,7 +1784,6 @@ namespace VPM
                 var creatorCounts = _filterManager.GetCreatorCounts(packagesToCount);
                 var categoryCounts = _filterManager.GetCategoryCounts(packagesToCount);
                 var statusCounts = _filterManager.GetStatusCounts(packagesToCount);
-                var optCounts = _filterManager.GetOptimizationStatusCounts(packagesToCount);
                 var versionCounts = _filterManager.GetVersionStatusCounts(packagesToCount);
                 var depCounts = _filterManager.GetDependencyStatusCounts(packagesToCount);
                 var licenseCounts = _filterManager.GetLicenseCounts(packagesToCount);
@@ -1979,17 +1974,6 @@ namespace VPM
                             StatusFilterList.Items.Add(displayText);
                             
                             if (selectedStatuses.Contains(status.Key))
-                            {
-                                StatusFilterList.SelectedItems.Add(displayText);
-                            }
-                        }
-                            
-                        foreach (var opt in optCounts.OrderBy(s => s.Key))
-                        {
-                            var displayText = $"{opt.Key} ({opt.Value:N0})";
-                            StatusFilterList.Items.Add(displayText);
-                            
-                            if (selectedStatuses.Contains(opt.Key))
                             {
                                 StatusFilterList.SelectedItems.Add(displayText);
                             }

@@ -1337,8 +1337,6 @@ namespace VPM.Services
             await packageLock.WaitAsync();
             try
             {
-                RecordOperation(operationKey);
-
                 // Parse the package name to get base name for lookup
                 // This handles .latest, .min[NUMBER], and exact version references
                 var depInfo = DependencyVersionInfo.Parse(packageName);
@@ -1435,6 +1433,9 @@ namespace VPM.Services
                             UpdatePackageStatusInIndex(packageName, "Available");
                             InvalidatePackageIndex();
                         }
+
+                        // Only throttle successful unloads — failed attempts must be retryable immediately
+                        RecordOperation(operationKey);
                         
                         OperationCompleted?.Invoke(this, new PackageOperationEventArgs
                         {
@@ -1492,6 +1493,9 @@ namespace VPM.Services
                         
                         InvalidatePackageIndex();
                     }
+
+                    // Only throttle successful unloads — failed attempts must be retryable immediately
+                    RecordOperation(operationKey);
                 }
 
                 OperationCompleted?.Invoke(this, new PackageOperationEventArgs
@@ -1651,8 +1655,15 @@ namespace VPM.Services
                     if (success)
                     {
                         UpdatePackageStatusInIndex(packageName, "Available");
+                        // Also stamp the concrete resolved filename — DisplayName may be .latest/.minN
                         if (!string.IsNullOrEmpty(filePath))
                         {
+                            var resolvedName = ExtractFullPackageNameFromFilename(Path.GetFileNameWithoutExtension(filePath));
+                            if (!string.IsNullOrEmpty(resolvedName) &&
+                                !resolvedName.Equals(packageName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                UpdatePackageStatusInIndex(resolvedName, "Available");
+                            }
                             successfullyProcessedPaths.Add(filePath);
                         }
                     }

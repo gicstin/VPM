@@ -13,7 +13,6 @@ namespace VPM.Services
         public HashSet<string> SelectedStatuses { get; set; }
         public HashSet<string> SelectedFavoriteStatuses { get; set; }
         public HashSet<string> SelectedAutoInstallStatuses { get; set; }
-        public HashSet<string> SelectedOptimizationStatuses { get; set; }
         public HashSet<string> SelectedVersionStatuses { get; set; }
         public string SelectedCategory { get; set; }
         public HashSet<string> SelectedCategories { get; set; }

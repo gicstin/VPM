@@ -19,7 +19,6 @@ namespace VPM.Models
         private bool _isLatestVersion = true;
         private int _dependencyCount = 0;
         private int _dependentsCount = 0;
-        private bool _isOptimized = false;
         private bool _isDuplicate = false;
         private int _duplicateLocationCount = 1;
         private bool _isOldVersion = false;
@@ -167,12 +166,6 @@ namespace VPM.Models
         }
         
         public bool HasMissingDependencies => _missingDependencyCount > 0;
-        
-        public bool IsOptimized
-        {
-            get => _isOptimized;
-            set => SetProperty(ref _isOptimized, value);
-        }
         
         public bool IsDuplicate
         {

@@ -27,10 +27,9 @@ namespace VPM
                 {
                     var scenes = _sceneScanner.ScanLocalScenes();
                     
-                    // Check if each scene has been optimized, marked as favorite, or hidden
+                    // Check if each scene is marked as favorite or hidden
                     foreach (var scene in scenes)
                     {
-                        scene.IsOptimized = IsSceneOptimized(scene.FilePath);
                         if (_sceneFavoritesManager != null)
                         {
                             scene.IsFavorite = _sceneFavoritesManager.IsMarked(scene.FilePath);

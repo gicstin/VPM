@@ -16,6 +16,8 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis" />
+        <local:ProgressToArcConverter x:Key="ProgressToArc" />
 
         <!--  Converter to hide null/empty strings  -->
         <local:NullOrEmptyToVisibilityConverter x:Key="NullToVis" />
@@ -1262,20 +1264,100 @@
                                                     </Border>
                                                 </StackPanel>
 
-                                                <!--  Bottom-left: File size  -->
-                                                <Border
+                                                <!--  Bottom-left: download icon above file size  -->
+                                                <StackPanel
                                                     Margin="4"
-                                                    Padding="4,2"
                                                     HorizontalAlignment="Left"
                                                     VerticalAlignment="Bottom"
-                                                    Background="#80000000"
-                                                    CornerRadius="2"
-                                                    Visibility="{Binding FileSizeDisplay, Converter={StaticResource NullToVis}}">
-                                                    <TextBlock
-                                                        FontSize="11"
-                                                        Foreground="White"
-                                                        Text="{Binding FileSizeDisplay}" />
-                                                </Border>
+                                                    Orientation="Vertical">
+                                                    <Grid
+                                                        Width="30"
+                                                        Height="30"
+                                                        Margin="0,0,0,4"
+                                                        Visibility="{Binding ShowsCardDownloadChrome, Converter={StaticResource BoolToVis}}">
+                                                        <!--  Idle square download button (matches size/date badge chrome)  -->
+                                                        <Button
+                                                            Width="30"
+                                                            Height="30"
+                                                            Padding="0"
+                                                            Background="#80000000"
+                                                            BorderThickness="0"
+                                                            Click="CardDownloadAll_Click"
+                                                            Cursor="Hand"
+                                                            FontSize="14"
+                                                            FontWeight="SemiBold"
+                                                            Foreground="#E0E0E0"
+                                                            ToolTip="Download or update package and dependencies"
+                                                            Visibility="{Binding ShowsCardDownloadAll, Converter={StaticResource BoolToVis}}">
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="Button">
+                                                                    <Border
+                                                                        x:Name="Bd"
+                                                                        Width="30"
+                                                                        Height="30"
+                                                                        Background="{TemplateBinding Background}"
+                                                                        CornerRadius="4">
+                                                                        <TextBlock
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            FontSize="14"
+                                                                            FontWeight="SemiBold"
+                                                                            Foreground="#E0E0E0"
+                                                                            Text="⬇" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                                            <Setter TargetName="Bd" Property="Background" Value="#A0000000" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                        </Button>
+
+                                                        <!--  In-progress circle (same grey glass)  -->
+                                                        <Grid Visibility="{Binding IsCardDownloading, Converter={StaticResource BoolToVis}}">
+                                                            <Ellipse
+                                                                Width="30"
+                                                                Height="30"
+                                                                Fill="#80000000" />
+                                                            <Ellipse
+                                                                Width="24"
+                                                                Height="24"
+                                                                Stroke="#60FFFFFF"
+                                                                StrokeThickness="2.5" />
+                                                            <Path
+                                                                Width="24"
+                                                                Height="24"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Data="{Binding CardDownloadProgress, Converter={StaticResource ProgressToArc}}"
+                                                                Stretch="None"
+                                                                Stroke="#E0E0E0"
+                                                                StrokeEndLineCap="Round"
+                                                                StrokeStartLineCap="Round"
+                                                                StrokeThickness="2.5" />
+                                                            <TextBlock
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                FontSize="8"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="#E0E0E0"
+                                                                Text="{Binding CardDownloadProgressText}" />
+                                                        </Grid>
+                                                    </Grid>
+
+                                                    <Border
+                                                        Padding="4,2"
+                                                        HorizontalAlignment="Left"
+                                                        Background="#80000000"
+                                                        CornerRadius="2"
+                                                        Visibility="{Binding FileSizeDisplay, Converter={StaticResource NullToVis}}">
+                                                        <TextBlock
+                                                            FontSize="11"
+                                                            Foreground="White"
+                                                            Text="{Binding FileSizeDisplay}" />
+                                                    </Border>
+                                                </StackPanel>
 
                                                 <!--  Bottom-right: Last update time  -->
                                                 <Border
@@ -1410,16 +1492,50 @@
                                                         <Run Text="{Binding RatingDisplay, Mode=OneWay}" />
                                                     </TextBlock>
 
-                                                    <!--  Dependencies count  -->
-                                                    <TextBlock
+                                                    <!--  Dependencies count (green installed / red missing / ✓ if all in)  -->
+                                                    <StackPanel
                                                         Grid.Column="2"
-                                                        FontSize="10"
-                                                        Foreground="#E57373"
-                                                        ToolTip="Number of dependencies required"
-                                                        Visibility="{Binding HasDependencies, Converter={StaticResource BoolToVis}}">
-                                                        <Run Text="📦" />
-                                                        <Run Text="{Binding DependencyDisplay, Mode=OneWay}" />
-                                                    </TextBlock>
+                                                        Orientation="Horizontal"
+                                                        ToolTip="{Binding DependencyStatusToolTip}"
+                                                        Visibility="{Binding ShowsDependencyCount, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock
+                                                            FontSize="10"
+                                                            Foreground="{StaticResource DarkTextSecondary}"
+                                                            Text="📦 " />
+                                                        <TextBlock
+                                                            FontSize="10"
+                                                            Foreground="#E57373"
+                                                            Text="{Binding DependencyDisplay, Mode=OneWay}"
+                                                            Visibility="{Binding DependencyStatusPending, Converter={StaticResource BoolToVis}}" />
+                                                        <StackPanel
+                                                            Orientation="Horizontal"
+                                                            Visibility="{Binding DependencyStatusResolved, Converter={StaticResource BoolToVis}}">
+                                                            <TextBlock
+                                                                FontSize="10"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="#81C784"
+                                                                Text="{Binding InstalledDependencyCount, Mode=OneWay}"
+                                                                Visibility="{Binding HasInstalledDependencies, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock
+                                                                Margin="1,0"
+                                                                FontSize="10"
+                                                                Foreground="{StaticResource DarkTextSecondary}"
+                                                                Text="/"
+                                                                Visibility="{Binding ShowsSplitDependencyCounts, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock
+                                                                FontSize="10"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="#E57373"
+                                                                Text="{Binding MissingDependencyCount, Mode=OneWay}"
+                                                                Visibility="{Binding HasMissingDependencies, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock
+                                                                FontSize="10"
+                                                                FontWeight="SemiBold"
+                                                                Foreground="#81C784"
+                                                                Text=" ✓"
+                                                                Visibility="{Binding AllDependenciesInstalled, Converter={StaticResource BoolToVis}}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
 
                                                     <!--  Type Badge  -->
                                                     <Border

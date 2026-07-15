@@ -804,7 +804,6 @@ namespace VPM
                 _filterManager.SelectedStatuses.Clear();
                 _filterManager.SelectedFavoriteStatuses.Clear();
                 _filterManager.SelectedAutoInstallStatuses.Clear();
-                _filterManager.SelectedOptimizationStatuses.Clear();
                 _filterManager.SelectedVersionStatuses.Clear();
                 _filterManager.SelectedCreators.Clear();
                 _filterManager.SelectedCategories.Clear();
@@ -845,10 +844,6 @@ namespace VPM
                         else if (status == "AutoInstall")
                         {
                             _filterManager.SelectedAutoInstallStatuses.Add(status);
-                        }
-                        else if (status == "Optimized" || status == "Unoptimized")
-                        {
-                            _filterManager.SelectedOptimizationStatuses.Add(status);
                         }
                         else if (status == "Latest" || status == "Old")
                         {
@@ -1517,21 +1512,6 @@ namespace VPM
                     }
                 }
                 
-                // Add optimization status counts
-                var optCounts = _filterManager.GetOptimizationStatusCounts(filteredPackages);
-
-                foreach (var opt in optCounts.Where(s => s.Value > 0).OrderBy(s => s.Key))
-                {
-                    var displayText = $"{opt.Key} ({opt.Value:N0})";
-                    StatusFilterList.Items.Add(displayText);
-
-                    // Restore selection if this optimization status was previously selected
-                    if (selectedStatuses.Contains(opt.Key))
-                    {
-                        StatusFilterList.SelectedItems.Add(displayText);
-                    }
-                }
-                
                 // Add version status counts (always show, even if count is 0)
                 var versionCounts = _filterManager.GetVersionStatusCounts(filteredPackages);
 
@@ -2032,21 +2012,6 @@ namespace VPM
                         }
                     }
                     
-                    // Add optimization status counts
-                    var optCounts = _filterManager.GetOptimizationStatusCounts(_packageManager.PackageMetadata);
-                    
-                    foreach (var opt in optCounts.OrderBy(s => s.Key))
-                    {
-                        var displayText = $"{opt.Key} ({opt.Value:N0})";
-                        StatusFilterList.Items.Add(displayText);
-                        
-                        // Restore selection if this optimization status was previously selected
-                        if (selectedStatuses.Contains(opt.Key))
-                        {
-                            StatusFilterList.SelectedItems.Add(displayText);
-                        }
-                    }
-                    
                     // Add version status counts
                     var versionCounts = _filterManager.GetVersionStatusCounts(_packageManager.PackageMetadata);
                     
@@ -2386,7 +2351,6 @@ namespace VPM
 
             var selectedStatuses = GetSelectedItemNames(StatusFilterList);
             var statusCounts = _filterManager.GetStatusCounts(filteredPackages);
-            var optCounts = _filterManager.GetOptimizationStatusCounts(filteredPackages);
 
             StatusFilterList.Items.Clear();
 
@@ -2400,18 +2364,6 @@ namespace VPM
                 if (selectedStatuses.Contains(status.Key))
                 {
                     StatusFilterList.SelectedItems.Add(statusDisplayText);
-                }
-            }
-
-            // Add optimization status items
-            foreach (var opt in optCounts.OrderBy(s => s.Key))
-            {
-                var optDisplayText = $"{opt.Key} ({opt.Value:N0})";
-                StatusFilterList.Items.Add(optDisplayText);
-
-                if (selectedStatuses.Contains(opt.Key))
-                {
-                    StatusFilterList.SelectedItems.Add(optDisplayText);
                 }
             }
 

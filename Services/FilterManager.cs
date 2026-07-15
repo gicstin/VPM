@@ -21,7 +21,6 @@ namespace VPM.Services
         public HashSet<string> SelectedStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> SelectedFavoriteStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> SelectedAutoInstallStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        public HashSet<string> SelectedOptimizationStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> SelectedVersionStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public string SelectedCategory { get; set; } = null;
         public HashSet<string> SelectedCategories { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -63,7 +62,6 @@ namespace VPM.Services
             SelectedStatuses.Clear();
             SelectedFavoriteStatuses.Clear();
             SelectedAutoInstallStatuses.Clear();
-            SelectedOptimizationStatuses.Clear();
             SelectedVersionStatuses.Clear();
             SelectedCategory = null;
             SelectedCategories.Clear();
@@ -183,7 +181,6 @@ namespace VPM.Services
                 SelectedStatuses = new HashSet<string>(SelectedStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedFavoriteStatuses = new HashSet<string>(SelectedFavoriteStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedAutoInstallStatuses = new HashSet<string>(SelectedAutoInstallStatuses, StringComparer.OrdinalIgnoreCase),
-                SelectedOptimizationStatuses = new HashSet<string>(SelectedOptimizationStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedVersionStatuses = new HashSet<string>(SelectedVersionStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedCategory = SelectedCategory,
                 SelectedCategories = new HashSet<string>(SelectedCategories, StringComparer.OrdinalIgnoreCase),
@@ -315,7 +312,6 @@ namespace VPM.Services
                 // Check if any other filter types are active
                 bool hasOtherFiltersActive = state.SelectedFavoriteStatuses.Count > 0 ||
                                             state.SelectedAutoInstallStatuses.Count > 0 ||
-                                            state.SelectedOptimizationStatuses.Count > 0 ||
                                             state.SelectedVersionStatuses.Count > 0 ||
                                             state.FilterDuplicates ||
                                             state.FilterNoDependents ||
@@ -413,31 +409,7 @@ namespace VPM.Services
             if (!string.IsNullOrEmpty(state.SelectedStatus) && metadata.Status != state.SelectedStatus)
                 return false;
 
-            // 4. Optimization status filter
-            if (state.SelectedOptimizationStatuses.Count > 0)
-            {
-                if (metadata.Status == "Archived")
-                    return false;
-                
-                bool matchesOptimization = false;
-                foreach (var optStatus in state.SelectedOptimizationStatuses)
-                {
-                    if (optStatus.StartsWith("Optimized") && metadata.IsOptimized)
-                    {
-                        matchesOptimization = true;
-                        break;
-                    }
-                    else if (optStatus.StartsWith("Unoptimized") && !metadata.IsOptimized)
-                    {
-                        matchesOptimization = true;
-                        break;
-                    }
-                }
-                if (!matchesOptimization)
-                    return false;
-            }
-
-            // 5. Version status filter
+            // 4. Version status filter
             if (state.SelectedVersionStatuses.Count > 0)
             {
                 bool matchesVersion = false;
@@ -828,26 +800,6 @@ namespace VPM.Services
             if (duplicateCount > 0)
             {
                 counts["Duplicate"] = duplicateCount;
-            }
-            
-            return counts;
-        }
-
-        public Dictionary<string, int> GetOptimizationStatusCounts(Dictionary<string, VarMetadata> packages)
-        {
-            var counts = new Dictionary<string, int>
-            {
-                ["Optimized"] = 0,
-                ["Unoptimized"] = 0
-            };
-            
-            // MEMORY FIX: Iterate directly instead of creating a copy with ToList()
-            foreach (var package in packages.Values)
-            {
-                if (package.IsOptimized)
-                    counts["Optimized"]++;
-                else
-                    counts["Unoptimized"]++;
             }
             
             return counts;

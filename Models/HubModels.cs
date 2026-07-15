@@ -113,14 +113,26 @@ namespace VPM.Models
         public bool InLibrary
         {
             get => _inLibrary;
-            set { _inLibrary = value; OnPropertyChanged(nameof(InLibrary)); }
+            set
+            {
+                if (_inLibrary == value) return;
+                _inLibrary = value;
+                OnPropertyChanged(nameof(InLibrary));
+                NotifyCardDownloadVisibilityChanged();
+            }
         }
 
         private bool _updateAvailable;
         public bool UpdateAvailable
         {
             get => _updateAvailable;
-            set { _updateAvailable = value; OnPropertyChanged(nameof(UpdateAvailable)); }
+            set
+            {
+                if (_updateAvailable == value) return;
+                _updateAvailable = value;
+                OnPropertyChanged(nameof(UpdateAvailable));
+                NotifyCardDownloadVisibilityChanged();
+            }
         }
 
         private string _updateMessage;
@@ -172,9 +184,156 @@ namespace VPM.Models
         public bool HasDependencies => DependencyCount > 0;
 
         /// <summary>
-        /// Dependency count display (e.g., "3 deps")
+        /// Whether dependency count should be shown on cards (external packages don't expose listable deps).
+        /// </summary>
+        public bool ShowsDependencyCount => HasDependencies && !IsExternallyHosted;
+
+        private bool _cardDownloadStatusReady;
+        /// <summary>
+        /// True after library/dep status evaluation — prevents download button flash on page load.
+        /// </summary>
+        public bool CardDownloadStatusReady
+        {
+            get => _cardDownloadStatusReady;
+            set
+            {
+                if (_cardDownloadStatusReady == value) return;
+                _cardDownloadStatusReady = value;
+                OnPropertyChanged(nameof(CardDownloadStatusReady));
+                NotifyCardDownloadVisibilityChanged();
+            }
+        }
+
+        /// <summary>
+        /// True when main package missing/outdated, or known missing deps remain.
+        /// </summary>
+        public bool NeedsCardDownload =>
+            !InLibrary || UpdateAvailable || (DependencyStatusResolved && MissingDependencyCount > 0);
+
+        /// <summary>
+        /// Idle download icon — Free + Hub downloadable + status ready + something to fetch.
+        /// </summary>
+        public bool ShowsCardDownloadAll =>
+            HubDownloadable && IsPayTypeFree && CardDownloadStatusReady && NeedsCardDownload && !IsCardDownloading;
+
+        /// <summary>
+        /// Download icon or in-progress ring container on the card image.
+        /// </summary>
+        public bool ShowsCardDownloadChrome =>
+            HubDownloadable && IsPayTypeFree && (IsCardDownloading || (CardDownloadStatusReady && NeedsCardDownload));
+
+        private bool _isCardDownloading;
+        public bool IsCardDownloading
+        {
+            get => _isCardDownloading;
+            set
+            {
+                if (_isCardDownloading == value) return;
+                _isCardDownloading = value;
+                OnPropertyChanged(nameof(IsCardDownloading));
+                NotifyCardDownloadVisibilityChanged();
+            }
+        }
+
+        private double _cardDownloadProgress;
+        public double CardDownloadProgress
+        {
+            get => _cardDownloadProgress;
+            set
+            {
+                if (Math.Abs(_cardDownloadProgress - value) < 0.01) return;
+                _cardDownloadProgress = value;
+                OnPropertyChanged(nameof(CardDownloadProgress));
+                OnPropertyChanged(nameof(CardDownloadProgressText));
+            }
+        }
+
+        public string CardDownloadProgressText =>
+            CardDownloadProgress <= 0 ? "…" : $"{Math.Clamp((int)CardDownloadProgress, 0, 100)}";
+
+        private void NotifyCardDownloadVisibilityChanged()
+        {
+            OnPropertyChanged(nameof(NeedsCardDownload));
+            OnPropertyChanged(nameof(ShowsCardDownloadAll));
+            OnPropertyChanged(nameof(ShowsCardDownloadChrome));
+        }
+
+        /// <summary>
+        /// Dependency count display (e.g., "3 deps") — used before install status is resolved.
         /// </summary>
         public string DependencyDisplay => DependencyCount > 0 ? $"{DependencyCount} dep{(DependencyCount > 1 ? "s" : "")}" : "";
+
+        private int _installedDependencyCount;
+        public int InstalledDependencyCount
+        {
+            get => _installedDependencyCount;
+            set
+            {
+                if (_installedDependencyCount == value) return;
+                _installedDependencyCount = value;
+                OnPropertyChanged(nameof(InstalledDependencyCount));
+                NotifyDependencyStatusDisplayChanged();
+            }
+        }
+
+        private int _missingDependencyCount;
+        public int MissingDependencyCount
+        {
+            get => _missingDependencyCount;
+            set
+            {
+                if (_missingDependencyCount == value) return;
+                _missingDependencyCount = value;
+                OnPropertyChanged(nameof(MissingDependencyCount));
+                NotifyDependencyStatusDisplayChanged();
+            }
+        }
+
+        private bool _dependencyStatusResolved;
+        public bool DependencyStatusResolved
+        {
+            get => _dependencyStatusResolved;
+            set
+            {
+                if (_dependencyStatusResolved == value) return;
+                _dependencyStatusResolved = value;
+                OnPropertyChanged(nameof(DependencyStatusResolved));
+                NotifyDependencyStatusDisplayChanged();
+            }
+        }
+
+        public bool DependencyStatusPending => ShowsDependencyCount && !DependencyStatusResolved;
+        public bool HasInstalledDependencies => InstalledDependencyCount > 0;
+        public bool HasMissingDependencies => MissingDependencyCount > 0;
+        public bool AllDependenciesInstalled => DependencyStatusResolved && InstalledDependencyCount > 0 && MissingDependencyCount == 0;
+        public bool ShowsSplitDependencyCounts => DependencyStatusResolved && InstalledDependencyCount > 0 && MissingDependencyCount > 0;
+
+        public string DependencyStatusToolTip
+        {
+            get
+            {
+                if (!ShowsDependencyCount)
+                    return "Number of dependencies required";
+                if (!DependencyStatusResolved)
+                    return $"{DependencyCount} dependenc{(DependencyCount == 1 ? "y" : "ies")} (checking library…)";
+                if (AllDependenciesInstalled)
+                    return $"All {InstalledDependencyCount} dependencies installed";
+                if (InstalledDependencyCount == 0)
+                    return $"{MissingDependencyCount} missing dependenc{(MissingDependencyCount == 1 ? "y" : "ies")}";
+                return $"{InstalledDependencyCount} installed, {MissingDependencyCount} missing";
+            }
+        }
+
+        private void NotifyDependencyStatusDisplayChanged()
+        {
+            OnPropertyChanged(nameof(DependencyStatusPending));
+            OnPropertyChanged(nameof(HasInstalledDependencies));
+            OnPropertyChanged(nameof(HasMissingDependencies));
+            OnPropertyChanged(nameof(AllDependenciesInstalled));
+            OnPropertyChanged(nameof(ShowsSplitDependencyCounts));
+            OnPropertyChanged(nameof(DependencyStatusToolTip));
+            NotifyCardDownloadVisibilityChanged();
+        }
 
         /// <summary>
         /// Total file size of all hub files in bytes

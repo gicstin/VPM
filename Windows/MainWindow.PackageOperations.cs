@@ -375,16 +375,27 @@ namespace VPM
 
                     if (!_packageManager.PackageMetadata.TryGetValue(name, out var metadata))
                     {
-                        // If not found directly, it might be a dependency that needs resolution (like .latest or .min)
-                        // Try to resolve this name using our allPackageLookup
+                        // Soft refs (.latest / .minN) need resolution against installed variants
                         var nameInfo = VPM.Models.DependencyVersionInfo.Parse(name);
                         if (allPackageLookup.TryGetValue(nameInfo.BaseName, out var nameVariants))
                         {
-                            var bestMatch = nameVariants.FirstOrDefault(v => nameInfo.IsSatisfiedBy(v.Version));
+                            // .latest → highest version (load it if not Loaded).
+                            // Exact/min → highest satisfying version.
+                            var candidates = nameVariants.Where(v => nameInfo.IsSatisfiedBy(v.Version));
+                            var bestMatch = nameInfo.VersionType == DependencyVersionType.Latest
+                                ? candidates.OrderByDescending(v => v.Version).FirstOrDefault()
+                                : candidates
+                                    .OrderByDescending(v => v.Version)
+                                    .ThenBy(v => v.Status == "Loaded" ? 0 : 1)
+                                    .FirstOrDefault();
+
                             if (bestMatch != null)
                             {
                                 resolvedDependencies.Add(name);
-                                var key = $"{bestMatch.CreatorName}.{bestMatch.PackageName}.{bestMatch.Version}";
+                                // Use the actual PackageMetadata key when possible (not a reconstructed string)
+                                var key = _packageManager.PackageMetadata
+                                    .FirstOrDefault(kvp => ReferenceEquals(kvp.Value, bestMatch)).Key
+                                    ?? $"{bestMatch.CreatorName}.{bestMatch.PackageName}.{bestMatch.Version}";
                                 ResolveRecursive(key);
                                 return;
                             }
@@ -393,11 +404,21 @@ namespace VPM
                     }
 
                     resolvedDependencies.Add(name);
-                    if (metadata.Status == "Available")
+
+                    // Filesystem status wins over stale PackageMetadata.Status (e.g. after deps-tab unload)
+                    var canonicalName = name.Contains('#') ? name[..name.IndexOf('#')] : name;
+                    var fsStatus = _packageFileManager?.GetPackageStatus(canonicalName)
+                        ?? _packageFileManager?.GetPackageStatus(
+                            $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}");
+                    var effectiveStatus = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
+                        ? fsStatus
+                        : metadata.Status;
+
+                    if (effectiveStatus == "Available" || effectiveStatus == "Outdated" || effectiveStatus == "Archived")
                     {
                         regularPackagesToLoad.Add(name);
                     }
-                    else if (metadata.IsExternal)
+                    else if (metadata.IsExternal || effectiveStatus?.StartsWith("#") == true)
                     {
                         externalPackagesToLoad[name] = metadata;
                     }
@@ -412,13 +433,10 @@ namespace VPM
                             
                             allDependencies.Add(depName);
 
-                            // Resolve this dependency recursively if it's not already loaded
-                            var status = _packageFileManager?.GetPackageStatus(depName);
-                            if (status != "Loaded")
-                            {
-                                // Recurse with resolution
-                                ResolveRecursive(depName);
-                            }
+                            // Always recurse. Skipping on GetPackageStatus=="Loaded" was wrong for .latest/.min
+                            // refs: base-name index returns Loaded if ANY version is loaded, so required
+                            // newer Available versions never got resolved/loaded.
+                            ResolveRecursive(depName);
                         }
                     }
                 }
@@ -672,7 +690,17 @@ namespace VPM
                     return;
                 }
 
-                await LoadPackagesWithDependenciesAsync(selectedPackages.Select(p => p.Name).ToList(), interactive: true);
+                await LoadPackagesWithDependenciesAsync(
+                    selectedPackages.Select(p =>
+                    {
+                        if (!string.IsNullOrEmpty(p.MetadataKey))
+                        {
+                            var hash = p.MetadataKey.IndexOf('#');
+                            return hash >= 0 ? p.MetadataKey[..hash] : p.MetadataKey;
+                        }
+                        return p.Name;
+                    }).ToList(),
+                    interactive: true);
             }
             catch (Exception)
             {
@@ -1198,6 +1226,7 @@ namespace VPM
 
                     // Re-enable UI
                     UnloadDependenciesButton.IsEnabled = true;
+                    UpdateDependenciesButtonBar();
                 }
 
             }
@@ -1230,86 +1259,6 @@ namespace VPM
             }
             catch
             {
-            }
-        }
-
-        private async void OptimizeDependencies_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var selectedDependencies = DependenciesDataGrid.SelectedItems.Cast<DependencyItem>()
-                    .Where(d => d.Status != "Missing" && d.Status != "Unknown")
-                    .ToList();
-
-                if (selectedDependencies.Count == 0)
-                {
-                    CustomMessageBox.Show("No optimizable dependencies selected.", "No Dependencies",
-                                   MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-
-                if (selectedDependencies.Count > 500)
-                {
-                    CustomMessageBox.Show("Please select a maximum of 500 packages for bulk optimization.", 
-                                  "Optimise Package", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                var packageItems = new List<PackageItem>();
-                
-                foreach (var dependency in selectedDependencies)
-                {
-                    var baseName = dependency.Name;
-                    var version = dependency.Version;
-                    var fullDependencyName = !string.IsNullOrEmpty(version) ? $"{baseName}.{version}" : baseName;
-                    
-                    PackageItem packageItem = null;
-                    
-                    try
-                    {
-                        string resolvedPath = _packageFileManager?.ResolveDependencyToFilePath(fullDependencyName);
-                        
-                        if (!string.IsNullOrEmpty(resolvedPath))
-                        {
-                            var fileName = Path.GetFileNameWithoutExtension(resolvedPath);
-                            
-                            packageItem = Packages.FirstOrDefault(p => 
-                                p.Name.Equals(fileName, StringComparison.OrdinalIgnoreCase));
-                            
-                            if (packageItem == null)
-                            {
-                                packageItem = new PackageItem
-                                {
-                                    Name = fileName,
-                                    Status = dependency.Status
-                                };
-                            }
-                        }
-                    }
-                    catch (Exception)
-                    {
-                        // Continue processing other dependencies
-                    }
-                    
-                    if (packageItem != null)
-                    {
-                        packageItems.Add(packageItem);
-                    }
-                }
-
-                if (packageItems.Count == 0)
-                {
-                    CustomMessageBox.Show("Could not find package information for selected dependencies.", 
-                                  "No Packages Found", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                await DisplayBulkOptimizationDialog(packageItems);
-            }
-            catch (Exception ex)
-            {
-                CustomMessageBox.Show($"Error opening optimizer: {ex.Message}", 
-                              "Optimization Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1592,8 +1541,8 @@ namespace VPM
                     
                     // Show Fix Duplicates button
                     FixDuplicatesButton.Visibility = Visibility.Visible;
-                    FixDuplicatesButton.Content = duplicateCount == 1 
-                        ? "🔧 Fix Duplicate" 
+                    FixDuplicatesButton.Content = duplicateCount == 1
+                        ? "🔧 Fix Duplicates"
                         : $"🔧 Fix Duplicates ({duplicateCount})";
                     return;
                 }
@@ -1681,6 +1630,19 @@ namespace VPM
                         LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({loadableCount})";
                         LoadPackagesWithDepsButton.ToolTip = $"Load {loadableCount} available/external packages and their dependencies";
                     }
+                }
+                else if (hasAvailableDependencies)
+                {
+                    // Parent already Loaded — Load +Deps only needs to pull Available deps
+                    var availableDepCount = Dependencies.Count(d =>
+                        (d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || d.Status?.StartsWith("#") == true)
+                        && d.Name != "No dependencies");
+                    LoadPackagesWithDepsButton.Content = availableDepCount == 1
+                        ? "📥 Load +Deps (Shift+Space)"
+                        : $"📥 Load +Deps ({availableDepCount}) (Shift+Space)";
+                    LoadPackagesWithDepsButton.ToolTip = availableDepCount == 1
+                        ? "Load missing dependency for selected package"
+                        : $"Load {availableDepCount} missing dependencies for selected package(s)";
                 }
 
                 if (hasLoaded)
@@ -1794,7 +1756,6 @@ namespace VPM
                 var hasUnknown = selectedDependencies.Any(d => d.Status == "Unknown");
                 var hasOutdated = selectedDependencies.Any(d => d.Status == "Outdated");
                 var hasArchived = selectedDependencies.Any(d => d.Status == "Archived");
-                var hasOptimizable = selectedDependencies.Any(d => d.Status != "Missing" && d.Status != "Unknown");
 
                 // Check if all selected dependencies have the same status (for keyboard shortcut hint)
                 var allStatuses = selectedDependencies.Select(d => d.Status).Distinct().ToList();
@@ -1814,9 +1775,6 @@ namespace VPM
 
                 // Show Unload button if any dependencies are Loaded
                 UnloadDependenciesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
-
-                // Show Optimize button if any dependencies are not Missing/Unknown
-                OptimizeDependenciesButton.Visibility = hasOptimizable ? Visibility.Visible : Visibility.Collapsed;
 
                 // Update button text to reflect count and keyboard shortcuts
                 if (hasAvailable || hasOutdated || hasArchived || hasExternal)
@@ -1850,12 +1808,6 @@ namespace VPM
                     }
                 }
 
-                if (hasOptimizable)
-                {
-                    var optimizableCount = selectedDependencies.Count(d => d.Status != "Missing" && d.Status != "Unknown");
-                    OptimizeDependenciesButton.Content = optimizableCount == 1 ? "⚡ Optimize" : $"⚡ Optimize ({optimizableCount})";
-                }
-
                 // Update layout (StackPanel handles this automatically now)
                 UpdateDependenciesButtonGridLayout();
 
@@ -1875,10 +1827,9 @@ namespace VPM
                 // Determine visibility
                 bool showLoad = LoadDependenciesButton.Visibility == Visibility.Visible;
                 bool showUnload = UnloadDependenciesButton.Visibility == Visibility.Visible;
-                bool showOptimize = OptimizeDependenciesButton.Visibility == Visibility.Visible;
 
                 // Hide the entire button bar if no buttons are visible
-                if (!showLoad && !showUnload && !showOptimize)
+                if (!showLoad && !showUnload)
                 {
                     DependenciesButtonBar.Visibility = Visibility.Collapsed;
                     return;
@@ -1887,10 +1838,8 @@ namespace VPM
                 // Reset spans and rows
                 Grid.SetRow(LoadDependenciesButton, 0);
                 Grid.SetRow(UnloadDependenciesButton, 0);
-                Grid.SetRow(OptimizeDependenciesButton, 1);
                 Grid.SetColumnSpan(LoadDependenciesButton, 1);
                 Grid.SetColumnSpan(UnloadDependenciesButton, 1);
-                Grid.SetColumnSpan(OptimizeDependenciesButton, 1);
 
                 // Count top row buttons (Load/Unload)
                 int topCount = (showLoad ? 1 : 0) + (showUnload ? 1 : 0);
@@ -1915,17 +1864,9 @@ namespace VPM
                     Grid.SetColumn(UnloadDependenciesButton, 1);
                 }
 
-                // Layout optimize button on second row (always spans both columns)
-                if (showOptimize)
-                {
-                    Grid.SetColumn(OptimizeDependenciesButton, 0);
-                    Grid.SetColumnSpan(OptimizeDependenciesButton, 2);
-                }
-
                 // Button alignments
                 LoadDependenciesButton.HorizontalAlignment = HorizontalAlignment.Stretch;
                 UnloadDependenciesButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-                OptimizeDependenciesButton.HorizontalAlignment = HorizontalAlignment.Stretch;
             }
             catch (Exception)
             {
@@ -2004,6 +1945,24 @@ namespace VPM
         /// NOTE: Does NOT sync with filters - packages remain visible even if they no longer match filters.
         /// This is intentional so users can see the status change result.
         /// </summary>
+        private void RefreshMetadataFilePath(string metadataKey, VarMetadata metadata, string newStatus)
+        {
+            if (_packageFileManager == null || metadata == null)
+                return;
+
+            if (!string.Equals(newStatus, "Loaded", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(newStatus, "Available", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var fileInfo = _packageFileManager.GetPackageFileInfoByMetadataKey(metadataKey);
+            if (!string.IsNullOrEmpty(fileInfo?.CurrentPath) && File.Exists(fileInfo.CurrentPath))
+            {
+                metadata.FilePath = fileInfo.CurrentPath;
+            }
+        }
+
         private async Task BulkUpdatePackageStatus(List<string> packageNames, string newStatus)
         {
             if (packageNames == null || packageNames.Count == 0)
@@ -2017,10 +1976,38 @@ namespace VPM
                     await Task.Run(() => _packageFileManager.RefreshPackageStatusIndex(force: true));
                 }
 
-                // Create a HashSet for O(1) lookup
+                // Create a HashSet for O(1) lookup — expand soft refs (.latest/.minN) to base + concrete keys
                 var inputNameSet = new HashSet<string>(packageNames, StringComparer.OrdinalIgnoreCase);
+                if (_packageManager?.PackageMetadata != null)
+                {
+                    foreach (var name in packageNames)
+                    {
+                        var info = DependencyVersionInfo.Parse(name);
+                        if (!string.IsNullOrEmpty(info.BaseName))
+                            inputNameSet.Add(info.BaseName);
 
-                await Dispatcher.InvokeAsync(async () =>
+                        foreach (var kvp in _packageManager.PackageMetadata)
+                        {
+                            var meta = kvp.Value;
+                            if (meta == null) continue;
+
+                            var baseName = $"{meta.CreatorName}.{meta.PackageName}";
+                            if (!string.Equals(baseName, info.BaseName, StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            if (!info.IsSatisfiedBy(meta.Version))
+                                continue;
+
+                            inputNameSet.Add(kvp.Key);
+                            inputNameSet.Add(baseName);
+                            inputNameSet.Add($"{meta.CreatorName}.{meta.PackageName}.{meta.Version}");
+                        }
+                    }
+                }
+
+                // InvokeAsync(Func<Task>) returns before the inner await completes — unwrap so callers
+                // finish only after deps/button bars are refreshed (avoids stale Unload button state).
+                var uiUpdate = Dispatcher.InvokeAsync(async () =>
                 {
                     // SELECTION PRESERVATION: Save selections before any updates
                     var savedPackageSelections = PreserveDataGridSelections();
@@ -2039,41 +2026,67 @@ namespace VPM
                                 var metadata = kvp.Value;
                                 var metadataKey = kvp.Key;
                                 var fileNameNoExt = Path.GetFileNameWithoutExtension(metadataKey);
+                                var hashIdx = metadataKey.IndexOf('#');
+                                var canonicalKey = hashIdx >= 0 ? metadataKey[..hashIdx] : metadataKey;
                                 var baseName = $"{metadata.CreatorName}.{metadata.PackageName}";
+                                var versionedName = $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}";
 
-                                if (inputNameSet.Contains(metadataKey) || 
-                                    inputNameSet.Contains(fileNameNoExt) || 
-                                    inputNameSet.Contains(baseName))
+                                if (inputNameSet.Contains(metadataKey) ||
+                                    inputNameSet.Contains(canonicalKey) ||
+                                    inputNameSet.Contains(fileNameNoExt) ||
+                                    inputNameSet.Contains(baseName) ||
+                                    inputNameSet.Contains(versionedName))
                                 {
-                                    metadata.Status = newStatus;
+                                    // Prefer filesystem truth after index refresh — keeps Load+Deps in sync
+                                    var fsStatus = _packageFileManager?.GetPackageStatus(canonicalKey)
+                                        ?? _packageFileManager?.GetPackageStatus(versionedName);
+                                    metadata.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
+                                        ? fsStatus
+                                        : newStatus;
+                                    RefreshMetadataFilePath(metadataKey, metadata, metadata.Status);
                                     affectedMetadataKeys.Add(metadataKey);
                                     affectedBaseNames.Add(baseName);
                                     
                                     var archivedKey = metadataKey + "#archived";
                                     if (_packageManager.PackageMetadata.TryGetValue(archivedKey, out var archivedMetadata))
                                     {
-                                        archivedMetadata.Status = newStatus;
+                                        archivedMetadata.Status = metadata.Status;
+                                        RefreshMetadataFilePath(archivedKey, archivedMetadata, metadata.Status);
                                         affectedMetadataKeys.Add(archivedKey);
                                     }
                                 }
                             }
                         }
 
-                        // 2. Update packages in main grid
+                        // 2. Update packages in main grid (match MetadataKey, Name, or creator.package base)
                         foreach (var package in Packages)
                         {
-                            if (affectedMetadataKeys.Contains(package.MetadataKey))
+                            if (affectedMetadataKeys.Contains(package.MetadataKey) ||
+                                inputNameSet.Contains(package.MetadataKey) ||
+                                inputNameSet.Contains(package.Name) ||
+                                (!string.IsNullOrEmpty(package.Name) && inputNameSet.Contains(
+                                    DependencyVersionInfo.Parse(package.Name).BaseName ?? "")))
                             {
-                                package.Status = newStatus;
+                                var fsStatus = _packageFileManager?.GetPackageStatus(package.Name)
+                                    ?? _packageFileManager?.GetPackageStatus(package.MetadataKey);
+                                package.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
+                                    ? fsStatus
+                                    : newStatus;
                             }
                         }
 
                         // 3. Update dependencies in dependencies/dependents grid
                         foreach (var dependency in Dependencies)
                         {
-                            if (affectedBaseNames.Contains(dependency.Name))
+                            if (affectedBaseNames.Contains(dependency.Name) ||
+                                inputNameSet.Contains(dependency.DisplayName) ||
+                                inputNameSet.Contains(dependency.Name))
                             {
-                                dependency.Status = newStatus;
+                                var fsStatus = _packageFileManager?.GetPackageStatus(dependency.DisplayName)
+                                    ?? _packageFileManager?.GetPackageStatus(dependency.Name);
+                                dependency.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
+                                    ? fsStatus
+                                    : newStatus;
                             }
                         }
 
@@ -2099,12 +2112,18 @@ namespace VPM
                         // FULL UI REFRESH: This is the critical fix for the dependencies table
                         // It updates info, tab counts, dependencies grid, and images for the current selection
                         await RefreshSelectionDisplaysImmediate();
+                        UpdateDependenciesButtonBar();
+                        UpdatePackageButtonBar();
                     }
                     finally
                     {
                         _suppressSelectionEvents = false;
                     }
                 }, System.Windows.Threading.DispatcherPriority.Normal);
+
+                await uiUpdate;
+                if (uiUpdate.Result != null)
+                    await uiUpdate.Result;
             }
             catch (Exception ex)
             {
@@ -2174,7 +2193,6 @@ namespace VPM
                         FileSize = metadata.FileSize,
                         ModifiedDate = metadata.ModifiedDate,
                         IsLatestVersion = true,
-                        IsOptimized = metadata.IsOptimized,
                         IsDuplicate = metadata.IsDuplicate,
                         DuplicateLocationCount = metadata.DuplicateLocationCount,
                         IsOldVersion = metadata.IsOldVersion,

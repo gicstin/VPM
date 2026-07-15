@@ -481,25 +481,28 @@ namespace VPM.Services
                 Status = StringPool.InternIgnoreCase(reader.ReadString()),
                 FilePath = StringPool.InternPath(reader.ReadString()),
                 FileSize = reader.ReadInt64(),
-                IsOptimized = reader.ReadBoolean(),
-                HasTextureOptimization = reader.ReadBoolean(),
-                HasHairOptimization = reader.ReadBoolean(),
-                HasMirrorOptimization = reader.ReadBoolean(),
-                VariantRole = StringPool.InternIgnoreCase(reader.ReadString()),
-                IsDuplicate = reader.ReadBoolean(),
-                DuplicateLocationCount = reader.ReadInt32(),
-                MorphCount = reader.ReadInt32(),
-                HairCount = reader.ReadInt32(),
-                ClothingCount = reader.ReadInt32(),
-                SceneCount = reader.ReadInt32(),
-                LooksCount = reader.ReadInt32(),
-                PosesCount = reader.ReadInt32(),
-                AssetsCount = reader.ReadInt32(),
-                ScriptsCount = reader.ReadInt32(),
-                PluginsCount = reader.ReadInt32(),
-                SubScenesCount = reader.ReadInt32(),
-                SkinsCount = reader.ReadInt32()
             };
+
+            // Legacy optimizer flags — read for cache format compatibility, discard values
+            reader.ReadBoolean();
+            reader.ReadBoolean();
+            reader.ReadBoolean();
+            reader.ReadBoolean();
+
+            metadata.VariantRole = StringPool.InternIgnoreCase(reader.ReadString());
+            metadata.IsDuplicate = reader.ReadBoolean();
+            metadata.DuplicateLocationCount = reader.ReadInt32();
+            metadata.MorphCount = reader.ReadInt32();
+            metadata.HairCount = reader.ReadInt32();
+            metadata.ClothingCount = reader.ReadInt32();
+            metadata.SceneCount = reader.ReadInt32();
+            metadata.LooksCount = reader.ReadInt32();
+            metadata.PosesCount = reader.ReadInt32();
+            metadata.AssetsCount = reader.ReadInt32();
+            metadata.ScriptsCount = reader.ReadInt32();
+            metadata.PluginsCount = reader.ReadInt32();
+            metadata.SubScenesCount = reader.ReadInt32();
+            metadata.SkinsCount = reader.ReadInt32();
 
             // Read nullable DateTime fields
             metadata.CreatedDate = reader.ReadBoolean() ? new DateTime(reader.ReadInt64()) : null;
@@ -652,10 +655,11 @@ namespace VPM.Services
             writer.Write(metadata.Status ?? "");
             writer.Write(metadata.FilePath ?? "");
             writer.Write(metadata.FileSize);
-            writer.Write(metadata.IsOptimized);
-            writer.Write(metadata.HasTextureOptimization);
-            writer.Write(metadata.HasHairOptimization);
-            writer.Write(metadata.HasMirrorOptimization);
+            // Legacy optimizer flags — write false for cache format compatibility
+            writer.Write(false);
+            writer.Write(false);
+            writer.Write(false);
+            writer.Write(false);
             writer.Write(metadata.VariantRole ?? "");
             writer.Write(metadata.IsDuplicate);
             writer.Write(metadata.DuplicateLocationCount);
@@ -775,10 +779,6 @@ namespace VPM.Services
                 Status = source.Status,
                 FilePath = source.FilePath,
                 FileSize = source.FileSize,
-                IsOptimized = source.IsOptimized,
-                HasTextureOptimization = source.HasTextureOptimization,
-                HasHairOptimization = source.HasHairOptimization,
-                HasMirrorOptimization = source.HasMirrorOptimization,
                 VariantRole = source.VariantRole,
                 IsDuplicate = source.IsDuplicate,
                 DuplicateLocationCount = source.DuplicateLocationCount,

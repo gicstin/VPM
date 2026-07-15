@@ -120,11 +120,6 @@ namespace VPM
             OpenUrl("https://github.com/adamhathcock/sharpcompress");
         }
 
-        private void NetVipsLink_Click(object sender, RoutedEventArgs e)
-        {
-            OpenUrl("https://github.com/kleber-silveira/net-vips");
-        }
-
         private void GraphShapeLink_Click(object sender, RoutedEventArgs e)
         {
             OpenUrl("https://github.com/KeRNeLith/GraphShape");

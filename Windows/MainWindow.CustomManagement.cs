@@ -252,7 +252,6 @@ namespace VPM
         private void CustomAtomDataGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             // Update counters immediately
-            UpdateOptimizeCounter();
             UpdateFavoriteCounter();
             UpdateAutoinstallCounter();
             UpdateHideCounter();

@@ -174,7 +174,7 @@
                                 <TextBlock Grid.Row="2" Grid.Column="1" Text="BA's cache is cleaned up when you archive packages"/>
 
                                 <TextBlock Grid.Row="3" Grid.Column="0" Text="•" Style="{StaticResource BulletStyle}"/>
-                                <TextBlock Grid.Row="3" Grid.Column="1" Text="Optimization features work as normal, with the exception of dependency forcing"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="Package management features work as normal, with the exception of dependency forcing"/>
 
                                 <TextBlock Grid.Row="4" Grid.Column="0" Text="•" Style="{StaticResource BulletStyle}"/>
                                 <TextBlock Grid.Row="4" Grid.Column="1" Text="Duplicate handling, a new column is visible after enabling the integration."/>
@@ -208,7 +208,7 @@
                                 <TextBlock Grid.Row="0" Grid.Column="1" Text="Moving packages that are handled by BA. Packages that are in AddonPackages can still be moved."/>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Text="•" Style="{StaticResource BulletStyle}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="1" Text="Dependency modifications in the optimizer are restricted"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="Dependency modifications are restricted when Browser Assist manages packages"/>
                             </Grid>
                         </StackPanel>
                     </Border>

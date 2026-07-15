@@ -262,7 +262,6 @@ namespace VPM
             
             // Update toolbar buttons
             UpdateToolbarButtons();
-            UpdateOptimizeCounter();
             UpdateFavoriteCounter();
             UpdateAutoinstallCounter();
             UpdateHideCounter();
@@ -738,6 +737,28 @@ namespace VPM
             }
         }
 
+        /// <summary>
+        /// Resolves the on-disk path for a package, falling back to PackageFileManager when metadata is stale.
+        /// </summary>
+        private string ResolvePackageFilePath(PackageItem packageItem, VarMetadata metadata)
+        {
+            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                return metadata.FilePath;
+
+            if (_packageFileManager == null)
+                return null;
+
+            PackageFileInfo fileInfo = !string.IsNullOrEmpty(packageItem.MetadataKey)
+                ? _packageFileManager.GetPackageFileInfoByMetadataKey(packageItem.MetadataKey)
+                : _packageFileManager.GetPackageFileInfo(packageItem.Name);
+
+            if (!string.IsNullOrEmpty(fileInfo?.CurrentPath) && File.Exists(fileInfo.CurrentPath))
+                return fileInfo.CurrentPath;
+
+            var resolvedPath = _packageFileManager.ResolveDependencyToFilePath(packageItem.Name);
+            return !string.IsNullOrEmpty(resolvedPath) && File.Exists(resolvedPath) ? resolvedPath : null;
+        }
+
         private void OpenPackageFolderPath(PackageItem package)
         {
             try
@@ -748,38 +769,13 @@ namespace VPM
                     return;
                 }
 
-                // First, try to get FilePath from metadata (works for both external and restored packages)
-                // This is important because restored packages may have different file signatures
-                if (_packageManager?.PackageMetadata != null)
-                {
-                    if (_packageManager.PackageMetadata.TryGetValue(package.MetadataKey, out var metadata))
-                    {
-                        if (!string.IsNullOrEmpty(metadata.FilePath) && System.IO.File.Exists(metadata.FilePath))
-                        {
-                            OpenFolderAndSelectFile(metadata.FilePath);
-                            SetStatus($"Opened folder for: {package.Name}");
-                            return;
-                        }
-                    }
-                }
+                VarMetadata metadata = null;
+                _packageManager?.PackageMetadata?.TryGetValue(package.MetadataKey, out metadata);
+                var filePath = ResolvePackageFilePath(package, metadata);
 
-                // Fallback: Get the file path from PackageFileManager
-                // Use MetadataKey for accurate lookup (handles multiple versions of same package)
-                // MetadataKey includes version and status information for precise matching
-                PackageFileInfo fileInfo;
-                if (!string.IsNullOrEmpty(package.MetadataKey))
+                if (!string.IsNullOrEmpty(filePath))
                 {
-                    fileInfo = _packageFileManager.GetPackageFileInfoByMetadataKey(package.MetadataKey);
-                }
-                else
-                {
-                    fileInfo = _packageFileManager.GetPackageFileInfo(package.Name);
-                }
-                
-                if (fileInfo != null && !string.IsNullOrEmpty(fileInfo.CurrentPath) && System.IO.File.Exists(fileInfo.CurrentPath))
-                {
-                    // Open folder and select the file - Explorer will reuse existing window if same folder
-                    OpenFolderAndSelectFile(fileInfo.CurrentPath);
+                    OpenFolderAndSelectFile(filePath);
                     SetStatus($"Opened folder for: {package.Name}");
                 }
                 else
@@ -1274,6 +1270,57 @@ namespace VPM
             }
         }
 
+        private void ClearDuplicatesFilterAndSelection()
+        {
+            if (_filterManager?.FilterDuplicates != true)
+                return;
+
+            _suppressSelectionEvents = true;
+            try
+            {
+                if (StatusFilterList != null)
+                {
+                    foreach (var item in StatusFilterList.SelectedItems.Cast<object>().ToList())
+                    {
+                        var itemText = item is ListBoxItem listBoxItem
+                            ? listBoxItem.Content?.ToString() ?? string.Empty
+                            : item?.ToString() ?? string.Empty;
+
+                        if (string.IsNullOrEmpty(itemText))
+                            continue;
+
+                        var status = itemText.Split('(')[0].Trim();
+                        if (status.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ||
+                            status.Equals("Duplicates", StringComparison.OrdinalIgnoreCase))
+                        {
+                            StatusFilterList.SelectedItems.Remove(item);
+                        }
+                    }
+                }
+
+                _filterManager.FilterDuplicates = false;
+                PackageDataGrid?.SelectedItems?.Clear();
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                _suppressSelectionEvents = false;
+            }
+
+            ApplyFilters();
+            UpdatePackageButtonBar();
+        }
+
+        private async Task HandleDuplicatesFixedAsync()
+        {
+            SetStatus("Refreshing package list after fixing duplicates...");
+            RefreshPackages();
+            ClearDuplicatesFilterAndSelection();
+            await RefreshCurrentlyDisplayedImagesAsync();
+        }
+
         private void ConfigureFileSizeRanges_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Window
@@ -1468,39 +1515,6 @@ namespace VPM
                 CustomMessageBox.Show($"Failed to update package database:\n\n{ex.Message}",
                     "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 SetStatus("Database update failed");
-            }
-        }
-
-        private async void ValidateTextures_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Check if packages are selected
-                if (PackageDataGrid.SelectedItems.Count == 0)
-                {
-                    CustomMessageBox.Show("Please select at least one package to optimise.", 
-                                  "Optimise Package", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-
-                // Check if selection exceeds maximum
-                if (PackageDataGrid.SelectedItems.Count > _settingsManager.Settings.MaxSafeSelection)
-                {
-                    CustomMessageBox.Show($"Please select a maximum of {_settingsManager.Settings.MaxSafeSelection} packages for bulk optimization.", 
-                                  "Optimise Package", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                var selectedPackages = PackageDataGrid.SelectedItems.Cast<PackageItem>().ToList();
-
-                // Use unified bulk optimization dialog for both single and multiple packages
-                await DisplayBulkOptimizationDialog(selectedPackages);
-            }
-            catch (Exception ex)
-            {
-                CustomMessageBox.Show($"Error during package analysis: {ex.Message}", 
-                              "Package Optimization Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                SetStatus($"Package analysis failed: {ex.Message}");
             }
         }
 
@@ -3811,7 +3825,6 @@ namespace VPM
                 FileSize = metadata.FileSize,
                 ModifiedDate = metadata.ModifiedDate,
                 IsLatestVersion = true,
-                IsOptimized = metadata.IsOptimized,
                 IsDuplicate = metadata.IsDuplicate,
                 DuplicateLocationCount = metadata.DuplicateLocationCount,
                 IsOldVersion = metadata.IsOldVersion,
@@ -4517,7 +4530,8 @@ namespace VPM
                 // Open the duplicate management window
                 var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
                     baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
-                    offloadedVarsPath: offloadedVarsPath)
+                    offloadedVarsPath: offloadedVarsPath,
+                    releaseFileLocksCallback: ReleaseDuplicateFileLocksAsync)
                 {
                     Owner = this
                 };
@@ -4526,13 +4540,7 @@ namespace VPM
 
                 // If user fixed duplicates, refresh the package list
                 if (result == true)
-                {
-                    SetStatus("Refreshing package list after fixing duplicates...");
-                    RefreshPackages();
-                    
-                    // Refresh image grid
-                    await RefreshCurrentlyDisplayedImagesAsync();
-                }
+                    await HandleDuplicatesFixedAsync();
             }
             catch (Exception ex)
             {
@@ -4548,12 +4556,12 @@ namespace VPM
         {
             try
             {
-                // Find duplicate instances for selected packages only
-                var duplicatePackages = FindSelectedDuplicateInstances();
+                // Even when only one duplicate is selected, show every duplicate in the fixer
+                var duplicatePackages = FindAllDuplicateInstances();
                 
                 if (duplicatePackages.Count == 0)
                 {
-                    DarkMessageBox.Show("No duplicates found in the selected packages.", "Fix Duplicates",
+                    DarkMessageBox.Show("No duplicates found in the package collection.", "Fix Duplicates",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -4584,7 +4592,8 @@ namespace VPM
                 // Open the duplicate management window
                 var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
                     baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
-                    offloadedVarsPath: offloadedVarsPath)
+                    offloadedVarsPath: offloadedVarsPath,
+                    releaseFileLocksCallback: ReleaseDuplicateFileLocksAsync)
                 {
                     Owner = this
                 };
@@ -4593,13 +4602,7 @@ namespace VPM
                 
                 // If user fixed duplicates, refresh the package list
                 if (result == true)
-                {
-                    SetStatus("Refreshing package list after fixing duplicates...");
-                    RefreshPackages();
-                    
-                    // Refresh image grid
-                    await RefreshCurrentlyDisplayedImagesAsync();
-                }
+                    await HandleDuplicatesFixedAsync();
             }
             catch (Exception ex)
             {
@@ -4627,65 +4630,15 @@ namespace VPM
             
             return duplicatePackages;
         }
-        
-        /// <summary>
-        /// Find duplicate package instances for the selected packages only
-        /// </summary>
-        private List<PackageItem> FindSelectedDuplicateInstances()
-        {
-            var duplicatePackages = new List<PackageItem>();
-            var selectedBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            
-            // First, collect base names of selected duplicate packages
-            foreach (var item in PackageDataGrid.SelectedItems)
-            {
-                if (item is PackageItem pkg)
-                {
-                    
-                    if (pkg.IsDuplicate || pkg.DuplicateLocationCount > 1)
-                    {
-                        string baseName = ExtractBasePackageName(pkg.DisplayName);
-                        selectedBaseNames.Add(baseName);
-                    }
-                    else
-                    {
-                    }
-                }
-            }
-            
-            
-            // Then, find ALL instances of those selected base names across the entire package collection
-            // Don't filter by DuplicateLocationCount here - let DuplicateManagementWindow do filesystem scan
-            foreach (var package in Packages)
-            {
-                string baseName = ExtractBasePackageName(package.DisplayName);
-                if (selectedBaseNames.Contains(baseName))
-                {
-                    duplicatePackages.Add(package);
-                }
-            }
-            
-            return duplicatePackages;
-        }
-        
-        /// <summary>
-        /// Extract base package name from display name (Creator.PackageName without version)
-        /// </summary>
-        private string ExtractBasePackageName(string displayName)
-        {
-            if (string.IsNullOrEmpty(displayName))
-                return displayName;
-                
-            var parts = displayName.Split('.');
-            if (parts.Length >= 3) // Creator.PackageName.Version format
-            {
-                return $"{parts[0]}.{parts[1]}"; // Return Creator.PackageName
-            }
-            
-            return displayName; // Return as-is if format doesn't match
-        }
 
+        private async Task ReleaseDuplicateFileLocksAsync(IEnumerable<string> filePaths)
+        {
+            if (_imageManager == null || filePaths == null)
+                return;
+
+            await _imageManager.BatchCloseFileHandlesAsync(filePaths);
+        }
+        
         /// <summary>
         /// Formats a number with K suffix for counts over 1000
         /// </summary>
@@ -4758,9 +4711,8 @@ namespace VPM
                         {
                             existingPackage.Status = "Loaded";
                             existingPackage.FileSize = metadata.FileSize;
-                            existingPackage.ModifiedDate = metadata.ModifiedDate;
-                            existingPackage.IsOptimized = metadata.IsOptimized;
-                            existingPackage.IsDuplicate = metadata.IsDuplicate;
+                    existingPackage.ModifiedDate = metadata.ModifiedDate;
+                    existingPackage.IsDuplicate = metadata.IsDuplicate;
                             existingPackage.DuplicateLocationCount = metadata.DuplicateLocationCount;
                             existingPackage.DependencyCount = metadata.Dependencies?.Length ?? 0;
                             existingPackage.DependentsCount = 0; // Will be calculated on full refresh
@@ -4778,7 +4730,6 @@ namespace VPM
                                 FileSize = metadata.FileSize,
                                 ModifiedDate = metadata.ModifiedDate,
                                 IsLatestVersion = true,
-                                IsOptimized = metadata.IsOptimized,
                                 IsDuplicate = metadata.IsDuplicate,
                                 DuplicateLocationCount = metadata.DuplicateLocationCount
                             };
@@ -4870,27 +4821,6 @@ namespace VPM
             }
         }
 
-        /// <summary>
-        /// Handles the Optimize Selected toolbar button click
-        /// </summary>
-        private void OptimizeSelectedToolbar_Click(object sender, RoutedEventArgs e)
-        {
-            // Check current content mode
-            if (_currentContentMode == "Scenes")
-            {
-                OptimizeSelectedScenes_Click(sender, e);
-            }
-            else if (_currentContentMode == "Presets" || _currentContentMode == "Custom")
-            {
-                OptimizeSelectedPresets_Click(sender, e);
-            }
-            else
-            {
-                // Call the existing validate textures method for packages
-                ValidateTextures_Click(sender, e);
-            }
-        }
-        
         private async void DownloadMissingToolbar_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -5828,54 +5758,31 @@ namespace VPM
                                 counter++;
                             }
                             
-                            // Release file handles before moving
-                            try
-                            {
-                                if (_imageManager != null)
-                                    await _imageManager.CloseFileHandlesAsync(sceneItem.FilePath);
-                                await Task.Delay(100); // Brief delay to ensure handles are released
-                            }
-                            catch (Exception)
-                            {
-                                // Continue even if handle release fails
-                            }
+                            var (fileMoved, moveError) = await TryDiscardFileMoveAsync(sceneItem.FilePath, destinationPath);
                             
-                            // Move the file with retry logic for file lock issues
-                            int moveRetries = 3;
-                            bool fileMoved = false;
-                            while (moveRetries > 0 && !fileMoved)
+                            if (fileMoved)
                             {
-                                try
-                                {
-                                    File.Move(sceneItem.FilePath, destinationPath, overwrite: false);
-                                    fileMoved = true;
-                                    successCount++;
-                                }
-                                catch (IOException) when (moveRetries > 1)
-                                {
-                                    moveRetries--;
-                                    System.Diagnostics.Debug.WriteLine($"File lock still active for scene {sceneItem.DisplayName}, retrying... ({moveRetries} retries left)");
-                                    await Task.Delay(300); // Wait longer before retry
-                                }
+                                successCount++;
                             }
-                            
-                            if (!fileMoved)
+                            else
                             {
                                 failureCount++;
-                                failedScenes.Add(sceneItem.DisplayName);
+                                failedScenes.Add(string.IsNullOrEmpty(moveError)
+                                    ? sceneItem.DisplayName
+                                    : $"{sceneItem.DisplayName}: {moveError}");
                             }
                         }
                         else
                         {
                             failureCount++;
-                            failedScenes.Add(sceneItem.DisplayName);
+                            failedScenes.Add($"{sceneItem.DisplayName}: Source file not found");
                         }
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error discarding scene {sceneItem.DisplayName}: {ex.Message}");
                         failureCount++;
-                        failedScenes.Add(sceneItem.DisplayName);
+                        failedScenes.Add($"{sceneItem.DisplayName}: {ex.Message}");
                     }
                 }
                 
@@ -5950,54 +5857,31 @@ namespace VPM
                                 counter++;
                             }
                             
-                            // Release file handles before moving
-                            try
-                            {
-                                if (_imageManager != null)
-                                    await _imageManager.CloseFileHandlesAsync(customAtomItem.FilePath);
-                                await Task.Delay(100); // Brief delay to ensure handles are released
-                            }
-                            catch (Exception)
-                            {
-                                // Continue even if handle release fails
-                            }
+                            var (fileMoved, moveError) = await TryDiscardFileMoveAsync(customAtomItem.FilePath, destinationPath);
                             
-                            // Move the file with retry logic for file lock issues
-                            int moveRetries = 3;
-                            bool fileMoved = false;
-                            while (moveRetries > 0 && !fileMoved)
+                            if (fileMoved)
                             {
-                                try
-                                {
-                                    File.Move(customAtomItem.FilePath, destinationPath, overwrite: false);
-                                    fileMoved = true;
-                                    successCount++;
-                                }
-                                catch (IOException) when (moveRetries > 1)
-                                {
-                                    moveRetries--;
-                                    System.Diagnostics.Debug.WriteLine($"File lock still active for custom atom {customAtomItem.DisplayName}, retrying... ({moveRetries} retries left)");
-                                    await Task.Delay(300); // Wait longer before retry
-                                }
+                                successCount++;
                             }
-                            
-                            if (!fileMoved)
+                            else
                             {
                                 failureCount++;
-                                failedCustomAtoms.Add(customAtomItem.DisplayName);
+                                failedCustomAtoms.Add(string.IsNullOrEmpty(moveError)
+                                    ? customAtomItem.DisplayName
+                                    : $"{customAtomItem.DisplayName}: {moveError}");
                             }
                         }
                         else
                         {
                             failureCount++;
-                            failedCustomAtoms.Add(customAtomItem.DisplayName);
+                            failedCustomAtoms.Add($"{customAtomItem.DisplayName}: Source file not found");
                         }
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error discarding custom atom {customAtomItem.DisplayName}: {ex.Message}");
                         failureCount++;
-                        failedCustomAtoms.Add(customAtomItem.DisplayName);
+                        failedCustomAtoms.Add($"{customAtomItem.DisplayName}: {ex.Message}");
                     }
                 }
                 
@@ -6029,6 +5913,53 @@ namespace VPM
             }
         }
         
+        /// <summary>
+        /// Move a file into DiscardedPackages with the same handle-release/retry behavior used by Move To.
+        /// Bare File.Move fails in Release/published builds when ZipArchive pools still hold the .var open.
+        /// </summary>
+        private async Task<(bool success, string error)> TryDiscardFileMoveAsync(string sourcePath, string destinationPath)
+        {
+            string lastError = null;
+            const int maxAttempts = 5;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                try
+                {
+                    if (_imageManager != null)
+                        await _imageManager.CloseFileHandlesAsync(sourcePath);
+
+                    try
+                    {
+                        FileAccessController.Instance.InvalidateFile(sourcePath);
+                    }
+                    catch
+                    {
+                    }
+
+                    SymlinkSafeFileSystem.MoveFileSafe(sourcePath, destinationPath);
+                    return (true, null);
+                }
+                catch (IOException ex) when (attempt < maxAttempts)
+                {
+                    lastError = ex.Message;
+                    System.Diagnostics.Debug.WriteLine($"Discard move locked '{sourcePath}', retry {attempt}/{maxAttempts}: {ex.Message}");
+                    await Task.Delay(100 * attempt);
+                }
+                catch (UnauthorizedAccessException ex) when (attempt < maxAttempts)
+                {
+                    lastError = ex.Message;
+                    await Task.Delay(100 * attempt);
+                }
+                catch (Exception ex)
+                {
+                    return (false, ex.Message);
+                }
+            }
+
+            return (false, lastError ?? "Move failed");
+        }
+
         private async void DiscardSelected_Click(object sender, RoutedEventArgs e)
         {
             var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
@@ -6048,106 +5979,89 @@ namespace VPM
                 
                 string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
                 Directory.CreateDirectory(discardedFolder);
+
+                // Same pre-move release as Move To — required in Release/published where archive pools stay open longer
+                _imageLoadingCts?.Cancel();
+                _imageLoadingCts = new CancellationTokenSource();
+                PreviewImages.Clear();
+
+                var packagesToRelease = selectedPackages
+                    .Select(p =>
+                    {
+                        if (_packageManager?.PackageMetadata?.TryGetValue(p.MetadataKey, out var m) == true
+                            && !string.IsNullOrEmpty(m?.FilePath))
+                        {
+                            return Path.GetFileNameWithoutExtension(m.FilePath);
+                        }
+                        return p.Name;
+                    })
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList();
+
+                if (_imageManager != null)
+                    await _imageManager.ReleasePackagesAsync(packagesToRelease);
                 
                 int successCount = 0;
                 int failureCount = 0;
                 var failedPackages = new List<string>();
+                var discardedPackages = new List<PackageItem>();
                 
                 foreach (var packageItem in selectedPackages)
                 {
                     try
                     {
-                        // Get package metadata to find the file path
-                        if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
+                        VarMetadata metadata = null;
+                        _packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out metadata);
+                        var sourceFilePath = ResolvePackageFilePath(packageItem, metadata);
+
+                        if (!string.IsNullOrEmpty(sourceFilePath) && File.Exists(sourceFilePath))
                         {
-                            if (metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && File.Exists(metadata.FilePath))
+                            string fileName = Path.GetFileName(sourceFilePath);
+                            string destinationPath = Path.Combine(discardedFolder, fileName);
+                            
+                            // Handle file name conflicts by appending a number
+                            int counter = 1;
+                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
+                            string extension = Path.GetExtension(fileName);
+                            while (File.Exists(destinationPath))
                             {
-                                string fileName = Path.GetFileName(metadata.FilePath);
-                                string destinationPath = Path.Combine(discardedFolder, fileName);
-                                
-                                // Handle file name conflicts by appending a number
-                                int counter = 1;
-                                string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                                string extension = Path.GetExtension(fileName);
-                                while (File.Exists(destinationPath))
-                                {
-                                    destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                    counter++;
-                                }
-                                
-                                // Release file handles before moving
-                                try
-                                {
-                                    if (_imageManager != null)
-                                        await _imageManager.CloseFileHandlesAsync(metadata.FilePath);
-                                    await Task.Delay(100); // Brief delay to ensure handles are released
-                                }
-                                catch (Exception)
-                                {
-                                    // Continue even if handle release fails
-                                }
-                                
-                                // Move the file with retry logic for file lock issues
-                                int moveRetries = 3;
-                                bool fileMoved = false;
-                                while (moveRetries > 0 && !fileMoved)
-                                {
-                                    try
-                                    {
-                                        File.Move(metadata.FilePath, destinationPath, overwrite: false);
-                                        fileMoved = true;
-                                        successCount++;
-                                    }
-                                    catch (IOException) when (moveRetries > 1)
-                                    {
-                                        moveRetries--;
-                                        System.Diagnostics.Debug.WriteLine($"File lock still active for package {packageItem.DisplayName}, retrying... ({moveRetries} retries left)");
-                                        await Task.Delay(300); // Wait longer before retry
-                                    }
-                                }
-                                
-                                if (!fileMoved)
-                                {
-                                    failureCount++;
-                                    failedPackages.Add(packageItem.DisplayName);
-                                }
+                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
+                                counter++;
+                            }
+
+                            var (fileMoved, moveError) = await TryDiscardFileMoveAsync(sourceFilePath, destinationPath);
+                            
+                            if (fileMoved)
+                            {
+                                successCount++;
+                                discardedPackages.Add(packageItem);
                             }
                             else
                             {
                                 failureCount++;
-                                failedPackages.Add(packageItem.DisplayName);
+                                failedPackages.Add(string.IsNullOrEmpty(moveError)
+                                    ? packageItem.DisplayName
+                                    : $"{packageItem.DisplayName}: {moveError}");
                             }
                         }
                         else
                         {
                             failureCount++;
-                            failedPackages.Add(packageItem.DisplayName);
+                            failedPackages.Add($"{packageItem.DisplayName}: Source file not found");
                         }
                     }
                     catch (Exception ex)
                     {
                         System.Diagnostics.Debug.WriteLine($"Error discarding package {packageItem.DisplayName}: {ex.Message}");
                         failureCount++;
-                        failedPackages.Add(packageItem.DisplayName);
+                        failedPackages.Add($"{packageItem.DisplayName}: {ex.Message}");
                     }
                 }
                 
                 // Remove successfully discarded packages from the UI
-                if (successCount > 0)
+                foreach (var package in discardedPackages)
                 {
-                    var packagesToRemove = selectedPackages.Where(p => 
-                    {
-                        if (_packageManager?.PackageMetadata?.TryGetValue(p.MetadataKey, out var metadata) == true)
-                        {
-                            return metadata != null && !string.IsNullOrEmpty(metadata.FilePath) && !File.Exists(metadata.FilePath);
-                        }
-                        return false;
-                    }).ToList();
-                    
-                    foreach (var package in packagesToRemove)
-                    {
-                        Packages.Remove(package);
-                    }
+                    Packages.Remove(package);
                 }
                 
                 // Show error message only if there were failures
@@ -6199,283 +6113,6 @@ namespace VPM
                 DarkMessageBox.Show($"Error opening discard location: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 System.Diagnostics.Debug.WriteLine($"Error opening discard location: {ex}");
-            }
-        }
-        
-        #endregion
-
-        #region Restore Original Operations
-        
-        /// <summary>
-        /// Updates the Restore Original menu item header and visibility based on selected packages.
-        /// Shows count of optimized packages that have backups available in ArchivedPackages or custom archive location.
-        /// </summary>
-        private void UpdateRestoreOriginalMenuItem(MenuItem restoreOriginalItem)
-        {
-            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
-            if (selectedPackages == null || selectedPackages.Count == 0)
-            {
-                restoreOriginalItem.Header = "🔄 Restore Original";
-                restoreOriginalItem.Visibility = System.Windows.Visibility.Collapsed;
-                return;
-            }
-            
-            // Count packages that are optimized AND have a backup in ArchivedPackages or custom archive location
-            int restorableCount = 0;
-            string gameRoot = _settingsManager?.Settings?.SelectedFolder;
-            
-            if (!string.IsNullOrEmpty(gameRoot))
-            {
-                string defaultArchivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
-                
-                // Get effective archive folder (custom or default)
-                var repackagerForArchive = new PackageRepackager(_imageManager, _settingsManager);
-                string effectiveArchivedFolder = repackagerForArchive.GetEffectiveArchiveFolder(defaultArchivedFolder);
-                
-                foreach (var packageItem in selectedPackages)
-                {
-                    if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
-                    {
-                        if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
-                        {
-                            // Check if backup exists in effective archive location
-                            string fileName = Path.GetFileName(metadata.FilePath);
-                            string backupPath = Path.Combine(effectiveArchivedFolder, fileName);
-                            
-                            if (File.Exists(backupPath))
-                            {
-                                restorableCount++;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if (restorableCount > 0)
-            {
-                restoreOriginalItem.Header = $"🔄 Restore Original ({restorableCount})";
-                restoreOriginalItem.Visibility = System.Windows.Visibility.Visible;
-                restoreOriginalItem.IsEnabled = true;
-            }
-            else
-            {
-                restoreOriginalItem.Header = "🔄 Restore Original";
-                restoreOriginalItem.Visibility = System.Windows.Visibility.Collapsed;
-            }
-        }
-        
-        /// <summary>
-        /// Restores original packages from ArchivedPackages or custom archive backup location.
-        /// Deletes the optimized version and moves the original back to its active location.
-        /// </summary>
-        private async void RestoreOriginal_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
-            if (selectedPackages == null || selectedPackages.Count == 0)
-                return;
-            
-            string gameRoot = _settingsManager?.Settings?.SelectedFolder;
-            if (string.IsNullOrEmpty(gameRoot))
-            {
-                DarkMessageBox.Show("No game folder selected.", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-            
-            string defaultArchivedFolder = Path.Combine(gameRoot, "ArchivedPackages");
-            
-            // Get effective archive folder (custom or default)
-            var repackagerForArchive = new PackageRepackager(_imageManager, _settingsManager);
-            string effectiveArchivedFolder = repackagerForArchive.GetEffectiveArchiveFolder(defaultArchivedFolder);
-            
-            // Build list of restorable packages
-            var restorablePackages = new List<(PackageItem Package, VarMetadata Metadata, string BackupPath)>();
-            
-            foreach (var packageItem in selectedPackages)
-            {
-                if (_packageManager?.PackageMetadata?.TryGetValue(packageItem.MetadataKey, out var metadata) == true)
-                {
-                    if (metadata != null && metadata.IsOptimized && !string.IsNullOrEmpty(metadata.FilePath))
-                    {
-                        string fileName = Path.GetFileName(metadata.FilePath);
-                        string backupPath = Path.Combine(effectiveArchivedFolder, fileName);
-                        
-                        if (File.Exists(backupPath))
-                        {
-                            restorablePackages.Add((packageItem, metadata, backupPath));
-                        }
-                    }
-                }
-            }
-            
-            if (restorablePackages.Count == 0)
-            {
-                DarkMessageBox.Show("No restorable packages found. Packages must be optimized and have a backup in ArchivedPackages.", 
-                    "No Backups Found", MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
-            }
-            
-            // Build list of package names for display
-            var packageNames = restorablePackages.Select(p => p.Package.DisplayName).ToList();
-            string packageListDisplay;
-            if (packageNames.Count <= 10)
-            {
-                packageListDisplay = string.Join("\n", packageNames.Select(n => $"  • {n}"));
-            }
-            else
-            {
-                packageListDisplay = string.Join("\n", packageNames.Take(10).Select(n => $"  • {n}")) + 
-                    $"\n  ... and {packageNames.Count - 10} more";
-            }
-            
-            // Confirm with user
-            var confirmResult = DarkMessageBox.Show(
-                $"This will restore {restorablePackages.Count} package(s) to their original state:\n\n" +
-                $"{packageListDisplay}\n\n" +
-                "The optimized version will be deleted and the original will be moved from ArchivedPackages.\n\n" +
-                "Do you want to continue?",
-                "Confirm Restore",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question);
-            
-            if (confirmResult != MessageBoxResult.Yes)
-                return;
-            
-            // Clear preview images before file operations (same pattern as other file operations)
-            PreviewImages.Clear();
-            
-            // Release file locks for all packages being restored
-            var packagesToRelease = restorablePackages.Select(p => p.Package.Name).ToList();
-            await _imageManager.ReleasePackagesAsync(packagesToRelease);
-            
-            // Invalidate image cache for packages being restored
-            // This ensures fresh image loads after restoration since file paths/signatures will change
-            foreach (var (packageItem, metadata, backupPath) in restorablePackages)
-            {
-                _imageManager.InvalidatePackageCache(packageItem.Name);
-            }
-            
-            // Small delay to ensure handles are released
-            await Task.Delay(200);
-            
-            int successCount = 0;
-            int failureCount = 0;
-            var failedPackages = new List<string>();
-            var errors = new List<string>();
-            
-            foreach (var (packageItem, metadata, backupPath) in restorablePackages)
-            {
-                try
-                {
-                    string optimizedPath = metadata.FilePath;
-                    string targetPath = optimizedPath; // Restore to same location as optimized version
-                    
-                    // Delete the optimized version with retry logic
-                    int deleteRetries = 3;
-                    bool fileDeleted = false;
-                    while (deleteRetries > 0 && !fileDeleted)
-                    {
-                        try
-                        {
-                            if (File.Exists(optimizedPath))
-                            {
-                                File.Delete(optimizedPath);
-                            }
-                            fileDeleted = true;
-                        }
-                        catch (IOException) when (deleteRetries > 1)
-                        {
-                            deleteRetries--;
-                            System.Diagnostics.Debug.WriteLine($"File lock still active for {packageItem.DisplayName}, retrying delete... ({deleteRetries} retries left)");
-                            await Task.Delay(300);
-                        }
-                    }
-                    
-                    if (!fileDeleted)
-                    {
-                        failureCount++;
-                        failedPackages.Add(packageItem.DisplayName);
-                        errors.Add($"{packageItem.DisplayName}: Could not delete optimized file (file in use)");
-                        continue;
-                    }
-                    
-                    // Move the backup to the target location with retry logic
-                    int moveRetries = 3;
-                    bool fileMoved = false;
-                    while (moveRetries > 0 && !fileMoved)
-                    {
-                        try
-                        {
-                            File.Move(backupPath, targetPath, overwrite: false);
-                            fileMoved = true;
-                        }
-                        catch (IOException) when (moveRetries > 1)
-                        {
-                            moveRetries--;
-                            System.Diagnostics.Debug.WriteLine($"File lock still active for backup {packageItem.DisplayName}, retrying move... ({moveRetries} retries left)");
-                            await Task.Delay(300);
-                        }
-                    }
-                    
-                    if (!fileMoved)
-                    {
-                        failureCount++;
-                        failedPackages.Add(packageItem.DisplayName);
-                        errors.Add($"{packageItem.DisplayName}: Could not move backup file");
-                        continue;
-                    }
-                    
-                    // Update metadata to reflect restored state
-                    metadata.IsOptimized = false;
-                    metadata.HasTextureOptimization = false;
-                    metadata.HasHairOptimization = false;
-                    metadata.HasMirrorOptimization = false;
-                    
-                    // Update the UI item
-                    packageItem.IsOptimized = false;
-                    
-                    // Update file size from restored file
-                    try
-                    {
-                        var fileInfo = new FileInfo(targetPath);
-                        metadata.FileSize = fileInfo.Length;
-                        packageItem.FileSize = fileInfo.Length;
-                    }
-                    catch (Exception)
-                    {
-                        // Ignore file size update errors
-                    }
-                    
-                    successCount++;
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Error restoring package {packageItem.DisplayName}: {ex.Message}");
-                    failureCount++;
-                    failedPackages.Add(packageItem.DisplayName);
-                    errors.Add($"{packageItem.DisplayName}: {ex.Message}");
-                }
-            }
-            
-            // Refresh package status index and UI to update file sizes and details
-            // Force refresh package status index to reflect file system changes
-            _packageFileManager?.RefreshPackageStatusIndex(force: true);
-            
-            // Refresh the data grid view to immediately show updated file sizes
-            if (PackagesView != null)
-            {
-                PackagesView.Refresh();
-            }
-            
-            // Refresh the details panel for currently selected packages to show updated file size
-            await RefreshCurrentlyDisplayedImagesAsync();
-            
-            // Only show error message if there were failures
-            if (failureCount > 0)
-            {
-                DarkMessageBox.Show($"Failed to restore {failureCount} package(s):\n\n{string.Join("\n", errors.Take(5))}" +
-                    (errors.Count > 5 ? $"\n... and {errors.Count - 5} more" : ""),
-                    "Restore Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         
@@ -6645,7 +6282,6 @@ namespace VPM
                 MenuItem launchSceneInVamMenuItem = null;
                 MenuItem moveToMenuItem = null;
                 MenuItem addToPlaylistMenuItem = null;
-                MenuItem restoreOriginalItem = null;
                 MenuItem loadContextMenuItem = null;
                 MenuItem unloadContextMenuItem = null;
                 MenuItem fixDuplicatesContextMenuItem = null;
@@ -6675,8 +6311,6 @@ namespace VPM
                                 moveToMenuItem = menuItem;
                             else if (header == "🕹️ Add to Playlist")
                                 addToPlaylistMenuItem = menuItem;
-                            else if (header.StartsWith("🔄 Restore Original"))
-                                restoreOriginalItem = menuItem;
                         }
                     }
                 }
@@ -6778,12 +6412,6 @@ namespace VPM
                 if (addToPlaylistMenuItem != null)
                 {
                     PopulateAddToPlaylistMenu(addToPlaylistMenuItem);
-                }
-                
-                // Update Restore Original menu item based on selected packages
-                if (restoreOriginalItem != null)
-                {
-                    UpdateRestoreOriginalMenuItem(restoreOriginalItem);
                 }
             }
         }

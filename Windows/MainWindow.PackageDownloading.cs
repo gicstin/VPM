@@ -598,7 +598,6 @@ namespace VPM
                     existingPackage.Creator = metadata.CreatorName ?? "Unknown";
                     existingPackage.FileSize = metadata.FileSize;
                     existingPackage.ModifiedDate = metadata.ModifiedDate;
-                    existingPackage.IsOptimized = metadata.IsOptimized;
                     existingPackage.IsDuplicate = metadata.IsDuplicate;
                     existingPackage.DuplicateLocationCount = metadata.DuplicateLocationCount;
                     existingPackage.DependencyCount = metadata.Dependencies?.Length ?? 0;
@@ -617,7 +616,6 @@ namespace VPM
                         FileSize = metadata.FileSize,
                         ModifiedDate = metadata.ModifiedDate,
                         IsLatestVersion = true,
-                        IsOptimized = metadata.IsOptimized,
                         IsDuplicate = metadata.IsDuplicate,
                         DuplicateLocationCount = metadata.DuplicateLocationCount
                     };
