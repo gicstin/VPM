@@ -1592,8 +1592,8 @@ namespace VPM
                     
                     // Show Fix Duplicates button
                     FixDuplicatesButton.Visibility = Visibility.Visible;
-                    FixDuplicatesButton.Content = duplicateCount == 1 
-                        ? "🔧 Fix Duplicate" 
+                    FixDuplicatesButton.Content = duplicateCount == 1
+                        ? "🔧 Fix Duplicates"
                         : $"🔧 Fix Duplicates ({duplicateCount})";
                     return;
                 }

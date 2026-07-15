@@ -1271,6 +1271,57 @@ namespace VPM
             }
         }
 
+        private void ClearDuplicatesFilterAndSelection()
+        {
+            if (_filterManager?.FilterDuplicates != true)
+                return;
+
+            _suppressSelectionEvents = true;
+            try
+            {
+                if (StatusFilterList != null)
+                {
+                    foreach (var item in StatusFilterList.SelectedItems.Cast<object>().ToList())
+                    {
+                        var itemText = item is ListBoxItem listBoxItem
+                            ? listBoxItem.Content?.ToString() ?? string.Empty
+                            : item?.ToString() ?? string.Empty;
+
+                        if (string.IsNullOrEmpty(itemText))
+                            continue;
+
+                        var status = itemText.Split('(')[0].Trim();
+                        if (status.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ||
+                            status.Equals("Duplicates", StringComparison.OrdinalIgnoreCase))
+                        {
+                            StatusFilterList.SelectedItems.Remove(item);
+                        }
+                    }
+                }
+
+                _filterManager.FilterDuplicates = false;
+                PackageDataGrid?.SelectedItems?.Clear();
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                _suppressSelectionEvents = false;
+            }
+
+            ApplyFilters();
+            UpdatePackageButtonBar();
+        }
+
+        private async Task HandleDuplicatesFixedAsync()
+        {
+            SetStatus("Refreshing package list after fixing duplicates...");
+            RefreshPackages();
+            ClearDuplicatesFilterAndSelection();
+            await RefreshCurrentlyDisplayedImagesAsync();
+        }
+
         private void ConfigureFileSizeRanges_Click(object sender, RoutedEventArgs e)
         {
             var dialog = new Window
@@ -4500,7 +4551,8 @@ namespace VPM
                 // Open the duplicate management window
                 var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
                     baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
-                    offloadedVarsPath: offloadedVarsPath)
+                    offloadedVarsPath: offloadedVarsPath,
+                    releaseFileLocksCallback: ReleaseDuplicateFileLocksAsync)
                 {
                     Owner = this
                 };
@@ -4509,13 +4561,7 @@ namespace VPM
 
                 // If user fixed duplicates, refresh the package list
                 if (result == true)
-                {
-                    SetStatus("Refreshing package list after fixing duplicates...");
-                    RefreshPackages();
-                    
-                    // Refresh image grid
-                    await RefreshCurrentlyDisplayedImagesAsync();
-                }
+                    await HandleDuplicatesFixedAsync();
             }
             catch (Exception ex)
             {
@@ -4531,12 +4577,12 @@ namespace VPM
         {
             try
             {
-                // Find duplicate instances for selected packages only
-                var duplicatePackages = FindSelectedDuplicateInstances();
+                // Even when only one duplicate is selected, show every duplicate in the fixer
+                var duplicatePackages = FindAllDuplicateInstances();
                 
                 if (duplicatePackages.Count == 0)
                 {
-                    DarkMessageBox.Show("No duplicates found in the selected packages.", "Fix Duplicates",
+                    DarkMessageBox.Show("No duplicates found in the package collection.", "Fix Duplicates",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
                 }
@@ -4567,7 +4613,8 @@ namespace VPM
                 // Open the duplicate management window
                 var duplicateWindow = new DuplicateManagementWindow(duplicatePackages, addonPackagesPath, allPackagesPath, externalDestinations,
                     baCleanupCallback: _packageFileManager != null ? _packageFileManager.CleanupBrowserAssistCacheIfOffloaded : null,
-                    offloadedVarsPath: offloadedVarsPath)
+                    offloadedVarsPath: offloadedVarsPath,
+                    releaseFileLocksCallback: ReleaseDuplicateFileLocksAsync)
                 {
                     Owner = this
                 };
@@ -4576,13 +4623,7 @@ namespace VPM
                 
                 // If user fixed duplicates, refresh the package list
                 if (result == true)
-                {
-                    SetStatus("Refreshing package list after fixing duplicates...");
-                    RefreshPackages();
-                    
-                    // Refresh image grid
-                    await RefreshCurrentlyDisplayedImagesAsync();
-                }
+                    await HandleDuplicatesFixedAsync();
             }
             catch (Exception ex)
             {
@@ -4610,65 +4651,15 @@ namespace VPM
             
             return duplicatePackages;
         }
-        
-        /// <summary>
-        /// Find duplicate package instances for the selected packages only
-        /// </summary>
-        private List<PackageItem> FindSelectedDuplicateInstances()
-        {
-            var duplicatePackages = new List<PackageItem>();
-            var selectedBaseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            
-            
-            // First, collect base names of selected duplicate packages
-            foreach (var item in PackageDataGrid.SelectedItems)
-            {
-                if (item is PackageItem pkg)
-                {
-                    
-                    if (pkg.IsDuplicate || pkg.DuplicateLocationCount > 1)
-                    {
-                        string baseName = ExtractBasePackageName(pkg.DisplayName);
-                        selectedBaseNames.Add(baseName);
-                    }
-                    else
-                    {
-                    }
-                }
-            }
-            
-            
-            // Then, find ALL instances of those selected base names across the entire package collection
-            // Don't filter by DuplicateLocationCount here - let DuplicateManagementWindow do filesystem scan
-            foreach (var package in Packages)
-            {
-                string baseName = ExtractBasePackageName(package.DisplayName);
-                if (selectedBaseNames.Contains(baseName))
-                {
-                    duplicatePackages.Add(package);
-                }
-            }
-            
-            return duplicatePackages;
-        }
-        
-        /// <summary>
-        /// Extract base package name from display name (Creator.PackageName without version)
-        /// </summary>
-        private string ExtractBasePackageName(string displayName)
-        {
-            if (string.IsNullOrEmpty(displayName))
-                return displayName;
-                
-            var parts = displayName.Split('.');
-            if (parts.Length >= 3) // Creator.PackageName.Version format
-            {
-                return $"{parts[0]}.{parts[1]}"; // Return Creator.PackageName
-            }
-            
-            return displayName; // Return as-is if format doesn't match
-        }
 
+        private async Task ReleaseDuplicateFileLocksAsync(IEnumerable<string> filePaths)
+        {
+            if (_imageManager == null || filePaths == null)
+                return;
+
+            await _imageManager.BatchCloseFileHandlesAsync(filePaths);
+        }
+        
         /// <summary>
         /// Formats a number with K suffix for counts over 1000
         /// </summary>
