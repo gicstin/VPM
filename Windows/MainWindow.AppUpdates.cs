@@ -31,13 +31,14 @@ namespace VPM
                 var vpmTask = Task.Run(() => _appUpdateChecker.CheckForUpdatesAsync());
                 
                 Task<VpbPluginCheckResult> vpbTask = null;
-                if (!string.IsNullOrEmpty(_selectedFolder))
+                string vpbFolder = _selectedFolder;
+                if (!string.IsNullOrEmpty(vpbFolder))
                 {
                     var branch = _settingsManager?.Settings?.VpbPreferredBranch is { Length: > 0 } b ? b : "main";
                     vpbTask = Task.Run(async () =>
                     {
                         using var checker = new VpbPluginChecker();
-                        return await checker.CheckAsync(_selectedFolder, branch);
+                        return await checker.CheckAsync(vpbFolder, branch);
                     });
                 }
 
@@ -45,6 +46,15 @@ namespace VPM
                 
                 var vpmResult = await vpmTask;
                 var vpbResult = vpbTask != null ? await vpbTask : new VpbPluginCheckResult { IsInstalled = false };
+
+                if (vpbTask != null)
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (string.Equals(vpbFolder, _selectedFolder, StringComparison.OrdinalIgnoreCase))
+                            ApplyVpbToolbarFromCheck(vpbResult);
+                    });
+                }
 
                 // Logic to decide if we show the window
                 // Show if forced, or if ANY update is available

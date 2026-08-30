@@ -15,12 +15,10 @@ namespace VPM.Services
         public double FileSizeMediumMax { get; set; } = 100;
         
         public FavoritesManager FavoritesManager { get; set; } = null;
-        public AutoInstallManager AutoInstallManager { get; set; } = null;
         
         public string SelectedStatus { get; set; } = null;
         public HashSet<string> SelectedStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> SelectedFavoriteStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        public HashSet<string> SelectedAutoInstallStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> SelectedVersionStatuses { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public string SelectedCategory { get; set; } = null;
         public HashSet<string> SelectedCategories { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -56,12 +54,18 @@ namespace VPM.Services
         // Base package key => playlist tags (e.g. "P1 P2"). Supplied by MainWindow.
         public IReadOnlyDictionary<string, string> PlaylistTagsCache { get; set; }
 
+        // VPB ratings and tags: OR inside each group, AND between them.
+        public HashSet<string> SelectedVpbRatings { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> SelectedVpbTags { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public bool VpbUntaggedOnly { get; set; }
+
+        public VPM.Services.Vpb.VpbLibraryData VpbData { get; set; }
+
         public void ClearAllFilters()
         {
             SelectedStatus = null;
             SelectedStatuses.Clear();
             SelectedFavoriteStatuses.Clear();
-            SelectedAutoInstallStatuses.Clear();
             SelectedVersionStatuses.Clear();
             SelectedCategory = null;
             SelectedCategories.Clear();
@@ -84,6 +88,16 @@ namespace VPM.Services
             RequireAllTags = false;
             SelectedDestinations.Clear();
             SelectedPlaylistFilters.Clear();
+            SelectedVpbRatings.Clear();
+            SelectedVpbTags.Clear();
+            VpbUntaggedOnly = false;
+        }
+
+        public void ClearVpbFilter()
+        {
+            SelectedVpbRatings.Clear();
+            SelectedVpbTags.Clear();
+            VpbUntaggedOnly = false;
         }
 
         public void ClearCategoryFilter()
@@ -180,7 +194,6 @@ namespace VPM.Services
                 SelectedStatus = SelectedStatus,
                 SelectedStatuses = new HashSet<string>(SelectedStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedFavoriteStatuses = new HashSet<string>(SelectedFavoriteStatuses, StringComparer.OrdinalIgnoreCase),
-                SelectedAutoInstallStatuses = new HashSet<string>(SelectedAutoInstallStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedVersionStatuses = new HashSet<string>(SelectedVersionStatuses, StringComparer.OrdinalIgnoreCase),
                 SelectedCategory = SelectedCategory,
                 SelectedCategories = new HashSet<string>(SelectedCategories, StringComparer.OrdinalIgnoreCase),
@@ -202,7 +215,6 @@ namespace VPM.Services
                     CustomEndDate = DateFilter.CustomEndDate
                 },
                 FavoritesManager = FavoritesManager,
-                AutoInstallManager = AutoInstallManager,
                 HasCustomDependentsFunc = HasCustomDependentsFunc,
                 FileSizeTinyMax = FileSizeTinyMax,
                 FileSizeSmallMax = FileSizeSmallMax,
@@ -212,7 +224,11 @@ namespace VPM.Services
                 RequireAllTags = RequireAllTags,
                 SelectedDestinations = new HashSet<string>(SelectedDestinations, StringComparer.OrdinalIgnoreCase),
                 SelectedPlaylistFilters = new HashSet<string>(SelectedPlaylistFilters, StringComparer.OrdinalIgnoreCase),
-                PlaylistTagsCache = PlaylistTagsCache
+                PlaylistTagsCache = PlaylistTagsCache,
+                SelectedVpbRatings = new HashSet<string>(SelectedVpbRatings, StringComparer.OrdinalIgnoreCase),
+                SelectedVpbTags = new HashSet<string>(SelectedVpbTags, StringComparer.OrdinalIgnoreCase),
+                VpbUntaggedOnly = VpbUntaggedOnly,
+                VpbData = VpbData
             };
         }
 
@@ -295,6 +311,38 @@ namespace VPM.Services
                 }
             }
 
+            // Ratings and tags are separate groups: OR inside each, AND between them.
+            bool hasVpbRatingFilter = state.SelectedVpbRatings != null && state.SelectedVpbRatings.Count > 0;
+            bool hasVpbTagFilter = state.SelectedVpbTags != null && state.SelectedVpbTags.Count > 0;
+            if (hasVpbRatingFilter || hasVpbTagFilter || state.VpbUntaggedOnly)
+            {
+                var vpb = state.VpbData;
+                string vpbUid = VPM.Services.Vpb.VpbLibraryData.UidFor(metadata);
+
+                if (hasVpbRatingFilter)
+                {
+                    int rating = vpb != null ? vpb.RatingFor(vpbUid) : 0;
+                    if (!state.SelectedVpbRatings.Contains(rating.ToString()))
+                        return false;
+                }
+
+                if (hasVpbTagFilter || state.VpbUntaggedOnly)
+                {
+                    if (vpb == null) return false;
+
+                    bool matchesAnyTag = false;
+                    foreach (var tag in state.SelectedVpbTags)
+                    {
+                        if (vpb.HasTag(vpbUid, tag)) { matchesAnyTag = true; break; }
+                    }
+
+                    // Untagged ORs with selected tags — both means untagged or tagged with those, not the empty set.
+                    bool matchesUntagged = state.VpbUntaggedOnly && vpb.TagsFor(vpbUid).Count == 0;
+
+                    if (!matchesAnyTag && !matchesUntagged) return false;
+                }
+            }
+
             // CRITICAL: Early filter for external packages
             // External packages should ONLY appear when:
             // 1. "External" filter is explicitly selected in SelectedStatuses, OR
@@ -311,7 +359,6 @@ namespace VPM.Services
                 
                 // Check if any other filter types are active
                 bool hasOtherFiltersActive = state.SelectedFavoriteStatuses.Count > 0 ||
-                                            state.SelectedAutoInstallStatuses.Count > 0 ||
                                             state.SelectedVersionStatuses.Count > 0 ||
                                             state.FilterDuplicates ||
                                             state.FilterNoDependents ||
@@ -434,13 +481,6 @@ namespace VPM.Services
             if (state.SelectedFavoriteStatuses.Count > 0 && state.FavoritesManager != null)
             {
                 if (!state.FavoritesManager.IsFavorite(packageName))
-                    return false;
-            }
-
-            // 7. AutoInstall filter
-            if (state.SelectedAutoInstallStatuses.Count > 0 && state.AutoInstallManager != null)
-            {
-                if (!state.AutoInstallManager.IsAutoInstall(packageName))
                     return false;
             }
 

@@ -20,6 +20,8 @@
             <Setter Property="CanUserDeleteRows" Value="False"/>
             <Setter Property="SelectionMode" Value="Single"/>
             <Setter Property="RowHeight" Value="36"/>
+            <Setter Property="MinColumnWidth" Value="48"/>
+            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="DataGrid_PreventGripperAutoCollapse"/>
         </Style>
         
         <!-- DataGrid Header Style -->
@@ -114,7 +116,7 @@
         <DataGrid x:Name="VersionsDataGrid" Grid.Row="2">
             <DataGrid.Columns>
                 <!-- Location Column -->
-                <DataGridTextColumn Header="Location" Width="*" Binding="{Binding RelativeLocation}" IsReadOnly="True">
+                <DataGridTextColumn Header="Location" Width="*" MinWidth="160" Binding="{Binding RelativeLocation}" IsReadOnly="True">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Padding" Value="12,0"/>
@@ -125,7 +127,7 @@
                 </DataGridTextColumn>
                 
                 <!-- File Size Column -->
-                <DataGridTextColumn Header="Size" Width="100" Binding="{Binding FileSizeFormatted}" IsReadOnly="True">
+                <DataGridTextColumn Header="Size" Width="100" MinWidth="70" Binding="{Binding FileSizeFormatted}" IsReadOnly="True">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Padding" Value="12,0"/>
@@ -136,7 +138,7 @@
                 </DataGridTextColumn>
                 
                 <!-- Modified Date Column -->
-                <DataGridTextColumn Header="Modified" Width="140" Binding="{Binding ModifiedDateFormatted}" IsReadOnly="True">
+                <DataGridTextColumn Header="Modified" Width="140" MinWidth="100" Binding="{Binding ModifiedDateFormatted}" IsReadOnly="True">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Padding" Value="12,0"/>

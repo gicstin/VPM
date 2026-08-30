@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Input;
 
 namespace VPM
 {
@@ -155,6 +156,11 @@ namespace VPM
         private void UpdateStatusText()
         {
             StatusText.Text = $"{_packageGroups.Count} package(s) need a copy selected. Newest copy pre-selected for each.";
+        }
+
+        private void DataGrid_PreventGripperAutoCollapse(object sender, MouseButtonEventArgs e)
+        {
+            DataGridGripperAutoSize.SuppressIfGripperDoubleClick(e);
         }
 
         private void KeepSelected_Click(object sender, RoutedEventArgs e)

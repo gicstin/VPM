@@ -56,21 +56,25 @@
         <Setter Property="BorderBrush" Value="{StaticResource ControlBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="6,3"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border Background="{TemplateBinding Background}" 
+                    <Border x:Name="Bd"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}" 
                             BorderBrush="{TemplateBinding BorderBrush}" 
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="{StaticResource CornerRadiusValue}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="{StaticResource ButtonPressedBrush}"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ButtonPressedBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -345,82 +349,138 @@
         </Setter>
     </Style>
     
-    <!-- ScrollBar Style -->
+    <!--  Explicit RepeatButton templates so default system chrome (light blue hover) never shows through  -->
+    <Style x:Key="ScrollBarLineButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource SecondaryTextBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource ButtonHoverBrush}" />
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="{StaticResource ButtonPressedBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ScrollBarPageButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <!--  Transparent, but still hit-testable so page scrolling keeps working  -->
+                    <Border Background="Transparent" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style TargetType="ScrollBar">
-        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-        <Setter Property="BorderBrush" Value="Transparent"/>
-        <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Width" Value="15"/>
-        <Setter Property="MinWidth" Value="15"/>
+        <Setter Property="Background" Value="{StaticResource ControlBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="15" />
+        <Setter Property="MinWidth" Value="15" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ScrollBar">
                     <Grid Background="{TemplateBinding Background}">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        
-                        <!-- Up/Left Button -->
-                        <RepeatButton Name="PART_LineUpButton" Grid.Row="0" Height="15"
-                                      Background="{StaticResource ControlBackgroundBrush}"
-                                      BorderBrush="Transparent" BorderThickness="0"
-                                      Content="▲" FontSize="9" Foreground="{StaticResource SecondaryTextBrush}"/>
-                        
-                        <!-- Track -->
-                        <Track Name="PART_Track" Grid.Row="1" IsDirectionReversed="True">
+
+                        <RepeatButton
+                            Name="PART_LineUpButton"
+                            Grid.Row="0"
+                            Height="15"
+                            Command="ScrollBar.LineUpCommand"
+                            Content="▲"
+                            FontSize="9"
+                            Style="{StaticResource ScrollBarLineButtonStyle}" />
+
+                        <Track
+                            Name="PART_Track"
+                            Grid.Row="1"
+                            IsDirectionReversed="True">
                             <Track.Thumb>
-                                <Thumb Width="12" Margin="3,0" 
-                                       Background="{StaticResource ControlBorderBrush}"
-                                       BorderBrush="Transparent" BorderThickness="0">
+                                <Thumb
+                                    Width="12"
+                                    Margin="3,0"
+                                    Background="{StaticResource ControlBorderBrush}"
+                                    BorderBrush="Transparent"
+                                    BorderThickness="0">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border Background="{TemplateBinding Background}" CornerRadius="{StaticResource CornerRadiusValue}"/>
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="{StaticResource CornerRadiusValue}" />
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton>
-                                <RepeatButton Background="Transparent" BorderThickness="0"/>
+                                <RepeatButton
+                                    Name="PART_PageDownButton"
+                                    Command="ScrollBar.PageDownCommand"
+                                    Style="{StaticResource ScrollBarPageButtonStyle}" />
                             </Track.IncreaseRepeatButton>
                             <Track.DecreaseRepeatButton>
-                                <RepeatButton Background="Transparent" BorderThickness="0"/>
+                                <RepeatButton
+                                    Name="PART_PageUpButton"
+                                    Command="ScrollBar.PageUpCommand"
+                                    Style="{StaticResource ScrollBarPageButtonStyle}" />
                             </Track.DecreaseRepeatButton>
                         </Track>
-                        
-                        <!-- Down/Right Button -->
-                        <RepeatButton Name="PART_LineDownButton" Grid.Row="2" Height="15"
-                                      Background="{StaticResource ControlBackgroundBrush}"
-                                      BorderBrush="Transparent" BorderThickness="0"
-                                      Content="▼" FontSize="9" Foreground="{StaticResource SecondaryTextBrush}"/>
+
+                        <RepeatButton
+                            Name="PART_LineDownButton"
+                            Grid.Row="2"
+                            Height="15"
+                            Command="ScrollBar.LineDownCommand"
+                            Content="▼"
+                            FontSize="9"
+                            Style="{StaticResource ScrollBarLineButtonStyle}" />
                     </Grid>
-                    
+
                     <ControlTemplate.Triggers>
                         <Trigger Property="Orientation" Value="Horizontal">
-                            <Setter TargetName="PART_LineUpButton" Property="Content" Value="◀"/>
-                            <Setter TargetName="PART_LineDownButton" Property="Content" Value="▶"/>
-                            <Setter TargetName="PART_LineUpButton" Property="Width" Value="15"/>
-                            <Setter TargetName="PART_LineUpButton" Property="Height" Value="Auto"/>
-                            <Setter TargetName="PART_LineDownButton" Property="Width" Value="15"/>
-                            <Setter TargetName="PART_LineDownButton" Property="Height" Value="Auto"/>
-                            <Setter Property="Height" Value="15"/>
-                            <Setter Property="MinHeight" Value="15"/>
-                            <Setter Property="Width" Value="Auto"/>
-                            <Setter Property="MinWidth" Value="0"/>
-                        </Trigger>
-                        <!-- Hover effects for buttons -->
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="PART_LineUpButton" Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
-                            <Setter TargetName="PART_LineDownButton" Property="Background" Value="{StaticResource ButtonHoverBrush}"/>
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                            <Setter TargetName="PART_LineUpButton" Property="Content" Value="◀" />
+                            <Setter TargetName="PART_LineDownButton" Property="Content" Value="▶" />
+                            <Setter TargetName="PART_LineUpButton" Property="Command" Value="ScrollBar.LineLeftCommand" />
+                            <Setter TargetName="PART_LineDownButton" Property="Command" Value="ScrollBar.LineRightCommand" />
+                            <Setter TargetName="PART_PageUpButton" Property="Command" Value="ScrollBar.PageLeftCommand" />
+                            <Setter TargetName="PART_PageDownButton" Property="Command" Value="ScrollBar.PageRightCommand" />
+                            <Setter TargetName="PART_LineUpButton" Property="Width" Value="15" />
+                            <Setter TargetName="PART_LineUpButton" Property="Height" Value="Auto" />
+                            <Setter TargetName="PART_LineDownButton" Property="Width" Value="15" />
+                            <Setter TargetName="PART_LineDownButton" Property="Height" Value="Auto" />
+                            <Setter Property="Height" Value="15" />
+                            <Setter Property="MinHeight" Value="15" />
+                            <Setter Property="Width" Value="Auto" />
+                            <Setter Property="MinWidth" Value="0" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>
-    
+
     <!-- ScrollViewer Template Override -->
     <Style TargetType="ScrollViewer">
         <Setter Property="Background" Value="Transparent"/>

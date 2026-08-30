@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Windows;
+using VPM.Models;
 using VPM.Windows;
 
 namespace VPM
@@ -10,47 +11,37 @@ namespace VPM
     /// </summary>
     public partial class MainWindow
     {
+        private HubBrowserWindow _hubBrowserWindow;
+
         /// <summary>
         /// Opens the Hub Browser window
         /// </summary>
         private void HubBrowser_Click(object sender, RoutedEventArgs e)
         {
+            OpenHubBrowser(HubWorkView.Browse);
+        }
+
+        internal void OpenHubBrowser(HubWorkView view)
+        {
             try
             {
-                // Get the destination folder (AddonPackages or AllPackages)
                 var destinationFolder = GetHubDownloadFolder();
-                
-                // CRITICAL FIX: Get dictionary of ALL local package names from PackageMetadata
-                // NOT from the filtered Packages UI collection!
-                // This ensures we include packages from BOTH AddonPackages AND AllPackages folders
-                var localPackagePaths = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                if (_packageManager?.PackageMetadata != null)
+                var localPackagePaths = BuildHubLocalPackagePaths();
+
+                if (_hubBrowserWindow != null)
                 {
-                    foreach (var metadata in _packageManager.PackageMetadata.Values)
-                    {
-                        // Only include packages that are on disk (Loaded or Available)
-                        if (metadata.Status != "Loaded" && metadata.Status != "Available")
-                            continue;
-                        
-                        if (!string.IsNullOrEmpty(metadata.FilePath))
-                        {
-                            // Use the actual filename from the file path as the key
-                            // This preserves the exact casing from disk
-                            var name = System.IO.Path.GetFileNameWithoutExtension(metadata.FilePath);
-                            if (!string.IsNullOrEmpty(name) && !localPackagePaths.ContainsKey(name))
-                            {
-                                localPackagePaths[name] = metadata.FilePath;
-                            }
-                        }
-                    }
+                    _hubBrowserWindow.SyncLocalPackages(localPackagePaths);
+                    _hubBrowserWindow.ShowWorkView(view);
+                    return;
                 }
-                
-                var hubWindow = new HubBrowserWindow(destinationFolder, localPackagePaths, _packageManager, _settingsManager, _imageManager);
-                hubWindow.Owner = this;
-                hubWindow.ShowDialog();
-                
-                // Refresh packages after closing Hub browser (in case new packages were downloaded)
-                RefreshPackagesAfterHubDownload();
+
+                _hubBrowserWindow = new HubBrowserWindow(destinationFolder, localPackagePaths, _packageManager, _settingsManager, _imageManager);
+                _hubBrowserWindow.Owner = this;
+                _hubBrowserWindow.LibraryRefreshNeeded += HubBrowser_LibraryRefreshNeeded;
+                _hubBrowserWindow.Closed += HubBrowser_Closed;
+                _hubBrowserWindow.Show();
+                if (view != HubWorkView.Browse)
+                    _hubBrowserWindow.ShowWorkView(view);
             }
             catch (Exception ex)
             {
@@ -59,126 +50,65 @@ namespace VPM
             }
         }
 
-        /// <summary>
-        /// Check for package updates from Hub
-        /// </summary>
-        private async void HubCheckUpdates_Click(object sender, RoutedEventArgs e)
+        private System.Collections.Generic.Dictionary<string, string> BuildHubLocalPackagePaths()
         {
-            try
+            var localPackagePaths = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (_packageManager?.PackageMetadata != null)
             {
-                SetStatus("Checking Hub for updates...");
-                
-                using var hubService = new Services.HubService();
-                
-                // Load packages.json from Hub
-                var loaded = await hubService.LoadPackagesJsonAsync();
-                if (!loaded)
+                foreach (var metadata in _packageManager.PackageMetadata.Values)
                 {
-                    SetStatus("Failed to load Hub package index");
-                    return;
-                }
-                
-                // Check each local package for updates
-                int updatesFound = 0;
-                foreach (var package in Packages ?? Enumerable.Empty<Models.PackageItem>())
-                {
-                    var groupName = GetPackageGroupName(package.Name);
-                    var localVersion = ExtractVersion(package.Name);
-                    
-                    if (localVersion > 0 && hubService.HasUpdate(groupName, localVersion))
+                    if (metadata.Status != "Loaded" && metadata.Status != "Available")
+                        continue;
+
+                    if (!string.IsNullOrEmpty(metadata.FilePath))
                     {
-                        updatesFound++;
-                        // Mark package as having update available
-                        package.Status = "Outdated";
+                        var name = System.IO.Path.GetFileNameWithoutExtension(metadata.FilePath);
+                        if (!string.IsNullOrEmpty(name) && !localPackagePaths.ContainsKey(name))
+                            localPackagePaths[name] = metadata.FilePath;
                     }
                 }
-                
-                if (updatesFound > 0)
-                {
-                    SetStatus($"Found {updatesFound} package(s) with updates available");
-                    MessageBox.Show($"Found {updatesFound} package(s) with updates available on Hub.\n\n" +
-                        "Use Hub > Browse Hub to download updates.", "Updates Available",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    SetStatus("All packages are up to date");
-                    MessageBox.Show("All packages are up to date!", "No Updates",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
             }
-            catch (Exception ex)
+
+            return localPackagePaths;
+        }
+
+        private void HubBrowser_Closed(object sender, EventArgs e)
+        {
+            if (_hubBrowserWindow != null)
             {
-                SetStatus($"Error checking updates: {ex.Message}");
-                MessageBox.Show($"Failed to check for updates:\n\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                _hubBrowserWindow.LibraryRefreshNeeded -= HubBrowser_LibraryRefreshNeeded;
+                _hubBrowserWindow.Closed -= HubBrowser_Closed;
             }
+            _hubBrowserWindow = null;
+            RefreshPackagesAfterHubDownload();
+        }
+
+        private void HubBrowser_LibraryRefreshNeeded(object sender, EventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(RefreshPackagesAfterHubDownload), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        internal void CloseHubBrowserForExit()
+        {
+            if (_hubBrowserWindow == null)
+                return;
+
+            _hubBrowserWindow.PrepareForAppExit();
+            _hubBrowserWindow.Close();
+            _hubBrowserWindow = null;
+        }
+
+        private void HubCheckUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            OpenHubBrowser(HubWorkView.Updates);
         }
 
         /// <summary>
         /// Find and download missing dependencies from Hub
         /// </summary>
-        private async void HubMissingDeps_Click(object sender, RoutedEventArgs e)
+        private void HubMissingDeps_Click(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                // Get missing dependencies from the current view
-                var missingDeps = Dependencies?
-                    .Where(d => d.Status == "Missing" || d.Status == "Not Found")
-                    .Select(d => d.DisplayName)
-                    .Distinct()
-                    .ToList();
-                
-                if (missingDeps == null || !missingDeps.Any())
-                {
-                    MessageBox.Show("No missing dependencies found.\n\n" +
-                        "Select a package first to see its dependencies.", "No Missing Dependencies",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-                
-                SetStatus($"Searching Hub for {missingDeps.Count} missing dependencies...");
-                
-                using var hubService = new Services.HubService();
-                
-                // Find packages on Hub
-                var foundPackages = await hubService.FindPackagesAsync(missingDeps);
-                
-                var downloadable = foundPackages.Values.Where(p => !p.NotOnHub).ToList();
-                var notFound = missingDeps.Count - downloadable.Count;
-                
-                if (downloadable.Any())
-                {
-                    var message = $"Found {downloadable.Count} of {missingDeps.Count} missing dependencies on Hub.";
-                    if (notFound > 0)
-                    {
-                        message += $"\n\n{notFound} package(s) are not available on Hub.";
-                    }
-                    message += "\n\nWould you like to open the Hub Browser to download them?";
-                    
-                    var result = MessageBox.Show(message, "Missing Dependencies Found",
-                        MessageBoxButton.YesNo, MessageBoxImage.Question);
-                    
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        HubBrowser_Click(sender, e);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show($"None of the {missingDeps.Count} missing dependencies were found on Hub.\n\n" +
-                        "They may be from external sources or no longer available.", "Not Found on Hub",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-                
-                SetStatus("Ready");
-            }
-            catch (Exception ex)
-            {
-                SetStatus($"Error finding dependencies: {ex.Message}");
-                MessageBox.Show($"Failed to find missing dependencies:\n\n{ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            OpenHubBrowser(HubWorkView.Missing);
         }
 
         /// <summary>
@@ -186,27 +116,20 @@ namespace VPM
         /// </summary>
         private string GetHubDownloadFolder()
         {
-            // Use AddonPackages folder if available, otherwise use AllPackages
             if (!string.IsNullOrEmpty(_settingsManager?.Settings?.SelectedFolder))
             {
                 var addonPackages = System.IO.Path.Combine(_settingsManager.Settings.SelectedFolder, "AddonPackages");
                 if (System.IO.Directory.Exists(addonPackages))
-                {
                     return addonPackages;
-                }
-                
-                // Try AllPackages as fallback
+
                 var allPackages = System.IO.Path.Combine(_settingsManager.Settings.SelectedFolder, "AllPackages");
                 if (System.IO.Directory.Exists(allPackages))
-                {
                     return allPackages;
-                }
-                
-                // Create AddonPackages if neither exists
+
                 System.IO.Directory.CreateDirectory(addonPackages);
                 return addonPackages;
             }
-            
+
             return System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads");
         }
 
@@ -215,7 +138,6 @@ namespace VPM
         /// </summary>
         private void RefreshPackagesAfterHubDownload()
         {
-            // Trigger a refresh to pick up newly downloaded packages
             try
             {
                 SetStatus("Refreshing packages after Hub download...");
@@ -234,7 +156,7 @@ namespace VPM
         private static int ExtractVersion(string packageName)
         {
             var name = packageName?.Replace(".var", "") ?? "";
-            
+
             for (int i = name.Length - 1; i >= 0; i--)
             {
                 if (name[i] == '.')
@@ -243,13 +165,11 @@ namespace VPM
                     {
                         var afterDot = name.Substring(i + 1);
                         if (int.TryParse(afterDot, out var version))
-                        {
                             return version;
-                        }
                     }
                 }
             }
-            
+
             return -1;
         }
 
@@ -259,7 +179,7 @@ namespace VPM
         private static string GetPackageGroupName(string packageName)
         {
             var name = packageName?.Replace(".var", "") ?? "";
-            
+
             for (int i = name.Length - 1; i >= 0; i--)
             {
                 if (name[i] == '.')
@@ -268,13 +188,11 @@ namespace VPM
                     {
                         var afterDot = name.Substring(i + 1);
                         if (int.TryParse(afterDot, out _))
-                        {
                             return name.Substring(0, i);
-                        }
                     }
                 }
             }
-            
+
             return name;
         }
     }

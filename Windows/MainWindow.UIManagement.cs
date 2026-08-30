@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -21,6 +21,7 @@ namespace VPM
     public partial class MainWindow
     {
         private bool _settingsPropertyChangedHooked;
+        private bool _uiScaleHooked;
         private string _selectedFolder = "";
         private string _currentTheme = "System";
         
@@ -465,6 +466,64 @@ namespace VPM
             }
         }
 
+        private void HookUiScale()
+        {
+            if (_uiScaleHooked)
+                return;
+            UiScaleService.Bind(_settingsManager);
+            UiScaleService.ScaleChanged += OnUiScaleChanged;
+            _uiScaleHooked = true;
+        }
+
+        private void OnUiScaleChanged(double scale)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.BeginInvoke(new Action(() => OnUiScaleChanged(scale)));
+                return;
+            }
+
+            UpdateUiScaleMenuItems();
+            SetStatus("UI scale " + UiScaleLevels.FormatPercent(scale));
+        }
+
+        private void UpdateUiScaleMenuItems()
+        {
+            var scale = UiScaleService.Current;
+            SetUiScaleMenuChecked(UiScale50MenuItem, 0.5, scale);
+            SetUiScaleMenuChecked(UiScale75MenuItem, 0.75, scale);
+            SetUiScaleMenuChecked(UiScale100MenuItem, 1.0, scale);
+            SetUiScaleMenuChecked(UiScale125MenuItem, 1.25, scale);
+            SetUiScaleMenuChecked(UiScale150MenuItem, 1.5, scale);
+
+            if (UiScaleLargerMenuItem is not null)
+                UiScaleLargerMenuItem.IsEnabled = UiScaleLevels.CanIncrease(scale);
+            if (UiScaleSmallerMenuItem is not null)
+                UiScaleSmallerMenuItem.IsEnabled = UiScaleLevels.CanDecrease(scale);
+
+            if (StatusUiScaleText != null)
+            {
+                bool isDefault = Math.Abs(scale - UiScaleLevels.Default) < 0.0001;
+                StatusUiScaleText.Visibility = isDefault ? Visibility.Collapsed : Visibility.Visible;
+                StatusUiScaleText.Text = "UI " + UiScaleLevels.FormatPercent(scale);
+
+                if (StatusUiScaleText.ContextMenu != null)
+                {
+                    foreach (var item in StatusUiScaleText.ContextMenu.Items)
+                    {
+                        if (item is MenuItem menuItem && TryParseUiScaleTag(menuItem.Tag, out var itemScale))
+                            menuItem.IsChecked = Math.Abs(itemScale - scale) < 0.0001;
+                    }
+                }
+            }
+        }
+
+        private static void SetUiScaleMenuChecked(MenuItem item, double itemScale, double current)
+        {
+            if (item is not null)
+                item.IsChecked = Math.Abs(itemScale - current) < 0.0001;
+        }
+
         private void ApplyDarkTitleBar()
         {
             try
@@ -499,6 +558,10 @@ namespace VPM
             
             // Apply theme
             SwitchTheme(settings.Theme);
+
+            HookUiScale();
+            UiScaleService.ApplyToWindow(this);
+            UpdateUiScaleMenuItems();
             
             // Apply selected folder
             _selectedFolder = settings.SelectedFolder;
@@ -560,6 +623,22 @@ namespace VPM
                     }), System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             }
+
+            RefreshVpbToolbarChrome();
+        }
+
+        /// <summary>Custom mode keeps the package filter container so VPB rating/tag lists stay available, but hides every other package section.</summary>
+        private void SetPackageFilterSectionsForMode()
+        {
+            if (PackageFiltersContainer == null) return;
+            bool customOnlyVpb = _currentContentMode == "Custom";
+            foreach (var child in PackageFiltersContainer.Children.OfType<FrameworkElement>())
+            {
+                bool isVpb = child.Name == "VpbRatingFilterSection" || child.Name == "VpbTagFilterSection";
+                child.Visibility = customOnlyVpb && !isVpb
+                    ? System.Windows.Visibility.Collapsed
+                    : System.Windows.Visibility.Visible;
+            }
         }
 
         /// <summary>
@@ -569,11 +648,13 @@ namespace VPM
         {
             // First, ensure the correct filter container is visible based on mode
             if (PackageFiltersContainer != null)
-                PackageFiltersContainer.Visibility = (_currentContentMode == "Packages") ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                PackageFiltersContainer.Visibility = (_currentContentMode == "Packages" || _currentContentMode == "Custom") ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
             if (SceneFiltersContainer != null)
                 SceneFiltersContainer.Visibility = (_currentContentMode == "Scenes") ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
             if (PresetFiltersContainer != null)
                 PresetFiltersContainer.Visibility = (_currentContentMode == "Presets" || _currentContentMode == "Custom") ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+            SetPackageFilterSectionsForMode();
             
             // Only apply package filters in Packages mode
             if (_currentContentMode == "Packages")
@@ -631,6 +712,20 @@ namespace VPM
                     PlaylistsFilterExpandedGrid.Visibility = settings.PlaylistsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
                     PlaylistsFilterCollapsedGrid.Visibility = settings.PlaylistsFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
                 }
+
+                if (VpbRatingFilterList != null && VpbRatingFilterExpandedGrid != null && VpbRatingFilterCollapsedGrid != null)
+                {
+                    VpbRatingFilterList.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbRatingFilterExpandedGrid.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbRatingFilterCollapsedGrid.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+
+                if (VpbTagFilterList != null && VpbTagFilterExpandedGrid != null && VpbTagFilterCollapsedGrid != null)
+                {
+                    VpbTagFilterList.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbTagFilterExpandedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbTagFilterCollapsedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
                 
                 // Subfolders Filter
                 if (SubfoldersFilterList != null && SubfoldersFilterTextBoxGrid != null && SubfoldersFilterCollapsedGrid != null)
@@ -654,6 +749,23 @@ namespace VPM
                     DestinationsFilterList.Visibility = settings.DestinationsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
                     DestinationsFilterTextBoxGrid.Visibility = settings.DestinationsFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
                     DestinationsFilterCollapsedGrid.Visibility = settings.DestinationsFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+            }
+            
+            if (_currentContentMode == "Packages" || _currentContentMode == "Custom")
+            {
+                if (VpbRatingFilterList != null && VpbRatingFilterExpandedGrid != null && VpbRatingFilterCollapsedGrid != null)
+                {
+                    VpbRatingFilterList.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbRatingFilterExpandedGrid.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbRatingFilterCollapsedGrid.Visibility = settings.VpbRatingFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+
+                if (VpbTagFilterList != null && VpbTagFilterExpandedGrid != null && VpbTagFilterCollapsedGrid != null)
+                {
+                    VpbTagFilterList.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbTagFilterExpandedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbTagFilterCollapsedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
                 }
             }
             
@@ -776,6 +888,11 @@ namespace VPM
             {
                 SwitchTheme(settings.Theme);
             }
+
+            if (Math.Abs(UiScaleService.Current - settings.UiScale) > 0.0001)
+            {
+                UiScaleService.SetScale(settings.UiScale);
+            }
             
             // Apply folder if changed
             if (_selectedFolder != settings.SelectedFolder)
@@ -821,6 +938,8 @@ namespace VPM
                         break;
                     case "Custom":
                         ApplyFilterOrder(_settingsManager.Settings.PresetFilterOrder, PresetFiltersContainer);
+                        ApplyFilterOrder(_settingsManager.Settings.PackageFilterOrder, PackageFiltersContainer);
+                        SetPackageFilterSectionsForMode();
                         break;
                 }
             }
@@ -1033,15 +1152,9 @@ namespace VPM
                 var totalPackagesWithImages = _imageManager.PreviewImageIndex.Count;
                 var avgImagesPerPackage = totalPackagesWithImages > 0 ? (double)totalImages / totalPackagesWithImages : 0;
 
-                // Reload favorites and autoinstall to get latest changes from game
                 if (_favoritesManager != null)
                 {
                     _favoritesManager.ReloadFavorites();
-                }
-                
-                if (_autoInstallManager != null)
-                {
-                    _autoInstallManager.ReloadAutoInstall();
                 }
 
                 // Sync filter manager with current UI selections before updating package list
@@ -1050,12 +1163,28 @@ namespace VPM
                 
                 // Update playlist tags cache before rebuilding package items
                 UpdatePlaylistTagsCache();
+
+                RefreshVpbData();
                 
                 // Force cache rebuild since package statuses might have changed even if count is same
                 _packageItemCacheVersion = -1;
 
                 // Update UI with real package data
                 await UpdatePackageListAsync();
+
+                EnsureScanControl();
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    var rescan = await EnsureWhitelistLibraryAsync();
+                    if (rescan)
+                    {
+                        RefreshPackages();
+                        return;
+                    }
+                    _scanControl.ApplyStatuses();
+                    ApplyWhitelistStatusesToUi();
+                }
+                RefreshScanStatusChrome();
                 
                 // Check for package updates after packages are loaded
                 _ = CheckForPackageUpdatesAsync();
@@ -1144,6 +1273,8 @@ namespace VPM
 
         private Task UpdatePackageListAsync(bool refreshFilterLists = true)
         {
+            EnsureVpbData();
+
             // Cancel any previous filter operation
             _filterCts?.Cancel();
             _filterCts?.Dispose();
@@ -1431,7 +1562,6 @@ namespace VPM
                 bool hasAnyNonExternalFilterActive =
                     (filterSnapshot.SelectedStatuses.Count > 0 && !externalExplicitlySelected && !localExplicitlySelected) ||
                     filterSnapshot.SelectedFavoriteStatuses.Count > 0 ||
-                    filterSnapshot.SelectedAutoInstallStatuses.Count > 0 ||
                     filterSnapshot.SelectedVersionStatuses.Count > 0 ||
                     filterSnapshot.FilterDuplicates ||
                     filterSnapshot.FilterNoDependents ||
@@ -1466,10 +1596,11 @@ namespace VPM
             if (_packageItemCache.TryGetValue(metadataKey, out var cachedItem))
             {
                 cachedItem.IsFavorite = _favoritesManager?.IsFavorite(cachedItem.Name) ?? false;
-                cachedItem.IsAutoInstall = _autoInstallManager?.IsAutoInstall(cachedItem.Name) ?? false;
                 
                 cachedItem.PlaylistTags = _playlistTagsCache.TryGetValue(baseKey, out var cachedTags) ? cachedTags : "";
                 
+                ApplyVpbToItem(cachedItem, metadata);
+
                 return cachedItem;
             }
             
@@ -1493,7 +1624,6 @@ namespace VPM
                 IsOldVersion = metadata.IsOldVersion,
                 LatestVersionNumber = metadata.LatestVersionNumber,
                 IsFavorite = _favoritesManager?.IsFavorite(packageName) ?? false,
-                IsAutoInstall = _autoInstallManager?.IsAutoInstall(packageName) ?? false,
                 MorphCount = metadata.MorphCount,
                 HairCount = metadata.HairCount,
                 ClothingCount = metadata.ClothingCount,
@@ -1511,6 +1641,7 @@ namespace VPM
                 OriginalExternalDestinationColorHex = metadata.OriginalExternalDestinationColorHex
             };
             
+            ApplyVpbToItem(newItem, metadata);
             _packageItemCache[metadataKey] = newItem;
             return newItem;
         }
@@ -1853,9 +1984,8 @@ namespace VPM
                     }
                 }
                 
-                // Get favorites and autoinstall counts
                 int favoriteCount = 0;
-                int autoInstallCount = 0;
+
                 if (_favoritesManager != null)
                 {
                     var favorites = _favoritesManager.GetAllFavorites();
@@ -1866,19 +1996,6 @@ namespace VPM
                             ? kvp.Value.PackageName 
                             : System.IO.Path.GetFileNameWithoutExtension(kvp.Value.Filename);
                         return favorites.Contains(pkgName);
-                    });
-                }
-                
-                if (_autoInstallManager != null)
-                {
-                    var autoInstall = _autoInstallManager.GetAllAutoInstall();
-                    // Use parallel processing for counting
-                    autoInstallCount = _packageManager.PackageMetadata.AsParallel().Count(kvp => 
-                    {
-                        var pkgName = !string.IsNullOrEmpty(kvp.Value.PackageName) 
-                            ? kvp.Value.PackageName 
-                            : System.IO.Path.GetFileNameWithoutExtension(kvp.Value.Filename);
-                        return autoInstall.Contains(pkgName);
                     });
                 }
                 
@@ -2042,17 +2159,6 @@ namespace VPM
                             if (selectedStatuses.Contains("Favorites"))
                             {
                                 StatusFilterList.SelectedItems.Add(favText);
-                            }
-                        }
-
-                        if (_autoInstallManager != null && _packageManager?.PackageMetadata != null)
-                        {
-                            var autoInstallText = $"AutoInstall ({autoInstallCount:N0})";
-                            StatusFilterList.Items.Add(autoInstallText);
-                            
-                            if (selectedStatuses.Contains("AutoInstall"))
-                            {
-                                StatusFilterList.SelectedItems.Add(autoInstallText);
                             }
                         }
 
@@ -2331,6 +2437,8 @@ namespace VPM
                             }
                         }
                         
+                        PopulateVpbFilterLists(packagesToCount);
+
                         // Restore filter list sorting after lists are populated
                         RestoreFilterListsSorting();
                         
@@ -2633,13 +2741,31 @@ namespace VPM
         /// </summary>
         private void SetStatus(string message)
         {
-            // Update the status text in the title bar
             if (StatusText != null)
             {
                 StatusText.Text = message;
             }
-            // Also keep window title updated for reference
             this.Title = $"VPM - {message}";
+            UpdateStatusBarMeta();
+        }
+
+        private void UpdateStatusBarMeta()
+        {
+            if (StatusModeText != null)
+                StatusModeText.Text = _currentContentMode ?? "Packages";
+
+            if (StatusSelectionText == null)
+                return;
+
+            int n;
+            if (_currentContentMode == "Custom" || _currentContentMode == "Presets")
+                n = CustomAtomDataGrid?.SelectedItems?.Count ?? 0;
+            else if (_currentContentMode == "Scenes")
+                n = ScenesDataGrid?.SelectedItems?.Count ?? 0;
+            else
+                n = PackageDataGrid?.SelectedItems?.Count ?? 0;
+
+            StatusSelectionText.Text = n == 0 ? "" : $"{n} selected";
         }
 
         /// <summary>
@@ -2649,7 +2775,7 @@ namespace VPM
         {
             if (_packageFileManager == null)
             {
-                MessageBox.Show("Please select a VAM folder first.", "No VAM Folder", 
+                CustomMessageBox.Show("Please select a VAM folder first.", "No VAM Folder",
                                MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }

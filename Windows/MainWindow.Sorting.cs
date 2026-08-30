@@ -76,6 +76,7 @@ namespace VPM
                 RestoreFilterListSorting("Creators", CreatorsList, CreatorsSortButton);
                 RestoreFilterListSorting("LicenseTypes", LicenseTypeList, LicenseTypeSortButton);
                 RestoreFilterListSorting("Subfolders", SubfoldersFilterList, SubfoldersSortButton);
+                RestoreFilterListSorting("VpbTags", VpbTagFilterList, VpbTagsSortButton);
             }
             catch (Exception)
             {
@@ -629,6 +630,9 @@ namespace VPM
         private void SubfoldersSortButton_Click(object sender, RoutedEventArgs e) =>
             ShowFilterSortMenu("Subfolders", SubfoldersFilterList, SubfoldersSortButton);
 
+        private void VpbTagsSortButton_Click(object sender, RoutedEventArgs e) =>
+            ShowFilterSortMenu("VpbTags", VpbTagFilterList, VpbTagsSortButton);
+
 
         private void ShowFilterSortMenu(string filterType, ListBox listBox, Button sortButton)
         {
@@ -777,6 +781,10 @@ namespace VPM
                 if (filterType == "Status" || filterType == "ContentTypes" || filterType == "Creators" || filterType == "LicenseTypes" || filterType == "Subfolders")
                 {
                     PopulateFilterLists();
+                }
+                else if (filterType == "VpbTags")
+                {
+                    FilterVpbTagsList(VpbTagFilterBox?.Text ?? "");
                 }
             }
             catch (Exception)

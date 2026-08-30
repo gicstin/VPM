@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Input;
 
 namespace VPM
 {
@@ -139,6 +140,11 @@ namespace VPM
             StatusText.Text = $"Found {_packageVersions.Count} version(s). Select one to keep - others will be deleted.";
         }
         
+        private void DataGrid_PreventGripperAutoCollapse(object sender, MouseButtonEventArgs e)
+        {
+            DataGridGripperAutoSize.SuppressIfGripperDoubleClick(e);
+        }
+
         private void KeepSelected_Click(object sender, RoutedEventArgs e)
         {
             if (VersionsDataGrid.SelectedItem is PackageVersionItem selectedVersion)

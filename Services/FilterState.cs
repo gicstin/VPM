@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using VPM.Models;
 
@@ -12,7 +12,6 @@ namespace VPM.Services
         public string SelectedStatus { get; set; }
         public HashSet<string> SelectedStatuses { get; set; }
         public HashSet<string> SelectedFavoriteStatuses { get; set; }
-        public HashSet<string> SelectedAutoInstallStatuses { get; set; }
         public HashSet<string> SelectedVersionStatuses { get; set; }
         public string SelectedCategory { get; set; }
         public HashSet<string> SelectedCategories { get; set; }
@@ -29,7 +28,6 @@ namespace VPM.Services
         public bool FilterCustomDependents { get; set; }
         public DateFilter DateFilter { get; set; }
         public FavoritesManager FavoritesManager { get; set; }
-        public AutoInstallManager AutoInstallManager { get; set; }
         public Func<VarMetadata, bool> HasCustomDependentsFunc { get; set; }
         public double FileSizeTinyMax { get; set; }
         public double FileSizeSmallMax { get; set; }
@@ -53,5 +51,15 @@ namespace VPM.Services
 
         // Lookup for base package key => playlist tags (e.g. "P1 P2")
         public IReadOnlyDictionary<string, string> PlaylistTagsCache { get; set; }
+
+        // VPB ratings ("5"…"0") and tags: OR inside each group, AND between them.
+        public HashSet<string> SelectedVpbRatings { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public HashSet<string> SelectedVpbTags { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>"Untagged" was picked in the tag filter: match packages carrying no VPB tag at all.</summary>
+        public bool VpbUntaggedOnly { get; set; }
+
+        /// <summary>Ratings and tags VPB currently knows about, keyed by package uid.</summary>
+        public VPM.Services.Vpb.VpbLibraryData VpbData { get; set; }
     }
 }

@@ -9,6 +9,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using VPM.Models;
+using VPM.Services;
 using System.IO;
 
 namespace VPM
@@ -151,6 +152,19 @@ namespace VPM
 
                     if (result != MessageBoxResult.Yes)
                         return;
+                }
+
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    var toInclude = selectedPackages.Where(p => !p.IsExternal).ToList();
+                    if (toInclude.Count > 0)
+                        TryWhitelistInclude(toInclude, withDeps: false);
+                    selectedPackages = selectedPackages.Where(p => p.IsExternal).ToList();
+                    if (selectedPackages.Count == 0)
+                    {
+                        ApplyWhitelistStatusesToUi();
+                        return;
+                    }
                 }
 
                 // Disable UI during operation
@@ -347,6 +361,14 @@ namespace VPM
             try
             {
                 if (!EnsureVamFolderSelected()) return (false, 0);
+
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    EnsureScanControl();
+                    _scanControl.Include(packageNames, exclusive: false, withDeps: true);
+                    ApplyWhitelistStatusesToUi();
+                    return (true, 0);
+                }
 
                 if (packageNames == null || packageNames.Count == 0)
                 {
@@ -690,6 +712,13 @@ namespace VPM
                     return;
                 }
 
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    TryWhitelistInclude(selectedPackages.Where(p => !p.IsExternal), withDeps: true);
+                    ApplyWhitelistStatusesToUi();
+                    return;
+                }
+
                 await LoadPackagesWithDependenciesAsync(
                     selectedPackages.Select(p =>
                     {
@@ -724,6 +753,13 @@ namespace VPM
                 {
                     MessageBox.Show("No loaded or external packages selected.", "No Packages",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    TryWhitelistExclude(selectedPackages.Where(p => !p.IsExternal));
+                    ApplyWhitelistStatusesToUi();
                     return;
                 }
 
@@ -888,6 +924,16 @@ namespace VPM
                     MessageBox.Show("No available, outdated, archived, or external dependencies selected.", "No Dependencies",
                                    MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
+                }
+
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    var toInclude = selectedDependencies.Where(d => d.Status?.StartsWith("#") != true).ToList();
+                    if (toInclude.Count > 0)
+                        TryWhitelistDependencies(toInclude, include: true);
+                    selectedDependencies = selectedDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
+                    if (selectedDependencies.Count == 0)
+                        return;
                 }
 
                 // Enhanced confirmation dialog with better information
@@ -1112,6 +1158,12 @@ namespace VPM
                     return;
                 }
 
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    TryWhitelistDependencies(selectedDependencies, include: false);
+                    return;
+                }
+
                 // Only show confirmation for large batches (100+ dependencies)
                 if (selectedDependencies.Count >= 100)
                 {
@@ -1310,6 +1362,16 @@ namespace VPM
                     return;
                 }
 
+                if (_scanControl?.IsWhitelistMode == true)
+                {
+                    var toInclude = allAvailableDependencies.Where(d => d.Status?.StartsWith("#") != true).ToList();
+                    if (toInclude.Count > 0)
+                        TryWhitelistDependencies(toInclude, include: true);
+                    allAvailableDependencies = allAvailableDependencies.Where(d => d.Status?.StartsWith("#") == true).ToList();
+                    if (allAvailableDependencies.Count == 0)
+                        return;
+                }
+
                 // Enhanced confirmation dialog with better information
                 if (allAvailableDependencies.Count >= 100)
                 {
@@ -1467,6 +1529,14 @@ namespace VPM
             return anyInOffloadedVars && (_baVarManagementEnabled ?? false);
         }
 
+        private static string FormatActionButton(string verb, int count, string shortcut)
+        {
+            var text = count > 1 ? $"{verb} ({count})" : verb;
+            if (string.IsNullOrEmpty(shortcut))
+                return text;
+            return $"{text} ({shortcut})";
+        }
+
         /// <summary>
         /// Updates the visibility and state of buttons in the package button bar based on selected packages
         /// </summary>
@@ -1493,18 +1563,11 @@ namespace VPM
                     if (selectedItems.Count > 0 && hasAvailableDependencies)
                     {
                         var availableCount = Dependencies.Count(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || d.Status?.StartsWith("#") == true);
-                        if (selectedItems.Count == 1)
-                        {
-                            LoadAllDependenciesButton.Content = availableCount == 1 
-                                ? "📥 Load Dependency (Space)" 
-                                : $"📥 Load All Dependencies ({availableCount}) (Space)";
-                        }
-                        else
-                        {
-                            LoadAllDependenciesButton.Content = availableCount == 1 
-                                ? "📥 Load Dependency (Ctrl+Space)" 
-                                : $"📥 Load All Dependencies ({availableCount}) (Ctrl+Space)";
-                        }
+                        var allVerb = PackageStatusDisplay.UseWhitelistVerbs
+                            ? (availableCount == 1 ? "✅ Whitelist Dependency" : "✅ Whitelist All Dependencies")
+                            : (availableCount == 1 ? "📥 Load Dependency" : "📥 Load All Dependencies");
+                        var shortcut = selectedItems.Count == 1 ? "Space" : "Ctrl+Space";
+                        LoadAllDependenciesButton.Content = FormatActionButton(allVerb, availableCount, shortcut);
                     }
                     
                     return;
@@ -1600,66 +1663,58 @@ namespace VPM
                 var normalizedStatuses = selectedPackages.Select(p => p.IsExternal ? "Available" : p.Status).Distinct().ToList();
                 bool allSameStatus = normalizedStatuses.Count == 1;
 
-                // Update button text and tooltip to reflect count
-                // Show keyboard shortcut hint consistently when all items have same status
+                string loadVerb = PackageStatusDisplay.IncludeVerb;
+                string depsVerb = PackageStatusDisplay.IncludeDepsVerb;
+                string unloadVerb = PackageStatusDisplay.ExcludeVerb;
+
                 if (hasAvailable || hasExternal)
                 {
-                    // Count both available and external packages for load operations
                     var loadableCount = selectedPackages.Count(p => p.Status == "Available" || p.IsExternal);
 
                     if (baBlocksLoad)
                     {
-                        LoadPackagesButton.Content = "📥 Load";
+                        LoadPackagesButton.Content = loadVerb;
                         LoadPackagesButton.ToolTip = "Disabled while BrowserAssist is managing packages";
-                        LoadPackagesWithDepsButton.Content = "📥 Load +Deps";
+                        LoadPackagesWithDepsButton.Content = depsVerb;
                         LoadPackagesWithDepsButton.ToolTip = "Disabled while BrowserAssist is managing packages";
                     }
-                    // Show keyboard shortcut if all selected items have same normalized status
                     else if (allSameStatus && normalizedStatuses[0] == "Available")
                     {
-                        LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
-                        LoadPackagesButton.ToolTip = loadableCount == 1 ? "Load selected package" : $"Load {loadableCount} selected packages";
-                        LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps (Shift+Space)" : $"📥 Load +Deps ({loadableCount}) (Shift+Space)";
-                        LoadPackagesWithDepsButton.ToolTip = loadableCount == 1 ? "Load selected package and dependencies" : $"Load {loadableCount} selected packages and their dependencies";
+                        LoadPackagesButton.Content = FormatActionButton(loadVerb, loadableCount, loadableCount == 1 ? "Space" : "Ctrl+Space");
+                        LoadPackagesButton.ToolTip = PackageStatusDisplay.IncludeTooltip;
+                        LoadPackagesWithDepsButton.Content = FormatActionButton(depsVerb, loadableCount, "Shift+Space");
+                        LoadPackagesWithDepsButton.ToolTip = PackageStatusDisplay.IncludeDepsTooltip;
                     }
                     else
                     {
-                        // Mixed statuses - no keyboard shortcut
-                        LoadPackagesButton.Content = loadableCount == 1 ? "📥 Load" : $"📥 Load ({loadableCount})";
-                        LoadPackagesButton.ToolTip = $"Load {loadableCount} available/external packages";
-                        LoadPackagesWithDepsButton.Content = loadableCount == 1 ? "📥 Load +Deps" : $"📥 Load +Deps ({loadableCount})";
-                        LoadPackagesWithDepsButton.ToolTip = $"Load {loadableCount} available/external packages and their dependencies";
+                        LoadPackagesButton.Content = FormatActionButton(loadVerb, loadableCount, null);
+                        LoadPackagesButton.ToolTip = PackageStatusDisplay.IncludeTooltip;
+                        LoadPackagesWithDepsButton.Content = FormatActionButton(depsVerb, loadableCount, null);
+                        LoadPackagesWithDepsButton.ToolTip = PackageStatusDisplay.IncludeDepsTooltip;
                     }
                 }
                 else if (hasAvailableDependencies)
                 {
-                    // Parent already Loaded — Load +Deps only needs to pull Available deps
                     var availableDepCount = Dependencies.Count(d =>
                         (d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || d.Status?.StartsWith("#") == true)
                         && d.Name != "No dependencies");
-                    LoadPackagesWithDepsButton.Content = availableDepCount == 1
-                        ? "📥 Load +Deps (Shift+Space)"
-                        : $"📥 Load +Deps ({availableDepCount}) (Shift+Space)";
-                    LoadPackagesWithDepsButton.ToolTip = availableDepCount == 1
-                        ? "Load missing dependency for selected package"
-                        : $"Load {availableDepCount} missing dependencies for selected package(s)";
+                    LoadPackagesWithDepsButton.Content = FormatActionButton(depsVerb, availableDepCount, "Shift+Space");
+                    LoadPackagesWithDepsButton.ToolTip = PackageStatusDisplay.IncludeDepsTooltip;
                 }
 
                 if (hasLoaded)
                 {
                     var loadedCount = selectedPackages.Count(p => p.Status == "Loaded");
 
-                    // Show keyboard shortcut if all selected items have same status
                     if (allSameStatus && normalizedStatuses[0] == "Loaded")
                     {
-                        UnloadPackagesButton.Content = loadedCount == 1 ? "📤 Unload (Space)" : $"📤 Unload ({loadedCount}) (Ctrl+Space)";
-                        UnloadPackagesButton.ToolTip = loadedCount == 1 ? "Unload selected package" : $"Unload {loadedCount} selected packages";
+                        UnloadPackagesButton.Content = FormatActionButton(unloadVerb, loadedCount, loadedCount == 1 ? "Space" : "Ctrl+Space");
+                        UnloadPackagesButton.ToolTip = PackageStatusDisplay.ExcludeTooltip;
                     }
                     else
                     {
-                        // Mixed statuses - no keyboard shortcut
-                        UnloadPackagesButton.Content = loadedCount == 1 ? "📤 Unload" : $"📤 Unload ({loadedCount})";
-                        UnloadPackagesButton.ToolTip = $"Unload {loadedCount} loaded packages";
+                        UnloadPackagesButton.Content = FormatActionButton(unloadVerb, loadedCount, null);
+                        UnloadPackagesButton.ToolTip = PackageStatusDisplay.ExcludeTooltip;
                     }
                 }
 
@@ -1771,41 +1826,30 @@ namespace VPM
                 LoadDependenciesButton.IsEnabled = !baBlocksDepsLoad;
                 LoadDependenciesButton.ToolTip = baBlocksDepsLoad
                     ? "Disabled while BrowserAssist is managing this package"
-                    : "Load selected dependencies";
+                    : PackageStatusDisplay.IncludeDepsRowTooltip;
+                UnloadDependenciesButton.ToolTip = PackageStatusDisplay.ExcludeDepsRowTooltip;
 
                 // Show Unload button if any dependencies are Loaded
                 UnloadDependenciesButton.Visibility = hasLoaded ? Visibility.Visible : Visibility.Collapsed;
 
-                // Update button text to reflect count and keyboard shortcuts
                 if (hasAvailable || hasOutdated || hasArchived || hasExternal)
                 {
-                    // Count available, outdated, archived, and external dependencies for load operations
                     var loadableCount = selectedDependencies.Count(d => d.Status == "Available" || d.Status == "Outdated" || d.Status == "Archived" || (d.Status?.StartsWith("#") == true));
-
-                    // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
-                    if (allSameStatus && (allStatuses[0] == "Available" || allStatuses[0] == "Outdated" || allStatuses[0] == "Archived") && _dependenciesDataGridHasFocus)
-                    {
-                        LoadDependenciesButton.Content = loadableCount == 1 ? "📥 Load (Space)" : $"📥 Load ({loadableCount}) (Ctrl+Space)";
-                    }
-                    else
-                    {
-                        LoadDependenciesButton.Content = loadableCount == 1 ? "📥 Load" : $"📥 Load ({loadableCount})";
-                    }
+                    var showShortcut = allSameStatus && (allStatuses[0] == "Available" || allStatuses[0] == "Outdated" || allStatuses[0] == "Archived") && _dependenciesDataGridHasFocus;
+                    LoadDependenciesButton.Content = FormatActionButton(
+                        PackageStatusDisplay.IncludeVerb,
+                        loadableCount,
+                        showShortcut ? (loadableCount == 1 ? "Space" : "Ctrl+Space") : null);
                 }
 
                 if (hasLoaded)
                 {
                     var loadedCount = selectedDependencies.Count(d => d.Status == "Loaded");
-
-                    // Show keyboard shortcut only if all selected items have same status AND DependenciesDataGrid has focus
-                    if (allSameStatus && allStatuses[0] == "Loaded" && _dependenciesDataGridHasFocus)
-                    {
-                        UnloadDependenciesButton.Content = loadedCount == 1 ? "📤 Unload (Space)" : $"📤 Unload ({loadedCount}) (Ctrl+Space)";
-                    }
-                    else
-                    {
-                        UnloadDependenciesButton.Content = loadedCount == 1 ? "📤 Unload" : $"📤 Unload ({loadedCount})";
-                    }
+                    var showShortcut = allSameStatus && allStatuses[0] == "Loaded" && _dependenciesDataGridHasFocus;
+                    UnloadDependenciesButton.Content = FormatActionButton(
+                        PackageStatusDisplay.ExcludeVerb,
+                        loadedCount,
+                        showShortcut ? (loadedCount == 1 ? "Space" : "Ctrl+Space") : null);
                 }
 
                 // Update layout (StackPanel handles this automatically now)
@@ -1897,11 +1941,11 @@ namespace VPM
 
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            // Update the package status if it changed
-                            if (packageItem.Status != actualStatus)
-                            {
-                                packageItem.Status = actualStatus;
-                            }
+                            var resolved = _scanControl?.IsWhitelistMode == true
+                                ? _scanControl.ResolveDisplayStatus(packageName)
+                                : actualStatus;
+                            if (packageItem.Status != resolved)
+                                packageItem.Status = resolved;
                         });
                     }
 
@@ -1970,6 +2014,14 @@ namespace VPM
 
             try
             {
+                string OverlayStatus(string name, string fallback)
+                {
+                    if (_scanControl?.IsWhitelistMode == true)
+                        return _scanControl.ResolveDisplayStatus(name);
+                    var fs = _packageFileManager?.GetPackageStatus(name);
+                    return !string.IsNullOrEmpty(fs) && fs != "Missing" && fs != "Unknown" ? fs : fallback;
+                }
+
                 // Force index refresh to ensure file system changes are recognized
                 if (_packageFileManager != null)
                 {
@@ -2037,12 +2089,8 @@ namespace VPM
                                     inputNameSet.Contains(baseName) ||
                                     inputNameSet.Contains(versionedName))
                                 {
-                                    // Prefer filesystem truth after index refresh — keeps Load+Deps in sync
-                                    var fsStatus = _packageFileManager?.GetPackageStatus(canonicalKey)
-                                        ?? _packageFileManager?.GetPackageStatus(versionedName);
-                                    metadata.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
-                                        ? fsStatus
-                                        : newStatus;
+                                    // Prefer scan-set membership in whitelist mode; filesystem otherwise
+                                    metadata.Status = OverlayStatus(canonicalKey, newStatus);
                                     RefreshMetadataFilePath(metadataKey, metadata, metadata.Status);
                                     affectedMetadataKeys.Add(metadataKey);
                                     affectedBaseNames.Add(baseName);
@@ -2067,11 +2115,9 @@ namespace VPM
                                 (!string.IsNullOrEmpty(package.Name) && inputNameSet.Contains(
                                     DependencyVersionInfo.Parse(package.Name).BaseName ?? "")))
                             {
-                                var fsStatus = _packageFileManager?.GetPackageStatus(package.Name)
-                                    ?? _packageFileManager?.GetPackageStatus(package.MetadataKey);
-                                package.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
-                                    ? fsStatus
-                                    : newStatus;
+                                package.Status = OverlayStatus(
+                                    !string.IsNullOrEmpty(package.Name) ? package.Name : package.MetadataKey,
+                                    newStatus);
                             }
                         }
 
@@ -2082,11 +2128,9 @@ namespace VPM
                                 inputNameSet.Contains(dependency.DisplayName) ||
                                 inputNameSet.Contains(dependency.Name))
                             {
-                                var fsStatus = _packageFileManager?.GetPackageStatus(dependency.DisplayName)
-                                    ?? _packageFileManager?.GetPackageStatus(dependency.Name);
-                                dependency.Status = !string.IsNullOrEmpty(fsStatus) && fsStatus != "Missing" && fsStatus != "Unknown"
-                                    ? fsStatus
-                                    : newStatus;
+                                dependency.Status = OverlayStatus(
+                                    !string.IsNullOrEmpty(dependency.DisplayName) ? dependency.DisplayName : dependency.Name,
+                                    newStatus);
                             }
                         }
 
@@ -2226,6 +2270,20 @@ namespace VPM
         {
             try
             {
+                int skipped = 0;
+                if (!string.IsNullOrEmpty(_selectedFolder))
+                {
+                    oldVersions = FilterProtected(oldVersions, m => $"{m.CreatorName}.{m.PackageName}.{m.Version}", out skipped);
+                }
+                if (skipped > 0)
+                    SetStatus($"{skipped} locked by VPB, skipped");
+                if (oldVersions.Count == 0)
+                {
+                    DarkMessageBox.Show("Nothing to archive (all remaining are VPB-locked).", "Archive Old Versions",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
                 SetStatus($"Archiving {oldVersions.Count} old version(s)...");
                 
                 var oldPackagesFolder = Path.Combine(_selectedFolder, "ArchivedPackages", "OldPackages");

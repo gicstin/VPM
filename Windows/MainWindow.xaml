@@ -1,4 +1,4 @@
-<Window
+﻿<Window
     x:Class="VPM.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -47,7 +47,7 @@
             <windows:BytesToMegabytesConverter x:Key="BytesToMegabytesConverter" />
             <windows:PackageStatusToLoadButtonConverter x:Key="PackageStatusToLoadButtonConverter" />
             <local:HasExtractedItemsConverter x:Key="HasExtractedItemsConverter" />
-            <System:Double x:Key="FilterToggleButtonSize">27</System:Double>
+            <System:Double x:Key="FilterToggleButtonSize">32</System:Double>
             <System:Double x:Key="LinkedButtonHeight">36</System:Double>
             <Thickness x:Key="StandardMargin">6</Thickness>
             <Thickness x:Key="StandardPadding">6</Thickness>
@@ -114,13 +114,54 @@
                     </Trigger>
                     <!--  Horizontal Scrollbar  -->
                     <Trigger Property="Orientation" Value="Horizontal">
-                        <Setter Property="Height" Value="0" />
-                        <Setter Property="Visibility" Value="Collapsed" />
-                        <Setter Property="IsEnabled" Value="False" />
+                        <Setter Property="Height" Value="8" />
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="{x:Type ScrollBar}">
-                                    <!--  Completely empty template to hide horizontal scrollbar  -->
+                                    <Grid Margin="0,3,3,0" Background="Transparent">
+                                        <Track Name="PART_Track">
+                                            <Track.DecreaseRepeatButton>
+                                                <RepeatButton
+                                                    Background="Transparent"
+                                                    Command="ScrollBar.PageLeftCommand"
+                                                    Opacity="0" />
+                                            </Track.DecreaseRepeatButton>
+                                            <Track.Thumb>
+                                                <Thumb MinWidth="60">
+                                                    <Thumb.Style>
+                                                        <Style TargetType="Thumb">
+                                                            <Setter Property="Background" Value="#40808080" />
+                                                            <Setter Property="BorderThickness" Value="0" />
+                                                            <Setter Property="Template">
+                                                                <Setter.Value>
+                                                                    <ControlTemplate TargetType="Thumb">
+                                                                        <Border
+                                                                            Margin="0,3,0,3"
+                                                                            Background="{TemplateBinding Background}"
+                                                                            CornerRadius="3" />
+                                                                    </ControlTemplate>
+                                                                </Setter.Value>
+                                                            </Setter>
+                                                            <Style.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="#60808080" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsDragging" Value="True">
+                                                                    <Setter Property="Background" Value="#80808080" />
+                                                                </Trigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Thumb.Style>
+                                                </Thumb>
+                                            </Track.Thumb>
+                                            <Track.IncreaseRepeatButton>
+                                                <RepeatButton
+                                                    Background="Transparent"
+                                                    Command="ScrollBar.PageRightCommand"
+                                                    Opacity="0" />
+                                            </Track.IncreaseRepeatButton>
+                                        </Track>
+                                    </Grid>
                                 </ControlTemplate>
                             </Setter.Value>
                         </Setter>
@@ -144,12 +185,26 @@
                 </Style.Triggers>
             </Style>
 
+            <Style x:Key="DataGridCellFocusVisual">
+                <Setter Property="Control.Template">
+                    <Setter.Value>
+                        <ControlTemplate>
+                            <Rectangle
+                                Margin="1"
+                                SnapsToDevicePixels="True"
+                                Stroke="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"
+                                StrokeThickness="2" />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!--  DataGrid Cell Style for Dark Theme  -->
             <Style TargetType="{x:Type DataGridCell}">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.WindowTextBrushKey}}" />
                 <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="FocusVisualStyle" Value="{StaticResource DataGridCellFocusVisual}" />
                 <Setter Property="Padding" Value="0" />
                 <Style.Triggers>
                     <Trigger Property="IsSelected" Value="True">
@@ -204,16 +259,6 @@
                 shell:WindowChrome.IsHitTestVisibleInChrome="True"
                 DockPanel.Dock="Right"
                 Orientation="Horizontal">
-                <Button
-                    Width="Auto"
-                    Height="32"
-                    Margin="0,0,12,0"
-                    Padding="0,0"
-                    Click="SupportButton_Click"
-                    Content=" ❤️ Support "
-                    FontFamily="Segoe UI"
-                    Style="{StaticResource TitleBarButtonStyle}"
-                    ToolTip="Support VPM" />
                 <Button
                     Width="46"
                     Height="32"
@@ -293,7 +338,7 @@
                                 <TextBlock FontSize="12" Text="📁" />
                             </MenuItem.Icon>
                         </MenuItem>
-                        <MenuItem Click="RefreshPackages_Click" Header="_Refresh Packages">
+                        <MenuItem Click="RefreshPackages_Click" Header="_Refresh Packages" InputGestureText="F5">
                             <MenuItem.Icon>
                                 <TextBlock FontSize="12" Text="🔄" />
                             </MenuItem.Icon>
@@ -322,6 +367,15 @@
                                 Click="ToggleImagesPaneMenuItem_Click"
                                 Header="Show _Images" />
                         </MenuItem>
+                        <MenuItem Header="Scan _control">
+                            <MenuItem Click="SetScanControlMode_Click" Header="_Auto (VPB → whitelist)" Tag="Auto" />
+                            <MenuItem Click="SetScanControlMode_Click" Header="_Whitelist" Tag="Whitelist" />
+                            <MenuItem Click="SetScanControlMode_Click" Header="_File-move" Tag="FileMove" />
+                            <Separator />
+                            <MenuItem Click="PromoteOnDemandHits_Click" Header="_Promote on-demand hits to scan set" />
+                            <MenuItem Click="IncludeSceneInScan_Click" Header="Include selected scene + _deps in scan set" />
+                            <MenuItem Click="LoadSceneInVaM_Click" Header="Load selected _scene in VaM" />
+                        </MenuItem>
                         <MenuItem Header="🎨 _Theme">
                             <MenuItem
                                 x:Name="DarkThemeMenuItem"
@@ -339,6 +393,46 @@
                                 Click="SetTheme_Click"
                                 Header="🖥️ _System Theme"
                                 Tag="System" />
+                        </MenuItem>
+                        <MenuItem Header="🔠 _UI Scale">
+                            <MenuItem
+                                x:Name="UiScaleLargerMenuItem"
+                                Click="UiScaleLarger_Click"
+                                Header="_Larger"
+                                InputGestureText="Ctrl+Alt++" />
+                            <MenuItem
+                                x:Name="UiScaleSmallerMenuItem"
+                                Click="UiScaleSmaller_Click"
+                                Header="_Smaller"
+                                InputGestureText="Ctrl+Alt+-" />
+                            <Separator />
+                            <MenuItem
+                                x:Name="UiScale50MenuItem"
+                                Click="SetUiScale_Click"
+                                Header="50%"
+                                Tag="0.5" />
+                            <MenuItem
+                                x:Name="UiScale75MenuItem"
+                                Click="SetUiScale_Click"
+                                Header="75%"
+                                Tag="0.75" />
+                            <MenuItem
+                                x:Name="UiScale100MenuItem"
+                                Click="SetUiScale_Click"
+                                Header="100% (Default)"
+                                InputGestureText="Ctrl+Alt+0"
+                                IsChecked="True"
+                                Tag="1.0" />
+                            <MenuItem
+                                x:Name="UiScale125MenuItem"
+                                Click="SetUiScale_Click"
+                                Header="125%"
+                                Tag="1.25" />
+                            <MenuItem
+                                x:Name="UiScale150MenuItem"
+                                Click="SetUiScale_Click"
+                                Header="150%"
+                                Tag="1.5" />
                         </MenuItem>
                         <MenuItem Header="📦 _Hide Archived Packages">
                             <MenuItem
@@ -406,6 +500,7 @@
                     </MenuItem>
 
 
+                    <MenuItem Click="KeyboardShortcuts_Click" Header="⌨️ _Keyboard Shortcuts" InputGestureText="F1" />
                     <MenuItem Click="About_Click" Header="ℹ️ _About VPM" />
 
                     <!--  Exit at Bottom  -->
@@ -414,25 +509,101 @@
                 </MenuItem>
             </Menu>
 
-            <!--  Status Text (in same row as menu)  -->
-            <TextBlock
-                x:Name="StatusText"
-                Margin="12,0,12,0"
-                VerticalAlignment="Center"
-                DockPanel.Dock="Left"
-                FontSize="14"
-                FontWeight="SemiBold"
-                Foreground="{DynamicResource {x:Static SystemColors.MenuTextBrushKey}}"
-                Text="Ready" />
-
             <!--  Draggable Title Area (fills remaining space)  -->
             <Border
                 shell:WindowChrome.IsHitTestVisibleInChrome="False"
                 Background="Transparent"
-                Cursor="Hand"
                 DockPanel.Dock="Left"
                 MouseLeftButtonDown="TitleBar_MouseLeftButtonDown" />
         </DockPanel>
+
+        <Border
+            Height="26"
+            Padding="8,0"
+            Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+            BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+            BorderThickness="0,1,0,0"
+            DockPanel.Dock="Bottom">
+            <DockPanel>
+                <TextBlock
+                    x:Name="StatusScanBudgetText"
+                    Padding="8,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text=""
+                    Visibility="Collapsed" />
+                <TextBlock
+                    x:Name="StatusScanApplyText"
+                    Padding="8,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text="Applies next launch"
+                    Visibility="Collapsed" />
+                <TextBlock
+                    x:Name="StatusScanModeText"
+                    Padding="8,0"
+                    VerticalAlignment="Center"
+                    Cursor="Hand"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text="Scan: File-move"
+                    ToolTip="Scan control mode. Right-click or click to change."
+                    MouseLeftButtonUp="StatusScanModeText_MouseLeftButtonUp">
+                    <TextBlock.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Click="SetScanControlMode_Click" Header="Auto (VPB → whitelist)" Tag="Auto" />
+                            <MenuItem Click="SetScanControlMode_Click" Header="Whitelist" Tag="Whitelist" />
+                            <MenuItem Click="SetScanControlMode_Click" Header="File-move" Tag="FileMove" />
+                        </ContextMenu>
+                    </TextBlock.ContextMenu>
+                </TextBlock>
+                <TextBlock
+                    x:Name="StatusUiScaleText"
+                    Padding="8,0"
+                    VerticalAlignment="Center"
+                    Cursor="Hand"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text="UI 125%"
+                    ToolTip="UI Scale — click to change. Ctrl+Alt+0 resets to 100%."
+                    Visibility="Collapsed"
+                    MouseLeftButtonUp="StatusUiScaleText_MouseLeftButtonUp">
+                    <TextBlock.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Click="SetUiScale_Click" Header="50%" Tag="0.5" />
+                            <MenuItem Click="SetUiScale_Click" Header="75%" Tag="0.75" />
+                            <MenuItem Click="SetUiScale_Click" Header="100% (Default)" Tag="1.0" />
+                            <MenuItem Click="SetUiScale_Click" Header="125%" Tag="1.25" />
+                            <MenuItem Click="SetUiScale_Click" Header="150%" Tag="1.5" />
+                        </ContextMenu>
+                    </TextBlock.ContextMenu>
+                </TextBlock>
+                <TextBlock
+                    x:Name="StatusModeText"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text="Packages" />
+                <TextBlock
+                    x:Name="StatusSelectionText"
+                    Margin="12,0,0,0"
+                    MinWidth="80"
+                    VerticalAlignment="Center"
+                    DockPanel.Dock="Right"
+                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                    Text="" />
+                <TextBlock
+                    x:Name="StatusText"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                    Text="Ready"
+                    TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
 
         <!--  Main Content  -->
         <Grid Margin="3">
@@ -535,8 +706,8 @@
                                                             <Setter Property="BorderThickness" Value="1" />
                                                         </Trigger>
                                                         <Trigger Property="IsPressed" Value="True">
-                                                            <Setter Property="Background" Value="{StaticResource AccentPressedBrush}" />
-                                                            <Setter Property="Foreground" Value="White" />
+                                                            <Setter Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
                                                         </Trigger>
                                                         <Trigger Property="IsChecked" Value="True">
                                                             <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
@@ -545,15 +716,27 @@
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
                                             </ToggleButton.Template>
-                                            <StackPanel
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                Orientation="Horizontal">
-                                                <TextBlock
+                                            <Grid HorizontalAlignment="Stretch">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="18" />
+                                                </Grid.ColumnDefinitions>
+                                                <ContentPresenter
+                                                    Grid.Column="0"
+                                                    HorizontalAlignment="Center"
                                                     VerticalAlignment="Center"
-                                                    Foreground="{TemplateBinding Foreground}"
-                                                    Text="♾️ Mode" />
-                                            </StackPanel>
+                                                    Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                    ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                    IsHitTestVisible="False" />
+                                                <Path
+                                                    Grid.Column="1"
+                                                    Width="8"
+                                                    Height="5"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Data="M 0 0 L 4 4 L 8 0 Z"
+                                                    Fill="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
+                                            </Grid>
                                         </ToggleButton>
                                         <ContentPresenter
                                             Name="ContentPresenter"
@@ -610,12 +793,11 @@
                             Padding="6,6"
                             Click="ToggleLinkedFilters_Click"
                             Style="{StaticResource BlueHoverButtonStyle}"
-                            ToolTip="On: Multiple selections, all options visible Off: Single selection, hide incompatible options">
+                            ToolTip="On: keep multiple filter selections visible. Off: one selection, hide incompatible options.">
                             <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
                                 <TextBlock
                                     VerticalAlignment="Center"
-                                    FontSize="15"
-                                    Text="🔗 " />
+                                    Text="Linked: " />
                                 <TextBlock
                                     x:Name="LinkedStatusText"
                                     VerticalAlignment="Center"
@@ -665,7 +847,7 @@
                                         Text="Active filters" />
                                     <Button
                                         x:Name="ActiveFiltersClearAllButton"
-                                        Height="22"
+                                        Height="28"
                                         Padding="6,0"
                                         HorizontalAlignment="Right"
                                         HorizontalContentAlignment="Center"
@@ -687,7 +869,7 @@
                             Padding="0"
                             HorizontalScrollBarVisibility="Disabled"
                             PanningMode="VerticalOnly"
-                            VerticalScrollBarVisibility="Hidden">
+                            VerticalScrollBarVisibility="Auto">
                             <StackPanel x:Name="FilterGrid" Margin="0">
 
                                 <!--  Package Filters Container (Hidden in Scene Mode)  -->
@@ -1536,6 +1718,171 @@
                                             DragDelta="FilterResizeThumb_DragDelta"
                                             Style="{StaticResource FilterResizeThumbStyle}"
                                             Tag="PlaylistsFilter" />
+                                    </StackPanel>
+
+                                    <!--  VPB Rating Filter Section  -->
+                                    <StackPanel x:Name="VpbRatingFilterSection" Margin="0,6,0,0">
+                                        <Grid
+                                            x:Name="VpbRatingFilterCollapsedGrid"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbRatingFilterToggleButton"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➕"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbRatingFilter" />
+                                            <Label Grid.Column="1" Content="Filter VPB rating" />
+                                            <Button
+                                                x:Name="VpbRatingFilterMoveUpButton"
+                                                Grid.Column="2"
+                                                Click="FilterMoveUp_Click"
+                                                Style="{StaticResource FilterMoveUpButtonStyle}"
+                                                Tag="VpbRatingFilter" />
+                                            <Button
+                                                x:Name="VpbRatingFilterMoveDownButton"
+                                                Grid.Column="3"
+                                                Click="FilterMoveDown_Click"
+                                                Style="{StaticResource FilterMoveDownButtonStyle}"
+                                                Tag="VpbRatingFilter" />
+                                        </Grid>
+
+                                        <Grid x:Name="VpbRatingFilterExpandedGrid" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbRatingFilterToggleButtonExpanded"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➖"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbRatingFilter" />
+                                            <Label Grid.Column="1" Content="Filter VPB rating" />
+                                        </Grid>
+
+                                        <ListBox
+                                            x:Name="VpbRatingFilterList"
+                                            Height="{Binding VpbRatingFilterHeight, Mode=TwoWay}"
+                                            MinHeight="80"
+                                            MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
+                                            SelectionChanged="VpbRatingFilterList_SelectionChanged"
+                                            SelectionMode="Multiple"
+                                            Style="{StaticResource FilterListBoxStyle}" />
+                                        <Thumb
+                                            DragCompleted="FilterResizeThumb_DragCompleted"
+                                            DragDelta="FilterResizeThumb_DragDelta"
+                                            Style="{StaticResource FilterResizeThumbStyle}"
+                                            Tag="VpbRatingFilter" />
+                                    </StackPanel>
+
+                                    <!--  VPB Tag Filter Section  -->
+                                    <StackPanel x:Name="VpbTagFilterSection" Margin="0,6,0,0">
+                                        <Grid
+                                            x:Name="VpbTagFilterCollapsedGrid"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbTagFilterToggleButton"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➕"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbTagFilter" />
+                                            <Label Grid.Column="1" Content="Filter VPB tags" />
+                                            <Button
+                                                x:Name="VpbTagFilterMoveUpButton"
+                                                Grid.Column="2"
+                                                Click="FilterMoveUp_Click"
+                                                Style="{StaticResource FilterMoveUpButtonStyle}"
+                                                Tag="VpbTagFilter" />
+                                            <Button
+                                                x:Name="VpbTagFilterMoveDownButton"
+                                                Grid.Column="3"
+                                                Click="FilterMoveDown_Click"
+                                                Style="{StaticResource FilterMoveDownButtonStyle}"
+                                                Tag="VpbTagFilter" />
+                                        </Grid>
+
+                                        <Grid x:Name="VpbTagFilterExpandedGrid" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" MinWidth="110" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbTagFilterToggleButtonExpanded"
+                                                Grid.Column="0"
+                                                Height="{Binding ElementName=VpbTagFilterBox, Path=ActualHeight}"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➖"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbTagFilter" />
+                                            <Grid Grid.Column="1">
+                                                <TextBox
+                                                    x:Name="VpbTagFilterBox"
+                                                    Style="{StaticResource FilterTextBoxStyle}"
+                                                    TextChanged="VpbTagFilterBox_TextChanged" />
+                                                <TextBlock
+                                                    Margin="12,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    IsHitTestVisible="False"
+                                                    Text="🏷 Filter VPB tags...">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ElementName=VpbTagFilterBox, Path=Text}" Value="">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                            <Button
+                                                x:Name="VpbTagsClearButton"
+                                                Grid.Column="2"
+                                                Height="{Binding ElementName=VpbTagFilterBox, Path=ActualHeight}"
+                                                Click="ClearFilterButton_Click"
+                                                Style="{StaticResource FilterClearButtonStyle}" />
+                                            <Button
+                                                x:Name="VpbTagsSortButton"
+                                                Grid.Column="3"
+                                                Height="{Binding ElementName=VpbTagFilterBox, Path=ActualHeight}"
+                                                Click="VpbTagsSortButton_Click"
+                                                Style="{StaticResource FilterSortButtonStyle}" />
+                                        </Grid>
+
+                                        <ListBox
+                                            x:Name="VpbTagFilterList"
+                                            Height="{Binding VpbTagFilterHeight, Mode=TwoWay}"
+                                            MinHeight="80"
+                                            MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
+                                            SelectionChanged="VpbTagFilterList_SelectionChanged"
+                                            SelectionMode="Multiple"
+                                            Style="{StaticResource FilterListBoxStyle}" />
+                                        <Thumb
+                                            DragCompleted="FilterResizeThumb_DragCompleted"
+                                            DragDelta="FilterResizeThumb_DragDelta"
+                                            Style="{StaticResource FilterResizeThumbStyle}"
+                                            Tag="VpbTagFilter" />
                                     </StackPanel>
 
                                 </StackPanel>
@@ -2390,7 +2737,7 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <StackPanel Grid.Row="2">
+                    <StackPanel Grid.Row="2" Visibility="Collapsed">
                         <!--  Compact Scroll Here Area  -->
                         <Border
                             x:Name="ScrollHereArea"
@@ -2463,109 +2810,31 @@
                             </Grid.ColumnDefinitions>
 
                             <Button
-                                Name="FavoriteToggleButton"
+                                x:Name="VamHubImageButton"
                                 Grid.Column="0"
                                 Margin="0,0,3,0"
                                 Padding="6"
                                 VerticalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
-                                Click="FavoriteToggleButton_Click"
+                                Click="VamHubButton_Click"
+                                Content="🌐 VaM Hub"
                                 FontSize="12"
-                                PreviewMouseRightButtonDown="FavoriteToggleButton_PreviewMouseRightButtonDown"
-                                ToolTip="Left-click: Add to favorites | Right-click: Remove from favorites | Ctrl+click: Open Favorites.txt">
-                                <Button.Content>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            FontSize="13"
-                                            FontWeight="Bold"
-                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                            Text="❤️ " />
-                                        <TextBlock VerticalAlignment="Center" Text="Favorite" />
-                                        <TextBlock
-                                            Name="FavoriteCountText"
-                                            Margin="4,0,0,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="11"
-                                            FontWeight="Bold"
-                                            Foreground="#FF1493"
-                                            Text="" />
-                                    </StackPanel>
-                                </Button.Content>
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
-                                </Button.Style>
-                            </Button>
+                                Style="{StaticResource VamHubShimmerButtonStyle}"
+                                ToolTip="Open VaM Hub in browser" />
 
                             <Button
-                                Name="AutoInstallToggleButton"
+                                x:Name="CheckUpdatesImageButton"
                                 Grid.Column="1"
-                                Margin="3,0,3,0"
-                                Padding="3,3"
+                                Margin="3,0,0,0"
+                                Padding="6"
                                 VerticalAlignment="Stretch"
                                 HorizontalContentAlignment="Center"
                                 VerticalContentAlignment="Center"
-                                Click="AutoInstallToggleButton_Click"
+                                Click="CheckUpdatesToolbar_Click"
+                                Content="🔄 Updates"
                                 FontSize="12"
-                                PreviewMouseRightButtonDown="AutoInstallToggleButton_PreviewMouseRightButtonDown"
-                                ToolTip="Left-click: Add to autoinstall | Right-click: Remove from autoinstall | Ctrl+click: Open AutoInstall.txt">
-                                <Button.Content>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                            Text="A " />
-                                        <TextBlock VerticalAlignment="Center" Text="AutoInstall" />
-                                        <TextBlock
-                                            Name="AutoinstallCountText"
-                                            Margin="4,0,0,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="11"
-                                            FontWeight="Bold"
-                                            Foreground="#00CED1"
-                                            Text="" />
-                                    </StackPanel>
-                                </Button.Content>
-                                <Button.Style>
-                                    <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
-                                </Button.Style>
-                            </Button>
-
-                            <Button
-                                Name="HideToggleButton"
-                                Grid.Column="1"
-                                Margin="3,0,3,0"
-                                Padding="3,3"
-                                VerticalAlignment="Stretch"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                Click="HideToggleButton_Click"
-                                FontSize="12"
-                                PreviewMouseRightButtonDown="HideToggleButton_PreviewMouseRightButtonDown"
-                                ToolTip="Left-click: Hide selected scenes | Right-click: Unhide selected scenes"
-                                Visibility="Collapsed">
-                                <Button.Content>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock
-                                            VerticalAlignment="Center"
-                                            FontSize="14"
-                                            FontWeight="Bold"
-                                            Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
-                                            Text="🙈 " />
-                                        <TextBlock VerticalAlignment="Center" Text="Hide" />
-                                        <TextBlock
-                                            Name="HideCountText"
-                                            Margin="4,0,0,0"
-                                            VerticalAlignment="Center"
-                                            FontSize="11"
-                                            FontWeight="Bold"
-                                            Foreground="#FF6347"
-                                            Text="" />
-                                    </StackPanel>
-                                </Button.Content>
+                                ToolTip="Check for package updates">
                                 <Button.Style>
                                     <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button" />
                                 </Button.Style>
@@ -2796,10 +3065,11 @@
                             PreviewMouseMove="PackageDataGrid_PreviewMouseMove"
                             PreviewMouseUp="PackageDataGrid_PreviewMouseUp"
                             RowHeaderWidth="0"
+                            windows:VpbStarStrip.RatingCommitted="VpbStarStrip_RatingCommitted"
                             RowHeight="65"
                             RowStyle="{StaticResource RoundedDataGridRowStyle}"
                             ScrollViewer.CanContentScroll="True"
-                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            ScrollViewer.HorizontalScrollBarVisibility="Auto"
                             ScrollViewer.IsDeferredScrollingEnabled="True"
                             SelectionChanged="PackageDataGrid_SelectionChanged"
                             SelectionMode="Extended"
@@ -2830,6 +3100,13 @@
                                         Click="FixSelectedDuplicates_Click"
                                         Header="🔧 Fix Duplicates" />
                                     <Separator />
+                                    <MenuItem Click="FavoriteAddMenuItem_Click" Header="❤️ Add to favorites" />
+                                    <MenuItem Click="FavoriteRemoveMenuItem_Click" Header="💔 Remove from favorites" />
+                                    <MenuItem Click="OpenFavoritesFileMenuItem_Click" Header="📂 Open Favorites.txt" />
+                                    <Separator />
+                                    <MenuItem x:Name="VpbRateMenuItem" Header="⭐ Rate in VPB" />
+                                    <MenuItem x:Name="VpbTagsMenuItem" Header="🏷 VPB Tags" />
+                                    <Separator />
                                     <MenuItem Click="FilterByCreator_Click" Header="👤 Filter by Creator" />
                                     <Separator />
                                     <MenuItem x:Name="MoveToMenuItem" Header="📦 Move To">
@@ -2839,7 +3116,7 @@
                                         <MenuItem Click="ManagePlaylists_Click" Header="🕹️ Manage Playlists..." />
                                     </MenuItem>
                                     <Separator />
-                                    <MenuItem Click="DiscardSelected_Click" Header="🗑️ Discard Selected" />
+                                    <MenuItem Click="DiscardSelected_Click" Header="🗑️ Discard Selected" InputGestureText="Del" />
                                     <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
@@ -2888,15 +3165,6 @@
                                                                 Text="❤️"
                                                                 ToolTip="Favorite package"
                                                                 Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVis}}" />
-                                                            <!--  AutoInstall A icon  -->
-                                                            <TextBlock
-                                                                Margin="0,0,3,0"
-                                                                FontSize="11"
-                                                                FontWeight="Bold"
-                                                                Foreground="#00CED1"
-                                                                Text="A"
-                                                                ToolTip="AutoInstall package"
-                                                                Visibility="{Binding IsAutoInstall, Converter={StaticResource BoolToVis}}" />
                                                             <!--  Old Version indicator hourglass  -->
                                                             <TextBlock
                                                                 Margin="0,0,3,0"
@@ -2914,6 +3182,19 @@
                                                                 Text="{Binding PlaylistTags}"
                                                                 ToolTip="Package is in one or more playlists"
                                                                 Visibility="{Binding HasPlaylists, Converter={StaticResource BoolToVis}}" />
+                                                            <TextBlock
+                                                                MaxWidth="180"
+                                                                Margin="0,0,3,0"
+                                                                FontSize="11"
+                                                                Foreground="#9C7BD6"
+                                                                Text="{Binding VpbTagsDisplay}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                ToolTip="{Binding VpbTags}"
+                                                                Visibility="{Binding HasVpbTags, Converter={StaticResource BoolToVis}}" />
+                                                            <windows:VpbStarStrip
+                                                                Margin="0,0,3,0"
+                                                                IsInherited="{Binding IsVpbRatingInherited, Mode=OneWay}"
+                                                                Rating="{Binding VpbRating, Mode=OneWay}" />
                                                         </StackPanel>
                                                         <TextBlock
                                                             FontSize="16"
@@ -2966,7 +3247,7 @@
                         RowHeight="65"
                         RowStyle="{StaticResource RoundedDataGridRowStyle}"
                         ScrollViewer.CanContentScroll="True"
-                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
                         ScrollViewer.IsDeferredScrollingEnabled="True"
                         SelectionChanged="ScenesDataGrid_SelectionChanged"
                         SelectionMode="Extended"
@@ -2977,7 +3258,13 @@
                         Visibility="Collapsed">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Click="DiscardSelectedScenes_Click" Header="🗑️ Discard Selected" />
+                                <MenuItem Click="FavoriteAddMenuItem_Click" Header="❤️ Add to favorites" />
+                                <MenuItem Click="FavoriteRemoveMenuItem_Click" Header="💔 Remove from favorites" />
+                                <MenuItem Click="HideAddMenuItem_Click" Header="🙈 Hide selected" />
+                                <MenuItem Click="HideRemoveMenuItem_Click" Header="👁 Unhide selected" />
+                                <Separator />
+                                <MenuItem Click="DiscardSelectedScenes_Click" Header="🗑️ Discard Selected" InputGestureText="Del" />
+                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Resources>
@@ -3240,10 +3527,11 @@
                         KeyDown="CustomAtomDataGrid_KeyDown"
                         MouseDoubleClick="CustomAtomDataGrid_MouseDoubleClick"
                         RowHeaderWidth="0"
+                        windows:VpbStarStrip.RatingCommitted="VpbStarStrip_RatingCommitted"
                         RowHeight="65"
                         RowStyle="{StaticResource RoundedDataGridRowStyle}"
                         ScrollViewer.CanContentScroll="True"
-                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        ScrollViewer.HorizontalScrollBarVisibility="Auto"
                         ScrollViewer.IsDeferredScrollingEnabled="False"
                         SelectionChanged="CustomAtomDataGrid_SelectionChanged"
                         SelectionMode="Extended"
@@ -3253,7 +3541,16 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu Opened="CustomAtomContextMenu_Opened">
                                 <MenuItem x:Name="LaunchCustomSceneMenuItem" Header="🚀 Launch Scene in VaM" />
-                                <MenuItem Click="DiscardSelectedCustomAtoms_Click" Header="🗑️ Discard Selected" />
+                                <MenuItem Click="DiscardSelectedCustomAtoms_Click" Header="🗑️ Discard Selected" InputGestureText="Del" />
+                                <MenuItem Click="OpenDiscardLocation_Click" Header="📂 Open Discard Location" />
+                                <Separator />
+                                <MenuItem Click="FavoriteAddMenuItem_Click" Header="❤️ Add to favorites" />
+                                <MenuItem Click="FavoriteRemoveMenuItem_Click" Header="💔 Remove from favorites" />
+                                <MenuItem Click="HideAddMenuItem_Click" Header="🙈 Hide selected" />
+                                <MenuItem Click="HideRemoveMenuItem_Click" Header="👁 Unhide selected" />
+                                <Separator />
+                                <MenuItem x:Name="CustomVpbRateMenuItem" Header="⭐ Rate in VPB" />
+                                <MenuItem x:Name="CustomVpbTagsMenuItem" Header="🏷 VPB Tags" />
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Resources>
@@ -3420,6 +3717,20 @@
                                                     Text="🙈"
                                                     ToolTip="Hidden"
                                                     Visibility="{Binding IsHidden, Converter={StaticResource BoolToVis}}" />
+                                                <TextBlock
+                                                    MaxWidth="180"
+                                                    Margin="3,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Foreground="#9C7BD6"
+                                                    Text="{Binding VpbTagsDisplay}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding VpbTags}"
+                                                    Visibility="{Binding HasVpbTags, Converter={StaticResource BoolToVis}}" />
+                                                <windows:VpbStarStrip
+                                                    Margin="3,0,0,0"
+                                                    IsInherited="{Binding IsVpbRatingInherited, Mode=OneWay}"
+                                                    Rating="{Binding VpbRating, Mode=OneWay}" />
                                                 <TextBlock
                                                     Margin="3,0,0,0"
                                                     VerticalAlignment="Center"
@@ -4315,7 +4626,7 @@
                                 RowHeight="24"
                                 RowStyle="{StaticResource DependencyDataGridRowStyle}"
                                 ScrollViewer.CanContentScroll="True"
-                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                ScrollViewer.HorizontalScrollBarVisibility="Auto"
                                 ScrollViewer.IsDeferredScrollingEnabled="False"
                                 SelectionMode="Extended"
                                 TextOptions.TextFormattingMode="Display"
@@ -4703,6 +5014,124 @@
                                     TextWrapping="Wrap" />
                             </ScrollViewer>
                         </TabItem>
+
+                        <!--  VPB tags: edits apply immediately to the selection -->
+                        <TabItem x:Name="VpbTagsTab" Header="🏷 Tags">
+                            <Grid Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock
+                                    x:Name="VpbTagsScopeText"
+                                    Margin="0,0,0,6"
+                                    FontWeight="SemiBold"
+                                    Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                    Text="Select a package to manage its VPB tags"
+                                    TextWrapping="Wrap" />
+
+                                <Grid Grid.Row="1" Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="VpbTagInputBox"
+                                        Grid.Column="0"
+                                        Padding="5,4"
+                                        VerticalContentAlignment="Center"
+                                        Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                        BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                        BorderThickness="1"
+                                        CaretBrush="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                        Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                        KeyDown="VpbTagInputBox_KeyDown"
+                                        TextChanged="VpbTagInputBox_TextChanged"
+                                        ToolTip="Type to filter tags, Enter to apply a new one to the selection" />
+                                    <Button
+                                        x:Name="VpbTagAddButton"
+                                        Grid.Column="1"
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="VpbTagAddButton_Click"
+                                        Content="Add"
+                                        ToolTip="Apply this tag to every selected package" />
+                                </Grid>
+
+                                <ItemsControl
+                                    x:Name="VpbCurrentTagsPanel"
+                                    Grid.Row="2"
+                                    Margin="0,0,0,8">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border
+                                                Margin="0,0,4,4"
+                                                Padding="6,2"
+                                                Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                                BorderThickness="1"
+                                                CornerRadius="9"
+                                                ToolTip="{Binding ScopeTooltip}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock
+                                                        Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                                        Opacity="{Binding LabelOpacity}"
+                                                        Text="{Binding Label}" />
+                                                    <Button
+                                                        Margin="5,0,0,0"
+                                                        Padding="0"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        Click="VpbRemoveTagChip_Click"
+                                                        Content="✕"
+                                                        Cursor="Hand"
+                                                        FontSize="10"
+                                                        Foreground="#E57373"
+                                                        Tag="{Binding Name}"
+                                                        ToolTip="Remove this tag from the selection" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <ListBox
+                                    x:Name="VpbTagSuggestionList"
+                                    Grid.Row="3"
+                                    Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
+                                    BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
+                                    BorderThickness="1"
+                                    HorizontalContentAlignment="Stretch"
+                                    ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox
+                                                Padding="5,1,0,1"
+                                                Click="VpbTagCheck_Click"
+                                                Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"
+                                                IsChecked="{Binding IsChecked, Mode=OneWay}"
+                                                Tag="{Binding Name}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name}" />
+                                                    <TextBlock
+                                                        Margin="8,0,0,0"
+                                                        Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                        Text="{Binding CountLabel}" />
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </TabItem>
                     </TabControl>
 
                 </Grid>
@@ -4793,7 +5222,6 @@
                                 <ColumnDefinition Width="34" />
                             </Grid.ColumnDefinitions>
 
-                            <!--  Normal buttons container  -->
                             <Grid
                                 x:Name="NormalButtonsContainer"
                                 Grid.Column="0"
@@ -4803,118 +5231,27 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" MinWidth="80" />
                                     <ColumnDefinition Width="*" MinWidth="80" />
-                                    <ColumnDefinition Width="*" MinWidth="80" />
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" MinWidth="60" />
                                 </Grid.ColumnDefinitions>
-                                <!--  Normal buttons  -->
+                                <!--  Gold like Hub while VPB is missing; Patch VaM / Update VPB once installed. -->
                                 <Button
-                                    x:Name="VamHubImageButton"
+                                    x:Name="VpbPatchToolbarButton"
                                     Grid.Column="0"
                                     Height="34"
                                     Margin="0,0,3,0"
                                     Padding="6,0"
-                                    Click="VamHubButton_Click"
-                                    Content="🌐 VaM Hub"
+                                    Click="VpbPatchButton_Click"
+                                    Content="🧩 Install VPB"
                                     FontSize="12"
                                     FontWeight="SemiBold"
-                                    ToolTip="Open VaM Hub in browser"
-                                    Visibility="Visible">
-                                    <Button.Style>
-                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Border
-                                                            Padding="{TemplateBinding Padding}"
-                                                            Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="3">
-                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        </Border>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="Visibility" Value="Visible">
-                                                    <Trigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation
-                                                                    Storyboard.TargetProperty="Opacity"
-                                                                    From="0.0"
-                                                                    To="1.0"
-                                                                    Duration="0:0:0.15">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.EnterActions>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-
-                                <Button
-                                    x:Name="CheckUpdatesImageButton"
-                                    Grid.Column="1"
-                                    Height="34"
-                                    Margin="3,0,3,0"
-                                    Padding="6,0"
-                                    Click="CheckUpdatesToolbar_Click"
-                                    Content="🔄 Updates"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    ToolTip="Check for package updates"
-                                    Visibility="Visible">
-                                    <Button.Style>
-                                        <Style BasedOn="{StaticResource BlueHoverButtonStyle}" TargetType="Button">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Border
-                                                            Padding="{TemplateBinding Padding}"
-                                                            Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="3">
-                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                        </Border>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="Visibility" Value="Visible">
-                                                    <Trigger.EnterActions>
-                                                        <BeginStoryboard>
-                                                            <Storyboard>
-                                                                <DoubleAnimation
-                                                                    Storyboard.TargetProperty="Opacity"
-                                                                    From="0.0"
-                                                                    To="1.0"
-                                                                    Duration="0:0:0.15">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <QuadraticEase EasingMode="EaseOut" />
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
-                                                            </Storyboard>
-                                                        </BeginStoryboard>
-                                                    </Trigger.EnterActions>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-
+                                    Style="{StaticResource VamHubShimmerButtonStyle}"
+                                    ToolTip="Install VPB plugin for VaM" />
                                 <Button
                                     x:Name="PlayVAMImageButton"
-                                    Grid.Column="2"
+                                    Grid.Column="1"
                                     Height="34"
-                                    Margin="3,0,3,0"
+                                    Margin="0,0,3,0"
                                     Padding="6,0"
                                     Click="PlayVAMButton_Click"
                                     Content="🎮 Play VaM"
@@ -4977,7 +5314,7 @@
                                 <!--  Content Type Filter Dropdown  -->
                                 <Button
                                     x:Name="ContentTypeFilterButton"
-                                    Grid.Column="4"
+                                    Grid.Column="3"
                                     Height="34"
                                     Margin="3,0,3,0"
                                     Padding="6,0"
@@ -5007,7 +5344,7 @@
                                 </Button>
                                 <Button
                                     x:Name="ClearFiltersButton"
-                                    Grid.Column="3"
+                                    Grid.Column="2"
                                     Width="34"
                                     Height="34"
                                     Margin="3,0,3,0"
@@ -6033,6 +6370,7 @@
                     </Border>
                 </Grid>
             </Border>
+
         </Grid>
     </DockPanel>
 </Window>

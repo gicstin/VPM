@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -14,6 +14,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using VPM.Models;
 using VPM.Services;
@@ -190,9 +191,14 @@ namespace VPM
         
         [DllImport("user32.dll")]
         private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetricsForDpi(int nIndex, uint dpi);
         
         private const int SW_HIDE = 0;
         private const int SW_SHOW = 5;
+        private const int SM_CXFRAME = 32;
+        private const int SM_CXPADDEDBORDER = 92;
         
         #endregion
         #region Selection Event Handlers
@@ -262,13 +268,10 @@ namespace VPM
             
             // Update toolbar buttons
             UpdateToolbarButtons();
-            UpdateFavoriteCounter();
-            UpdateAutoinstallCounter();
-            UpdateHideCounter();
-            
-            // Update Hub Overview tab visibility based on selection count
+            UpdateStatusBarMeta();
             UpdateHubOverviewTabVisibility();
-            
+            RefreshVpbTagsTab();
+
             if (_suppressSelectionEvents) return;
 
             // If user is currently viewing Hub Overview, show an immediate loading state
@@ -944,6 +947,7 @@ namespace VPM
                     
                     UpdateUI();
                     SetStatus($"Selected folder: {System.IO.Path.GetFileName(_selectedFolder)}");
+                    RefreshVpbToolbarChrome();
                     
                     RefreshPackages();
                 }
@@ -995,10 +999,36 @@ namespace VPM
                 // Check if any old versions have dependents
                 var packagesWithDependents = _packageManager.CheckPackagesForDependents(oldVersions);
                 var warningMessage = _packageManager.GetDependentsWarningMessage(packagesWithDependents);
+
+                int unused = 0;
+                try
+                {
+                    using var db = new VPM.Services.Vpb.VpbLocalDbReader(_selectedFolder);
+                    var usage = db.LoadUsage();
+                    var ratings = VPM.Services.Vpb.VpbRatingsStore.LoadPackageRatings(_selectedFolder);
+                    unused = oldVersions.Count(m =>
+                    {
+                        var uid = VPM.Services.Vpb.VpbLibraryData.UidFor(m);
+                        return !usage.TryGetValue(uid, out var row) || row.UseCount == 0;
+                    });
+                    oldVersions = oldVersions
+                        .OrderBy(m =>
+                        {
+                            var uid = VPM.Services.Vpb.VpbLibraryData.UidFor(m);
+                            return usage.TryGetValue(uid, out var row) ? row.UseCount : 0;
+                        })
+                        .ThenBy(m => ratings.TryGetValue(VPM.Services.Vpb.VpbLibraryData.UidFor(m), out var r) ? r : 0)
+                        .ThenByDescending(m => m.FileSize)
+                        .ToList();
+                }
+                catch { }
                 
                 var message = $"Found {oldVersions.Count} old version package(s).\n\n" +
                              $"These packages will be moved to:\n" +
                              $"{Path.Combine(_selectedFolder, "ArchivedPackages", "OldPackages")}\n\n";
+
+                if (unused > 0)
+                    message += $"{unused} have no VPB in-game usage (never opened or no history).\n\n";
                 
                 if (!string.IsNullOrEmpty(warningMessage))
                 {
@@ -1168,6 +1198,42 @@ namespace VPM
                     SwitchTheme(themeName);
                 }
             }
+        }
+
+        private void SetUiScale_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is MenuItem menuItem && TryParseUiScaleTag(menuItem.Tag, out var scale))
+                UiScaleService.SetScale(scale);
+        }
+
+        private void UiScaleLarger_Click(object sender, RoutedEventArgs e)
+        {
+            UiScaleService.Step(1);
+        }
+
+        private void UiScaleSmaller_Click(object sender, RoutedEventArgs e)
+        {
+            UiScaleService.Step(-1);
+        }
+
+        private void StatusUiScaleText_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (StatusUiScaleText?.ContextMenu == null)
+                return;
+
+            StatusUiScaleText.ContextMenu.PlacementTarget = StatusUiScaleText;
+            StatusUiScaleText.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+            StatusUiScaleText.ContextMenu.IsOpen = true;
+            e.Handled = true;
+        }
+
+        private static bool TryParseUiScaleTag(object tag, out double scale)
+        {
+            scale = UiScaleLevels.Default;
+            if (tag == null)
+                return false;
+            return double.TryParse(Convert.ToString(tag, CultureInfo.InvariantCulture),
+                NumberStyles.Float, CultureInfo.InvariantCulture, out scale);
         }
 
         private void SetHideArchivedPackages_Click(object sender, RoutedEventArgs e)
@@ -1457,7 +1523,12 @@ namespace VPM
 
         private void KeyboardShortcuts_Click(object sender, RoutedEventArgs e)
         {
-            CustomMessageBox.Show("Keyboard shortcuts:\n\nF5 - Refresh packages\nCtrl+F - Focus search\nCtrl+B - Build cache\nCtrl+, - Settings\nCtrl+/- - Image columns", "Keyboard Shortcuts", MessageBoxButton.OK, MessageBoxImage.Information);
+            CustomMessageBox.Show(
+                _keyboardNavigationManager?.GetKeyboardShortcutsHelp()
+                    ?? "F5 — Refresh\nCtrl+F — Search\nF1 — Shortcuts",
+                "Keyboard Shortcuts",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         private async void UpdatePackageDatabase_Click(object sender, RoutedEventArgs e)
@@ -1721,6 +1792,11 @@ namespace VPM
                         FilterSubfoldersList("");
                         UpdateSubfoldersClearButton();
                     }
+                    else if (textBox.Name == "VpbTagFilterBox")
+                    {
+                        FilterVpbTagsList("");
+                        UpdateVpbTagsClearButton();
+                    }
                     else if (textBox.Name == "SceneSearchBox")
                     {
                         UpdateSceneSearchClearButton();
@@ -1841,6 +1917,12 @@ namespace VPM
                     // Ensure clear button visibility is updated immediately
                     UpdateSubfoldersClearButton();
                 }
+                else if (button.Name == "VpbTagsClearButton")
+                {
+                    targetTextBox = VpbTagFilterBox;
+                    VpbTagFilterList.SelectedItems.Clear();
+                    UpdateVpbTagsClearButton();
+                }
                 else if (button.Name == "PackageSearchClearButton")
                 {
                     targetTextBox = PackageSearchBox;
@@ -1960,6 +2042,8 @@ namespace VPM
                 FileSizeFilterList?.SelectedItems?.Clear();
                 SubfoldersFilterList?.SelectedItems?.Clear();
                 DestinationsFilterList?.SelectedItems?.Clear();
+                VpbRatingFilterList?.SelectedItems?.Clear();
+                VpbTagFilterList?.SelectedItems?.Clear();
 
                 if (DamagedFilterList != null)
                 {
@@ -1989,6 +2073,7 @@ namespace VPM
                 FilterTextBox_LostFocus(ContentTypesFilterBox, new RoutedEventArgs());
                 FilterTextBox_LostFocus(LicenseTypeFilterBox, new RoutedEventArgs());
                 FilterTextBox_LostFocus(SubfoldersFilterBox, new RoutedEventArgs());
+                FilterTextBox_LostFocus(VpbTagFilterBox, new RoutedEventArgs());
 
                 // Reload packages using the cleared filter manager
                 ApplyFilters();
@@ -2056,6 +2141,11 @@ namespace VPM
                     PresetCategoryFilterBox.Text = "";
                 if (PresetSubfolderFilterBox != null)
                     PresetSubfolderFilterBox.Text = "";
+
+                VpbRatingFilterList?.SelectedItems?.Clear();
+                VpbTagFilterList?.SelectedItems?.Clear();
+                if (VpbTagFilterBox != null)
+                    VpbTagFilterBox.Text = "";
 
                 ApplyPresetFilters();
             }
@@ -2317,6 +2407,43 @@ namespace VPM
 
             // Check for app updates
             _ = CheckForAppUpdatesAsync();
+
+            _ = MigrateLegacyDiscardsAsync(settings);
+
+            ApplyMaximizedChromeInset();
+        }
+
+        /// <summary>One-time: move .var files from DiscardedPackages into DeletedPackages. Scenes/presets stay — legacy folder mixed .json/.vap so extension cannot tell them apart.</summary>
+        private async Task MigrateLegacyDiscardsAsync(AppSettings settings)
+        {
+            if (settings == null || settings.LegacyDiscardsMigrated)
+                return;
+
+            var gameRoot = settings.SelectedFolder;
+            if (string.IsNullOrEmpty(gameRoot) || !Directory.Exists(gameRoot))
+                return;
+
+            try
+            {
+                var result = await Task.Run(() => DiscardPaths.MigrateLegacyVarDiscards(gameRoot));
+
+                // Only mark done when nothing was left locked, so a retry gets the stragglers
+                if (result.Failed == 0)
+                {
+                    settings.LegacyDiscardsMigrated = true;
+                    await _settingsManager.SaveSettingsAsync();
+                }
+
+                if (result.MovedAnything)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"Moved {result.Moved} discarded package(s) into {DiscardPaths.DeletedPackages}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Legacy discard migration failed: {ex}");
+            }
         }
         
         private async Task LoadCachesAndRefreshAsync(AppSettings settings)
@@ -2370,6 +2497,8 @@ namespace VPM
             {
                 this.WindowState = WindowState.Maximized;
             }
+
+            ApplyMaximizedChromeInset();
             
             // Restore splitter positions
             if (settings.LeftPanelWidth > 0)
@@ -2402,6 +2531,8 @@ namespace VPM
 
         private void OnWindowClosing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            CloseHubBrowserForExit();
+
             // Save current window state
             var settings = _settingsManager.Settings;
             
@@ -2457,6 +2588,47 @@ namespace VPM
                     MaximizeRestoreButton.Content = "□"; // Maximize symbol
                 }
             }
+
+            ApplyMaximizedChromeInset();
+        }
+
+        /// <summary>WindowChrome maximize overshoots the monitor by the resize frame. Inset content so title bar and status bar stay on-screen.</summary>
+        private void ApplyMaximizedChromeInset()
+        {
+            if (PresentationSource.FromVisual(this) == null)
+                return;
+
+            var chrome = WindowChrome.GetWindowChrome(this);
+
+            if (WindowState == WindowState.Maximized)
+            {
+                double inset = GetMaximizedInsetDip();
+                SetResourceReference(BorderBrushProperty, SystemColors.WindowBrushKey);
+                BorderThickness = new Thickness(inset);
+                if (chrome != null)
+                    chrome.CornerRadius = new CornerRadius(0);
+            }
+            else
+            {
+                ClearValue(BorderThicknessProperty);
+                ClearValue(BorderBrushProperty);
+                if (chrome != null)
+                    chrome.CornerRadius = new CornerRadius(8);
+            }
+        }
+
+        private double GetMaximizedInsetDip()
+        {
+            var dpiInfo = VisualTreeHelper.GetDpi(this);
+            uint dpi = (uint)Math.Round(dpiInfo.PixelsPerInchX);
+            if (dpi == 0)
+                dpi = 96;
+
+            int px = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            if (px <= 0)
+                px = (int)Math.Round(8 * (dpiInfo.DpiScaleX > 0 ? dpiInfo.DpiScaleX : 1.0));
+
+            return px * 96.0 / dpi;
         }
 
         private void SaveSplitterPositions()
@@ -2483,6 +2655,13 @@ namespace VPM
 
         private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.F1 && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                KeyboardShortcuts_Click(sender, e);
+                e.Handled = true;
+                return;
+            }
+
             // Handle Space key for dependencies when using sort button scroll
             if (e.Key == Key.Space && _dependenciesDataGridHasFocus && DependenciesDataGrid?.SelectedItems.Count > 0)
             {
@@ -2530,7 +2709,7 @@ namespace VPM
         private async void PackageDataGrid_KeyDown(object sender, KeyEventArgs e)
         {
             // Handle C to filter by creator (single selection only)
-            if (e.Key == Key.C)
+            if (e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.None)
             {
                 // Prevent key repeat - only trigger on first press
                 if (e.IsRepeat)
@@ -2642,13 +2821,40 @@ namespace VPM
                                 }
                             }), System.Windows.Threading.DispatcherPriority.Background);
                         }
+                        else
+                        {
+                            SetStatus($"Space does nothing: status is {status}.");
+                            e.Handled = true;
+                        }
                     }
-                    // If mixed statuses, do nothing (don't handle the event)
+                    else
+                    {
+                        SetStatus("Space does nothing: mixed Loaded/Available. Select one status.");
+                        e.Handled = true;
+                    }
+                }
+                else
+                {
+                    SetStatus("Space loads one item. Ctrl+Space for multiple.");
+                    e.Handled = true;
                 }
                 
                 return;
             }
             
+            if (e.Key == Key.Delete && PackageDataGrid.SelectedItems.Count > 0)
+            {
+                if (e.IsRepeat)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                DiscardSelected_Click(sender, null);
+                e.Handled = true;
+                return;
+            }
+
             // Handle arrow key navigation to trigger image loading
             if (e.Key == Key.Up || e.Key == Key.Down || e.Key == Key.PageUp || e.Key == Key.PageDown || e.Key == Key.Home || e.Key == Key.End)
             {
@@ -2701,10 +2907,22 @@ namespace VPM
                             UnloadDependencies_Click(sender, e);
                             e.Handled = true;
                         }
-                        // Missing/Unknown dependencies are now handled through download manager
-                        // No keyboard shortcut action needed
+                        else
+                        {
+                            SetStatus($"Space does nothing: status is {status}.");
+                            e.Handled = true;
+                        }
                     }
-                    // If mixed statuses, do nothing (don't handle the event)
+                    else
+                    {
+                        SetStatus("Space does nothing: mixed statuses. Select one status.");
+                        e.Handled = true;
+                    }
+                }
+                else
+                {
+                    SetStatus("Space loads one item. Ctrl+Space for multiple.");
+                    e.Handled = true;
                 }
                 
                 return;
@@ -2751,6 +2969,18 @@ namespace VPM
 
                 return;
             }
+
+            if (e.Key == Key.Delete && ScenesDataGrid.SelectedItems.Count > 0)
+            {
+                if (e.IsRepeat)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
+                DiscardSelectedScenes_Click(sender, null);
+                e.Handled = true;
+            }
         }
 
         private void CustomAtomDataGrid_KeyDown(object sender, KeyEventArgs e)
@@ -2794,7 +3024,6 @@ namespace VPM
                 return;
             }
 
-            // Handle Delete key to discard selected custom items
             if (e.Key == Key.Delete && CustomAtomDataGrid.SelectedItems.Count > 0)
             {
                 if (e.IsRepeat)
@@ -2803,16 +3032,7 @@ namespace VPM
                     return;
                 }
 
-                var count = CustomAtomDataGrid.SelectedItems.Count;
-                var confirm = DarkMessageBox.Show(
-                    $"Discard {count} selected custom item(s)?\n\nFiles move to DiscardedPackages.",
-                    "Confirm Discard",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-
-                if (confirm == MessageBoxResult.Yes)
-                    DiscardSelectedCustomAtoms_Click(sender, null);
-
+                DiscardSelectedCustomAtoms_Click(sender, null);
                 e.Handled = true;
             }
         }
@@ -3002,8 +3222,14 @@ namespace VPM
             {
                 var dataGrid = sender as DataGrid;
                 var hitTest = VisualTreeHelper.HitTest(dataGrid, e.GetPosition(dataGrid));
-                var dataGridRow = FindParent<DataGridRow>(hitTest?.VisualHit as DependencyObject);
-                
+                var hitVisual = hitTest?.VisualHit as DependencyObject;
+
+                // Star strip is a click target; arming drag here would turn a wobble while rating into a package drag.
+                if (FindParent<VPM.Windows.VpbStarStrip>(hitVisual) != null)
+                    return;
+
+                var dataGridRow = FindParent<DataGridRow>(hitVisual);
+
                 if (dataGridRow != null)
                 {
                     _dragStartPoint = e.GetPosition(dataGrid);
@@ -3935,6 +4161,14 @@ namespace VPM
                             if (PlaylistsFilterList != null)
                                 _settingsManager.Settings.PlaylistsFilterHeight = PlaylistsFilterList.ActualHeight;
                             break;
+                        case "VpbRatingFilter":
+                            if (VpbRatingFilterList != null)
+                                _settingsManager.Settings.VpbRatingFilterHeight = VpbRatingFilterList.ActualHeight;
+                            break;
+                        case "VpbTagFilter":
+                            if (VpbTagFilterList != null)
+                                _settingsManager.Settings.VpbTagFilterHeight = VpbTagFilterList.ActualHeight;
+                            break;
                     }
                 }
                 catch (Exception)
@@ -3958,6 +4192,8 @@ namespace VPM
                 "DamagedFilter" => DamagedFilterList,
                 "DestinationsFilter" => DestinationsFilterList,
                 "PlaylistsFilter" => PlaylistsFilterList,
+                "VpbRatingFilter" => VpbRatingFilterList,
+                "VpbTagFilter" => VpbTagFilterList,
                 _ => null
             };
         }
@@ -4125,6 +4361,20 @@ namespace VPM
                             targetList = PlaylistsFilterList;
                             expandedGrid = PlaylistsFilterExpandedGrid;
                             collapsedGrid = PlaylistsFilterCollapsedGrid;
+                            break;
+                        case "VpbRatingFilter":
+                            newVisibility = !_settingsManager.Settings.VpbRatingFilterVisible;
+                            _settingsManager.Settings.VpbRatingFilterVisible = newVisibility;
+                            targetList = VpbRatingFilterList;
+                            expandedGrid = VpbRatingFilterExpandedGrid;
+                            collapsedGrid = VpbRatingFilterCollapsedGrid;
+                            break;
+                        case "VpbTagFilter":
+                            newVisibility = !_settingsManager.Settings.VpbTagFilterVisible;
+                            _settingsManager.Settings.VpbTagFilterVisible = newVisibility;
+                            targetList = VpbTagFilterList;
+                            expandedGrid = VpbTagFilterExpandedGrid;
+                            collapsedGrid = VpbTagFilterCollapsedGrid;
                             break;
                     }
                     
@@ -5111,6 +5361,10 @@ namespace VPM
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
+            finally
+            {
+                RefreshVpbToolbarChrome();
+            }
         }
 
         private void VpbPatchButton_Click(object sender, RoutedEventArgs e)
@@ -5722,16 +5976,15 @@ namespace VPM
                 System.Diagnostics.Debug.WriteLine($"Failed to copy to clipboard: {ex.Message}");
             }
         }
-        
+
         private async void DiscardSelectedScenes_Click(object sender, RoutedEventArgs e)
         {
             var selectedScenes = ScenesDataGrid?.SelectedItems?.Cast<SceneItem>().ToList();
             if (selectedScenes == null || selectedScenes.Count == 0)
                 return;
-            
+
             try
             {
-                // Create DiscardedPackages folder in game root
                 string gameRoot = _settingsManager?.Settings?.SelectedFolder;
                 if (string.IsNullOrEmpty(gameRoot))
                 {
@@ -5739,9 +5992,14 @@ namespace VPM
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
-                
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                Directory.CreateDirectory(discardedFolder);
+
+                string discardedFolder = DiscardPaths.EnsureDiscardFolder(gameRoot, DiscardKind.Scene);
+                if (string.IsNullOrEmpty(discardedFolder))
+                {
+                    DarkMessageBox.Show($"Could not create the {DiscardPaths.DeletedScenes} folder.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 
                 int successCount = 0;
                 int failureCount = 0;
@@ -5753,18 +6011,9 @@ namespace VPM
                     {
                         if (!string.IsNullOrEmpty(sceneItem.FilePath) && File.Exists(sceneItem.FilePath))
                         {
+                            string originalPath = sceneItem.FilePath;
                             string fileName = Path.GetFileName(sceneItem.FilePath);
-                            string destinationPath = Path.Combine(discardedFolder, fileName);
-                            
-                            // Handle file name conflicts by appending a number
-                            int counter = 1;
-                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                            string extension = Path.GetExtension(fileName);
-                            while (File.Exists(destinationPath))
-                            {
-                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                counter++;
-                            }
+                            string destinationPath = DiscardPaths.PickUniqueDestinationPath(discardedFolder, fileName);
                             
                             var (fileMoved, moveError) = await TryDiscardFileMoveAsync(sceneItem.FilePath, destinationPath);
                             
@@ -5812,6 +6061,7 @@ namespace VPM
                     {
                         Scenes.Remove(scene);
                     }
+
                 }
             }
             catch (Exception ex)
@@ -5827,10 +6077,9 @@ namespace VPM
             var selectedCustomAtoms = CustomAtomDataGrid?.SelectedItems?.Cast<CustomAtomItem>().ToList();
             if (selectedCustomAtoms == null || selectedCustomAtoms.Count == 0)
                 return;
-            
+
             try
             {
-                // Create DiscardedPackages folder in game root
                 string gameRoot = _settingsManager?.Settings?.SelectedFolder;
                 if (string.IsNullOrEmpty(gameRoot))
                 {
@@ -5838,9 +6087,14 @@ namespace VPM
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
-                
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                Directory.CreateDirectory(discardedFolder);
+
+                string discardedFolder = DiscardPaths.EnsureDiscardFolder(gameRoot, DiscardKind.Preset);
+                if (string.IsNullOrEmpty(discardedFolder))
+                {
+                    DarkMessageBox.Show($"Could not create the {DiscardPaths.DeletedPresets} folder.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
                 
                 int successCount = 0;
                 int failureCount = 0;
@@ -5852,18 +6106,9 @@ namespace VPM
                     {
                         if (!string.IsNullOrEmpty(customAtomItem.FilePath) && File.Exists(customAtomItem.FilePath))
                         {
+                            string originalPath = customAtomItem.FilePath;
                             string fileName = Path.GetFileName(customAtomItem.FilePath);
-                            string destinationPath = Path.Combine(discardedFolder, fileName);
-                            
-                            // Handle file name conflicts by appending a number
-                            int counter = 1;
-                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                            string extension = Path.GetExtension(fileName);
-                            while (File.Exists(destinationPath))
-                            {
-                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                counter++;
-                            }
+                            string destinationPath = DiscardPaths.PickUniqueDestinationPath(discardedFolder, fileName);
                             
                             var (fileMoved, moveError) = await TryDiscardFileMoveAsync(customAtomItem.FilePath, destinationPath);
                             
@@ -5904,6 +6149,7 @@ namespace VPM
                     {
                         CustomAtomItems.Remove(customAtom);
                     }
+
                 }
                 
                 // Show error message only if there were failures
@@ -5921,10 +6167,7 @@ namespace VPM
             }
         }
         
-        /// <summary>
-        /// Move a file into DiscardedPackages with the same handle-release/retry behavior used by Move To.
-        /// Bare File.Move fails in Release/published builds when ZipArchive pools still hold the .var open.
-        /// </summary>
+        /// <summary>Discard-folder move with the same handle-release/retry as Move To. Bare File.Move fails in Release when ZipArchive pools still hold the .var open.</summary>
         private async Task<(bool success, string error)> TryDiscardFileMoveAsync(string sourcePath, string destinationPath)
         {
             string lastError = null;
@@ -5952,20 +6195,36 @@ namespace VPM
                 {
                     lastError = ex.Message;
                     System.Diagnostics.Debug.WriteLine($"Discard move locked '{sourcePath}', retry {attempt}/{maxAttempts}: {ex.Message}");
-                    await Task.Delay(100 * attempt);
+                    await Task.Delay(150 * attempt);
                 }
                 catch (UnauthorizedAccessException ex) when (attempt < maxAttempts)
                 {
                     lastError = ex.Message;
-                    await Task.Delay(100 * attempt);
+                    await Task.Delay(150 * attempt);
                 }
                 catch (Exception ex)
                 {
-                    return (false, ex.Message);
+                    return (false, DescribeFileOperationError(sourcePath, ex.Message));
                 }
             }
 
-            return (false, lastError ?? "Move failed");
+            return (false, DescribeFileOperationError(sourcePath, lastError ?? "Move failed"));
+        }
+
+        /// <summary>Append locking process names to a failed file-operation message so "used by another process" names the process.</summary>
+        private static string DescribeFileOperationError(string filePath, string error)
+        {
+            try
+            {
+                var holders = FileLockInspector.DescribeLockingProcesses(filePath);
+                if (!string.IsNullOrEmpty(holders))
+                    return $"{error} (locked by {holders})";
+            }
+            catch
+            {
+            }
+
+            return error;
         }
 
         private async void DiscardSelected_Click(object sender, RoutedEventArgs e)
@@ -5973,10 +6232,9 @@ namespace VPM
             var selectedPackages = PackageDataGrid?.SelectedItems?.Cast<PackageItem>().ToList();
             if (selectedPackages == null || selectedPackages.Count == 0)
                 return;
-            
+
             try
             {
-                // Create DiscardedPackages folder in game root
                 string gameRoot = _settingsManager?.Settings?.SelectedFolder;
                 if (string.IsNullOrEmpty(gameRoot))
                 {
@@ -5984,9 +6242,14 @@ namespace VPM
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
-                
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                Directory.CreateDirectory(discardedFolder);
+
+                string discardedFolder = DiscardPaths.EnsureDiscardFolder(gameRoot, DiscardKind.Package);
+                if (string.IsNullOrEmpty(discardedFolder))
+                {
+                    DarkMessageBox.Show($"Could not create the {DiscardPaths.DeletedPackages} folder.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
 
                 // Same pre-move release as Move To — required in Release/published where archive pools stay open longer
                 _imageLoadingCts?.Cancel();
@@ -6025,17 +6288,7 @@ namespace VPM
                         if (!string.IsNullOrEmpty(sourceFilePath) && File.Exists(sourceFilePath))
                         {
                             string fileName = Path.GetFileName(sourceFilePath);
-                            string destinationPath = Path.Combine(discardedFolder, fileName);
-                            
-                            // Handle file name conflicts by appending a number
-                            int counter = 1;
-                            string baseFileName = Path.GetFileNameWithoutExtension(fileName);
-                            string extension = Path.GetExtension(fileName);
-                            while (File.Exists(destinationPath))
-                            {
-                                destinationPath = Path.Combine(discardedFolder, $"{baseFileName}_{counter}{extension}");
-                                counter++;
-                            }
+                            string destinationPath = DiscardPaths.PickUniqueDestinationPath(discardedFolder, fileName);
 
                             var (fileMoved, moveError) = await TryDiscardFileMoveAsync(sourceFilePath, destinationPath);
                             
@@ -6071,6 +6324,10 @@ namespace VPM
                 {
                     Packages.Remove(package);
                 }
+
+                if (successCount > 0)
+                {
+                }
                 
                 // Show error message only if there were failures
                 if (failureCount > 0)
@@ -6087,6 +6344,21 @@ namespace VPM
             }
         }
 
+        /// <summary>Active tab → discard kind: Scenes, Presets/Custom, or Packages.</summary>
+        private DiscardKind GetDiscardKindForCurrentMode()
+        {
+            switch (_currentContentMode)
+            {
+                case "Scenes":
+                    return DiscardKind.Scene;
+                case "Presets":
+                case "Custom":
+                    return DiscardKind.Preset;
+                default:
+                    return DiscardKind.Package;
+            }
+        }
+
         private void OpenDiscardLocation_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -6099,15 +6371,14 @@ namespace VPM
                     return;
                 }
                 
-                string discardedFolder = Path.Combine(gameRoot, "DiscardedPackages");
-                
-                // Create folder if it doesn't exist
-                if (!Directory.Exists(discardedFolder))
+                string discardedFolder = DiscardPaths.ResolveFolderToOpen(gameRoot, GetDiscardKindForCurrentMode());
+                if (string.IsNullOrEmpty(discardedFolder))
                 {
-                    Directory.CreateDirectory(discardedFolder);
+                    DarkMessageBox.Show("Could not resolve the discard folder.", "Error",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
                 }
-                
-                // Open the folder in explorer
+
                 var psi = new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = "explorer.exe",
@@ -6421,6 +6692,9 @@ namespace VPM
                 {
                     PopulateAddToPlaylistMenu(addToPlaylistMenuItem);
                 }
+
+                PopulateVpbRateMenu(VpbRateMenuItem);
+                PopulateVpbTagsMenu(VpbTagsMenuItem);
             }
         }
 
@@ -6656,6 +6930,9 @@ namespace VPM
 
         private void CustomAtomContextMenu_Opened(object sender, RoutedEventArgs e)
         {
+            PopulateVpbRateMenu(CustomVpbRateMenuItem);
+            PopulateVpbTagsMenu(CustomVpbTagsMenuItem);
+
             if (sender is not ContextMenu contextMenu)
                 return;
 
@@ -7399,14 +7676,20 @@ namespace VPM
                 _packageManager,
                 _packageManager?.DependencyGraph,
                 vamRootFolder,
-                _packageFileManager);
+                _packageFileManager,
+                _scanControl);
             playlistWindow.ShowDialog();
             
-            // Rescan packages to reflect file movements from playlist activation
-            // PackageFileManager moves files between AddonPackages and AllPackages folders.
-            // We must rescan the disk to detect the new file locations and update package statuses.
-            _packageFileManager?.InvalidatePackageIndex();
-            RefreshPackages();
+            EnsureScanControl();
+            if (_scanControl?.IsWhitelistMode == true)
+            {
+                ApplyWhitelistStatusesToUi();
+            }
+            else
+            {
+                _packageFileManager?.InvalidatePackageIndex();
+                RefreshPackages();
+            }
         }
 
         private class MoveToMenuItemTag

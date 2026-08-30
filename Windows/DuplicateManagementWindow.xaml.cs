@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using VPM.Models;
 using VPM.Services;
+using VPM.Services.Vpb;
 
 namespace VPM
 {
@@ -812,6 +813,23 @@ namespace VPM
             packagesToDelete = packagesToDelete.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             packagesToKeep = packagesToKeep.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
+            try
+            {
+                var vamRoot = Directory.GetParent(_addonPackagesPath)?.FullName;
+                if (!string.IsNullOrEmpty(vamRoot))
+                {
+                    var locked = VpbLockedPackagesStore.Load(vamRoot);
+                    using var db = new VpbLocalDbReader(vamRoot);
+                    foreach (var uid in db.LoadCleanupExclude())
+                        locked.Add(uid);
+                    int skipped = packagesToDelete.RemoveAll(p => locked.Contains(VpbLockedPackagesStore.UidFromVarPath(p)));
+                    if (skipped > 0)
+                        DarkMessageBox.Show($"{skipped} file(s) locked by VPB, skipped.", "Fix Duplicates",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch { }
+
             if (packagesToDelete.Count == 0)
             {
                 DarkMessageBox.Show("No packages selected for deletion or moving.", "Fix Duplicates", 
@@ -1200,6 +1218,10 @@ namespace VPM
 
         private void DuplicatesDataGrid_PreviewMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            DataGridGripperAutoSize.SuppressIfGripperDoubleClick(e);
+            if (e.Handled)
+                return;
+
             if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
             {
                 var dataGrid = sender as System.Windows.Controls.DataGrid;

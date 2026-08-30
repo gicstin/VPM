@@ -177,6 +177,21 @@ namespace VPM
             });
         }
 
+        private void FavoriteAddMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            FavoriteToggleButton_Click(sender, e);
+        }
+
+        private void FavoriteRemoveMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            FavoriteToggleButton_PreviewMouseRightButtonDown(sender, null);
+        }
+
+        private void OpenFavoritesFileMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFavoritesFile();
+        }
+
         private void FavoriteToggleButton_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
             // Handle presets and custom favorites removal
@@ -200,7 +215,8 @@ namespace VPM
                 RefreshPresetFilterCounters();
 
                 SetStatus($"Removed {selectedItems.Count} custom atom item(s) from favorites");
-                e.Handled = true;
+                if (e != null)
+                    e.Handled = true;
                 return;
             }
 
@@ -225,7 +241,8 @@ namespace VPM
                 RefreshSceneFilterCounters();
 
                 SetStatus($"Removed {selectedScenes.Count} scene(s) from favorites");
-                e.Handled = true;
+                if (e != null)
+                    e.Handled = true;
                 return;
             }
 
@@ -266,7 +283,8 @@ namespace VPM
                 }
             });
 
-            e.Handled = true;
+            if (e != null)
+                e.Handled = true;
         }
 
         private void HideToggleButton_Click(object sender, RoutedEventArgs e)
@@ -320,6 +338,16 @@ namespace VPM
             }
         }
 
+        private void HideAddMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            HideToggleButton_Click(sender, e);
+        }
+
+        private void HideRemoveMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            HideToggleButton_PreviewMouseRightButtonDown(sender, null);
+        }
+
         private void HideToggleButton_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
         {
             // Handle presets and custom hide removal
@@ -343,7 +371,8 @@ namespace VPM
                 RefreshPresetFilterCounters();
 
                 SetStatus($"Unhidden {selectedItems.Count} custom atom item(s)");
-                e.Handled = true;
+                if (e != null)
+                    e.Handled = true;
                 return;
             }
 
@@ -368,7 +397,8 @@ namespace VPM
                 RefreshSceneFilterCounters();
 
                 SetStatus($"Unhidden {selectedScenes.Count} scene(s)");
-                e.Handled = true;
+                if (e != null)
+                    e.Handled = true;
                 return;
             }
         }
@@ -391,172 +421,6 @@ namespace VPM
             }
             catch (Exception)
             {
-            }
-        }
-
-        private void UpdateFavoriteCounter()
-        {
-            if (FavoriteCountText == null) return;
-
-            int favoriteableCount = 0;
-
-            // Check current content mode
-            if (_currentContentMode == "Scenes")
-            {
-                // Count selected scenes
-                if (ScenesDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in ScenesDataGrid.SelectedItems)
-                    {
-                        if (item is SceneItem scene)
-                        {
-                            favoriteableCount++;
-                        }
-                    }
-                }
-            }
-            else if (_currentContentMode == "Presets" || _currentContentMode == "Custom")
-            {
-                // Count selected presets and scenes
-                if (CustomAtomDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in CustomAtomDataGrid.SelectedItems)
-                    {
-                        if (item is CustomAtomItem preset)
-                        {
-                            favoriteableCount++;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // Count selected packages
-                if (PackageDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in PackageDataGrid.SelectedItems)
-                    {
-                        if (item is PackageItem package)
-                        {
-                            favoriteableCount++;
-                        }
-                    }
-                }
-            }
-
-            if (favoriteableCount > 0)
-            {
-                FavoriteCountText.Text = $"({favoriteableCount})";
-            }
-            else
-            {
-                FavoriteCountText.Text = "";
-            }
-        }
-
-        private void UpdateAutoinstallCounter()
-        {
-            if (AutoinstallCountText == null) return;
-
-            int autoinstallableCount = 0;
-
-            // Check current content mode
-            if (_currentContentMode == "Scenes")
-            {
-                // Count selected scenes
-                if (ScenesDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in ScenesDataGrid.SelectedItems)
-                    {
-                        if (item is SceneItem scene)
-                        {
-                            autoinstallableCount++;
-                        }
-                    }
-                }
-            }
-            else if (_currentContentMode == "Presets" || _currentContentMode == "Custom")
-            {
-                // Count selected presets and scenes
-                if (CustomAtomDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in CustomAtomDataGrid.SelectedItems)
-                    {
-                        if (item is CustomAtomItem preset)
-                        {
-                            autoinstallableCount++;
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // Count selected packages
-                if (PackageDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in PackageDataGrid.SelectedItems)
-                    {
-                        if (item is PackageItem package)
-                        {
-                            autoinstallableCount++;
-                        }
-                    }
-                }
-            }
-
-            if (autoinstallableCount > 0)
-            {
-                AutoinstallCountText.Text = $"({autoinstallableCount})";
-            }
-            else
-            {
-                AutoinstallCountText.Text = "";
-            }
-        }
-
-        private void UpdateHideCounter()
-        {
-            if (HideCountText == null) return;
-
-            int hideableCount = 0;
-
-            // Check current content mode
-            if (_currentContentMode == "Scenes")
-            {
-                // Count selected scenes
-                if (ScenesDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in ScenesDataGrid.SelectedItems)
-                    {
-                        if (item is SceneItem scene)
-                        {
-                            hideableCount++;
-                        }
-                    }
-                }
-            }
-            else if (_currentContentMode == "Presets" || _currentContentMode == "Custom")
-            {
-                // Count selected presets and scenes
-                if (CustomAtomDataGrid?.SelectedItems != null)
-                {
-                    foreach (var item in CustomAtomDataGrid.SelectedItems)
-                    {
-                        if (item is CustomAtomItem preset)
-                        {
-                            hideableCount++;
-                        }
-                    }
-                }
-            }
-
-            if (hideableCount > 0)
-            {
-                HideCountText.Text = $"({hideableCount})";
-            }
-            else
-            {
-                HideCountText.Text = "";
             }
         }
     }

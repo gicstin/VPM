@@ -1480,18 +1480,14 @@ namespace VPM
                 // Skip placeholder items
                 if (dep.Status == "N/A" || dep.Name == "No dependencies" || dep.Name == "No dependents")
                     continue;
-                
-                // Skip if already marked as Loaded (e.g., by download completion handler)
-                // This prevents overwriting the correct status with a stale lookup
-                if (dep.Status == "Loaded")
-                    continue;
-                
-                // Get the current status from the package file manager
-                var newStatus = _packageFileManager?.GetPackageStatus(dep.Name) ?? "Unknown";
-                
-                // Only update if the new status is better (Loaded > Available > Missing)
-                // This ensures we don't downgrade a status that was correctly set
-                if (dep.Status != newStatus && ShouldUpdateDependencyStatus(dep.Status, newStatus))
+
+                var lookup = string.IsNullOrEmpty(dep.DisplayName) ? dep.Name : dep.DisplayName;
+                var newStatus = _scanControl?.IsWhitelistMode == true
+                    ? _scanControl.ResolveDisplayStatus(lookup)
+                    : (_packageFileManager?.GetPackageStatus(dep.Name) ?? "Unknown");
+
+                if (dep.Status != newStatus &&
+                    (_scanControl?.IsWhitelistMode == true || ShouldUpdateDependencyStatus(dep.Status, newStatus)))
                 {
                     dep.Status = newStatus;
                     
@@ -1662,6 +1658,16 @@ namespace VPM
                                     _packageManager?.PackageMetadata?.GetValueOrDefault(packageItem.MetadataKey ?? packageItem.Name)?.FilePath,
                                     Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder)))
                                 return;
+
+                            if (_scanControl?.IsWhitelistMode == true)
+                            {
+                                if (packageItem.Status == "Loaded")
+                                    TryWhitelistExclude(new[] { packageItem });
+                                else
+                                    TryWhitelistInclude(new[] { packageItem }, withDeps: false);
+                                UpdatePackageStatusColorInGrid(group, packageItem);
+                                return;
+                            }
 
                             // Cancel any pending image loading operations to free up file handles
                             _imageLoadingCts?.Cancel();

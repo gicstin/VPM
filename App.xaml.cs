@@ -11,6 +11,8 @@ namespace VPM
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            UiScaleService.Initialize();
             
             // Suppress WPF binding errors in debug output
             PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Critical;
@@ -68,6 +70,7 @@ namespace VPM
             {
                 // Load settings to check if this is first launch
                 var settingsManager = new SettingsManager();
+                UiScaleService.Bind(settingsManager);
                 
                 if (settingsManager.Settings.IsFirstLaunch)
                 {

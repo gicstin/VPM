@@ -685,6 +685,9 @@ namespace VPM.Windows
             
             // Initialize download queue list binding
             DownloadQueueList.ItemsSource = _downloadQueue;
+            SetupWorkViews();
+            if (DownloadDockList != null)
+                DownloadDockList.ItemsSource = _downloadQueue;
             
             // Note: OldVersionHandlingDropdown event handler is set in XAML code-behind after InitializeComponent
         }
@@ -762,6 +765,7 @@ namespace VPM.Windows
         private void HubBrowserWindow_SourceInitialized(object sender, EventArgs e)
         {
             ApplyDarkTitleBar();
+            FitToWorkArea();
         }
 
         private void ApplyDarkTitleBar()
@@ -784,8 +788,67 @@ namespace VPM.Windows
             }
         }
 
+        private void FitToWorkArea()
+        {
+            var work = GetOwnerWorkAreaDip();
+            if (work.Width <= 0 || work.Height <= 0)
+                return;
+
+            const double pad = 24;
+            double maxW = Math.Max(640, work.Width - pad);
+            double maxH = Math.Max(480, work.Height - pad);
+
+            if (Width > maxW)
+                Width = maxW;
+            if (Height > maxH)
+                Height = maxH;
+
+            double left = work.Left + (work.Width - Width) / 2;
+            double top = work.Top + (work.Height - Height) / 2;
+            if (left < work.Left)
+                left = work.Left;
+            if (top < work.Top)
+                top = work.Top;
+            if (left + Width > work.Right)
+                left = Math.Max(work.Left, work.Right - Width);
+            if (top + Height > work.Bottom)
+                top = Math.Max(work.Top, work.Bottom - Height);
+
+            Left = left;
+            Top = top;
+        }
+
+        private Rect GetOwnerWorkAreaDip()
+        {
+            var target = Owner ?? this;
+            var hwnd = new WindowInteropHelper(target).Handle;
+            if (hwnd == IntPtr.Zero)
+                hwnd = new WindowInteropHelper(target).EnsureHandle();
+
+            if (hwnd != IntPtr.Zero)
+            {
+                var screen = System.Windows.Forms.Screen.FromHandle(hwnd);
+                var wa = screen.WorkingArea;
+                double scaleX = 1;
+                double scaleY = 1;
+                var source = PresentationSource.FromVisual(target) ?? HwndSource.FromHwnd(hwnd);
+                if (source?.CompositionTarget != null)
+                {
+                    var m = source.CompositionTarget.TransformFromDevice;
+                    scaleX = m.M11;
+                    scaleY = m.M22;
+                }
+
+                return new Rect(wa.Left * scaleX, wa.Top * scaleY, wa.Width * scaleX, wa.Height * scaleY);
+            }
+
+            return SystemParameters.WorkArea;
+        }
+
         private async void HubBrowserWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            FitToWorkArea();
+
             // Hook up old version handling dropdown (sync, fast)
             if (OldVersionHandlingDropdown != null)
             {
@@ -874,6 +937,8 @@ namespace VPM.Windows
             {
                 _ = ExpandOverviewPanelAsync();
             }
+
+            ApplyHubChromeDensity();
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -894,6 +959,9 @@ namespace VPM.Windows
                 SearchBox?.SelectAll();
                 e.Handled = true;
             }
+
+            if (!e.Handled)
+                HandleWorkViewKey(e);
 
             // Esc closes popups if open
             if (!e.Handled && e.Key == Key.Escape)
@@ -1765,6 +1833,12 @@ namespace VPM.Windows
             {
                 if (ActiveFiltersBorder == null || ActiveFiltersItems == null)
                     return;
+
+                if (_workView != HubWorkView.Browse)
+                {
+                    ActiveFiltersBorder.Visibility = Visibility.Collapsed;
+                    return;
+                }
 
                 var chips = new List<ActiveFilterChip>();
 
@@ -3102,9 +3176,100 @@ namespace VPM.Windows
             }
         }
 
+        private bool _applyingHubChromeDensity;
+
         private void HubBrowserWindow_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             ApplyGoldenRatioSizing(force: false);
+            ApplyHubChromeDensity();
+        }
+
+        private void HubBrowseChrome_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyHubChromeDensity();
+        }
+
+        private void ApplyHubChromeDensity()
+        {
+            if (_applyingHubChromeDensity || QueryChromeGrid == null || BrowseSearchHost == null || RefreshButton == null)
+                return;
+
+            var width = HubBrowseChrome?.ActualWidth ?? 0;
+            if (width <= 0)
+                width = ActualWidth;
+            if (width <= 0)
+                return;
+
+            _applyingHubChromeDensity = true;
+            try
+            {
+                var tight = width < 1020;
+                var compact = width < 760;
+
+                Grid.SetRow(RefreshButton, tight ? 1 : 0);
+                Grid.SetColumn(RefreshButton, tight ? 0 : 3);
+                RefreshButton.Margin = tight ? new Thickness(0, 4, 8, 0) : new Thickness(0, 0, 8, 0);
+                RefreshButton.HorizontalAlignment = HorizontalAlignment.Left;
+
+                Grid.SetRow(BrowsePagerControls, tight ? 1 : 0);
+                Grid.SetColumn(BrowsePagerControls, 4);
+                BrowsePagerControls.Margin = tight ? new Thickness(0, 4, 0, 0) : new Thickness(0);
+                BrowsePagerControls.HorizontalAlignment = HorizontalAlignment.Right;
+
+                Grid.SetColumnSpan(BrowseSearchHost, tight ? 4 : 1);
+                SearchBox.MinWidth = compact ? 120 : 160;
+
+                Grid.SetRow(HubStatusHost, tight ? 1 : 0);
+                Grid.SetColumn(HubStatusHost, tight ? 1 : 2);
+                HubStatusHost.Margin = tight ? new Thickness(0, 4, 8, 0) : new Thickness(0, 0, 8, 0);
+
+                UpdateIdleStatusVisibility();
+
+                if (SearchPlaceholder != null)
+                    SearchPlaceholder.Text = compact ? "Search..." : "Search titles, creators, tags...";
+
+                if (PrevPageButton != null)
+                {
+                    PrevPageButton.Content = compact ? "◀" : "◀ Prev";
+                    PrevPageButton.ToolTip = compact ? "Previous page" : null;
+                }
+                if (NextPageButton != null)
+                {
+                    NextPageButton.Content = compact ? "▶" : "Next ▶";
+                    NextPageButton.ToolTip = compact ? "Next page" : null;
+                }
+                if (PageWordLabel != null)
+                    PageWordLabel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+                if (TotalCountText != null)
+                    TotalCountText.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+
+                if (RefreshButtonLabel != null)
+                    RefreshButtonLabel.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+                if (RefreshButtonIcon != null)
+                    RefreshButtonIcon.Margin = compact ? new Thickness(0) : new Thickness(0, 0, 6, 0);
+                RefreshButton.ToolTip = compact ? "Refresh" : "Refresh";
+
+                if (HostedOptionFilter != null)
+                    HostedOptionFilter.MinWidth = compact ? 110 : 160;
+                if (CreatorFilter != null)
+                    CreatorFilter.Width = compact ? 120 : 160;
+            }
+            finally
+            {
+                _applyingHubChromeDensity = false;
+            }
+        }
+
+        private void UpdateIdleStatusVisibility()
+        {
+            if (StatusText == null)
+                return;
+
+            var status = StatusText.Text ?? "";
+            var hideIdleStatus = string.IsNullOrWhiteSpace(status) ||
+                                 string.Equals(status, "Ready", StringComparison.OrdinalIgnoreCase);
+            StatusText.Visibility = hideIdleStatus ? Visibility.Collapsed : Visibility.Visible;
+            StatusText.MaxWidth = (HubBrowseChrome?.ActualWidth ?? ActualWidth) < 760 ? 120 : 240;
         }
 
         private void ApplyGoldenRatioSizing(bool force)
@@ -4046,12 +4211,12 @@ namespace VPM.Windows
                 
                 if (_oldVersionHandling == "Archive All Old")
                 {
-                    var archiveFolder = Path.Combine(_vamFolder, "ArchivedPackages", "OldPackages");
+                    var archiveFolder = Path.Combine(_vamFolder, DiscardPaths.ArchivedPackages, DiscardPaths.ArchivedOldPackages);
                     await MoveOldVersionsToFolderAsync(oldVersions, archiveFolder);
                 }
                 else if (_oldVersionHandling == "Discard All Old")
                 {
-                    var discardFolder = Path.Combine(_vamFolder, "DiscardedPackages");
+                    var discardFolder = DiscardPaths.GetDiscardFolder(_vamFolder, DiscardKind.Package, DiscardPaths.BucketOldVersions);
                     await MoveOldVersionsToFolderAsync(oldVersions, discardFolder);
                 }
             }
@@ -4222,6 +4387,7 @@ namespace VPM.Windows
             {
                 if (_pendingLibraryStatusRefresh || _totalDownloadsInBatch == 0)
                     ScheduleLibraryStatusRefresh(force: true);
+                RaiseLibraryRefreshNeeded();
             }, System.Windows.Threading.DispatcherPriority.Background);
         }
         
@@ -4229,14 +4395,12 @@ namespace VPM.Windows
         {
             var activeCount = _downloadQueue.Count(d => d.Status == DownloadStatus.Queued || d.Status == DownloadStatus.Downloading);
             
-            DownloadQueueCountText.Text = activeCount.ToString();
-            DownloadQueueButton.Visibility = activeCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-            
-            // Update Cancel All button visibility
-            CancelAllDownloadsButton.Visibility = _downloadQueue.Any(d => d.CanCancel) ? Visibility.Visible : Visibility.Collapsed;
-            
-            // Update Open Downloading button visibility (show if there are saved downloading details)
-            OpenDownloadingButton.Visibility = _savedDownloadingDetails.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (DownloadQueueCountText != null)
+                DownloadQueueCountText.Text = activeCount.ToString();
+            if (DownloadQueueButton != null)
+                DownloadQueueButton.Visibility = Visibility.Collapsed;
+
+            UpdateDownloadDock();
         }
         
         private void DownloadQueueButton_Click(object sender, RoutedEventArgs e)
@@ -4525,441 +4689,20 @@ namespace VPM.Windows
         
         #region Updates and Missing Dependencies Panels
         
-        private async void UpdatesPanelButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Prevent multiple rapid clicks
-            if (_isUpdatesCheckInProgress)
-            {
-                return;
-            }
-            
-            _isUpdatesCheckInProgress = true;
-            try
-            {
-                await ShowUpdatesPanelAsync();
-            }
-            finally
-            {
-                _isUpdatesCheckInProgress = false;
-            }
-        }
-        
-        private async void MissingDepsPanelButton_Click(object sender, RoutedEventArgs e)
-        {
-            await ShowMissingDependenciesPanelAsync();
-        }
-        
-        private async Task ShowUpdatesPanelAsync()
-        {
-            try
-            {
-                // Reset search filter
-                if (DetailSearchBox != null)
-                {
-                    DetailSearchBox.Text = "";
-                    _detailSearchText = "";
-                }
-
-                // Show loading spinner
-                StatusLoadingSpinner.Visibility = Visibility.Visible;
-                StatusText.Text = "Checking for updates...";
-                
-                // Get all package groups that have updates available
-                // Use _localPackageVersions (highest version per base package).
-                var updatesAvailable = new List<(string packageGroup, int localVersion, int hubVersion)>();
-                
-                foreach (var kvp in _localPackageVersions)
-                {
-                    var groupName = kvp.Key;
-                    var localVersion = kvp.Value;
-                    
-                    if (localVersion > 0 && _hubService.HasUpdate(groupName, localVersion))
-                    {
-                        var hubVersion = _hubService.GetLatestVersion(groupName);
-                        if (hubVersion > localVersion)
-                        {
-                            updatesAvailable.Add((groupName, localVersion, hubVersion));
-                        }
-                    }
-                }
-                
-                if (updatesAvailable.Count == 0)
-                {
-                    StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "No updates available";
-                    MessageBox.Show("All your packages are up to date!", "Updates", MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-                
-                // Find packages on Hub
-                var packageNames = updatesAvailable.Select(u => u.packageGroup + ".latest").ToList();
-                var hubPackages = await _hubService.FindPackagesAsync(packageNames);
-                
-                if (hubPackages == null || hubPackages.Count == 0)
-                {
-                    StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "Could not fetch update information";
-                    return;
-                }
-                
-                // Create a pseudo-detail view for updates
-                _currentFiles.Clear();
-                _currentDependencies.Clear();
-                
-                foreach (var update in updatesAvailable)
-                {
-                    var packageKey = update.packageGroup + ".latest";
-                    var filename = $"{update.packageGroup}.{update.hubVersion}.var";
-                    var downloadUrl = "";
-                    var fileSize = 0;
-                    var latestUrl = "";
-                    var hasMetadata = false;
-                    
-                    if (hubPackages.TryGetValue(packageKey, out var hubPackage) && hubPackage != null)
-                    {
-                        hasMetadata = true;
-                        downloadUrl = !string.IsNullOrEmpty(hubPackage.LatestUrl) 
-                            ? hubPackage.LatestUrl 
-                            : hubPackage.DownloadUrl;
-                        
-                        if (!string.IsNullOrEmpty(hubPackage.PackageName))
-                            filename = hubPackage.PackageName;
-                        
-                        fileSize = (int)hubPackage.FileSize;
-                        latestUrl = hubPackage.LatestUrl;
-                    }
-                    
-                    var statusColor = hasMetadata 
-                        ? new SolidColorBrush(Colors.Orange)
-                        : new SolidColorBrush(Colors.Gray);
-                    
-                    var vm = new HubFileViewModel
-                    {
-                        Filename = filename,
-                        FileSize = fileSize,
-                        DownloadUrl = downloadUrl,
-                        LatestUrl = latestUrl,
-                        Status = hasMetadata
-                            ? $"Update {update.localVersion} → {update.hubVersion}"
-                            : $"Update available ({update.localVersion} → {update.hubVersion})",
-                        StatusColor = statusColor,
-                        CanDownload = !string.IsNullOrEmpty(downloadUrl),
-                        ButtonText = "⬆",
-                        HasUpdate = true,
-                        IsInstalled = true
-                    };
-                    
-                    _currentFiles.Add(vm);
-                }
-                
-                // Update UI
-                SetMissingDepsActionsPanelVisible(false);
-                DetailTitle.Text = $"📦 Available Updates ({updatesAvailable.Count})";
-                DetailOpenInBrowserButton.Visibility = Visibility.Collapsed;
-                DetailOpenInBrowserButton.Tag = null;
-                DetailCopyHubLinkButton.Visibility = Visibility.Collapsed;
-                DetailCopyHubLinkButton.Tag = null;
-                DetailCreator.Text = $"Found {updatesAvailable.Count} updates available";
-                DetailCreator.Foreground = new SolidColorBrush(Colors.White);  // Normal text, not blue
-                DetailCreator.TextDecorations = null;  // Remove underline
-                DetailCreator.Cursor = Cursors.Arrow;  // Not clickable
-                DetailCreator.ToolTip = null;  // Remove tooltip
-                DetailImageBorder.Visibility = Visibility.Collapsed;
-                SupportCreatorButton.Visibility = Visibility.Collapsed;
-                DetailCategory.Visibility = Visibility.Collapsed;
-                DetailDownloads.Text = "";
-                DetailRating.Text = "";
-                
-                // Hide all per-package elements (not applicable to collection views)
-                DetailDependencies.Visibility = Visibility.Collapsed;
-                DetailFileSize.Visibility = Visibility.Collapsed;
-                DetailLastUpdate.Visibility = Visibility.Collapsed;
-                DetailTagsPanel.Visibility = Visibility.Collapsed;
-                DetailTagLine.Visibility = Visibility.Collapsed;
-                DetailCreatorIcon.Visibility = Visibility.Collapsed;
-                DetailInLibraryBadge.Visibility = Visibility.Collapsed;
-                DetailUpdateBadge.Visibility = Visibility.Collapsed;
-                DetailExternalBadge.Visibility = Visibility.Collapsed;
-
-                DetailFilesControl.ItemsSource = _currentFiles;
-                DependenciesHeader.Visibility = Visibility.Collapsed;
-                DetailDependenciesControl.ItemsSource = null;
-                
-                UpdateDownloadAllButton();
-                ExpandPanel();
-                
-                // Clear stack for updates view
-                ClearDetailStack();
-                _currentDetail = null;
-                _currentResource = null;
-                _currentResourceId = null;
-                
-                // Hide loading spinner
-                StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                StatusText.Text = $"Found {updatesAvailable.Count} updates";
-            }
-            catch (Exception ex)
-            {
-                StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                StatusText.Text = $"Error: {ex.Message}";
-            }
-        }
-        
-        private async Task ShowMissingDependenciesPanelAsync()
-        {
-            try
-            {
-                // Reset search filter
-                if (DetailSearchBox != null)
-                {
-                    DetailSearchBox.Text = "";
-                    _detailSearchText = "";
-                }
-
-                // Show loading spinner
-                StatusLoadingSpinner.Visibility = Visibility.Visible;
-                StatusText.Text = "Scanning for missing dependencies...";
-                
-                // Check if we have access to package manager
-                if (_packageManager == null)
-                {
-                    StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "Ready";
-                    MessageBox.Show(
-                        "Package manager not available.\n\n" +
-                        "Please ensure packages have been scanned in the main window.",
-                        "Missing Dependencies",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return;
-                }
-                
-                // Collect all missing dependencies from the dependency graph
-                var missingDeps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                
-                // Get all packages with missing dependencies
-                foreach (var kvp in _packageManager.PackageMetadata)
-                {
-                    var metadata = kvp.Value;
-                    if (metadata.MissingDependencies != null && metadata.MissingDependencies.Length > 0)
-                    {
-                        foreach (var dep in metadata.MissingDependencies)
-                        {
-                            if (!string.IsNullOrEmpty(dep))
-                            {
-                                missingDeps.Add(dep);
-                            }
-                        }
-                    }
-                }
-                
-                // Filter out packages already on disk (MissingDependencies may be stale).
-                var trulyMissing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var dep in missingDeps)
-                {
-                    // Check if this exact package is on disk
-                    var depClean = dep.Replace(".var", "");
-                    if (_localPackageNames.Contains(depClean))
-                        continue; // Already have it
-                    
-                    // Check if it's a .latest reference and we have any version
-                    if (dep.EndsWith(".latest", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var baseName = dep.Substring(0, dep.Length - 7);
-                        if (_localPackageVersions.ContainsKey(baseName))
-                            continue; // Have some version of this package
-                    }
-                    else
-                    {
-                        // Check if we have any version of this package (for versioned references)
-                        var lastDot = depClean.LastIndexOf('.');
-                        if (lastDot > 0)
-                        {
-                            var baseName = depClean.Substring(0, lastDot);
-                            if (_localPackageVersions.ContainsKey(baseName))
-                                continue; // Have some version of this package
-                        }
-                    }
-                    
-                    trulyMissing.Add(dep);
-                }
-                
-                missingDeps = trulyMissing;
-                
-                if (missingDeps.Count == 0)
-                {
-                    StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "Ready";
-                    MessageBox.Show(
-                        "No missing dependencies found!\n\n" +
-                        "All packages have their dependencies satisfied.",
-                        "Missing Dependencies",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
-                    return;
-                }
-                
-                // Search for missing dependencies on Hub
-                StatusText.Text = $"Searching Hub for {missingDeps.Count} missing dependencies...";
-                
-                var missingDepsList = missingDeps.ToList();
-                var hubPackages = await _hubService.FindPackagesAsync(missingDepsList);
-                
-                if (hubPackages == null || hubPackages.Count == 0)
-                {
-                    StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                    StatusText.Text = "Ready";
-                    MessageBox.Show(
-                        $"Could not search Hub for {missingDeps.Count} missing dependencies.\n\n" +
-                        "Please check your internet connection and try again.",
-                        "Search Failed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Warning);
-                    return;
-                }
-                
-                // Create a pseudo-detail view for missing dependencies
-                _currentFiles.Clear();
-                _currentDependencies.Clear();
-                
-                int foundCount = 0;
-                int notFoundCount = 0;
-                
-                foreach (var dep in missingDepsList)
-                {
-                    if (hubPackages.TryGetValue(dep, out var hubPackage) && hubPackage != null && !hubPackage.NotOnHub)
-                    {
-                        foundCount++;
-                        
-                        var downloadUrl = !string.IsNullOrEmpty(hubPackage.LatestUrl) 
-                            ? hubPackage.LatestUrl 
-                            : hubPackage.DownloadUrl;
-                        
-                        var filename = hubPackage.PackageName ?? $"{dep}.var";
-                        
-                        // Skip if filename is null or empty
-                        if (string.IsNullOrEmpty(filename))
-                            continue;
-                            
-                        var vm = new HubFileViewModel
-                        {
-                            Filename = filename,
-                            FileSize = hubPackage.FileSize,
-                            DownloadUrl = downloadUrl,
-                            LatestUrl = hubPackage.LatestUrl,
-                            Status = "Missing Dependency",
-                            StatusColor = new SolidColorBrush(Colors.Red),
-                            CanDownload = !string.IsNullOrEmpty(downloadUrl),
-                            ButtonText = "⬇",
-                            HasUpdate = false,
-                            IsInstalled = false
-                        };
-                        
-                        _currentFiles.Add(vm);
-                    }
-                    else
-                    {
-                        notFoundCount++;
-                    }
-                }
-                
-                // Update UI
-                SetMissingDepsExportList(missingDepsList);
-                DetailTitle.Text = $"🔗 Missing Dependencies ({foundCount} available, {notFoundCount} not found)";
-                DetailOpenInBrowserButton.Visibility = Visibility.Collapsed;
-                DetailOpenInBrowserButton.Tag = null;
-                DetailCopyHubLinkButton.Visibility = Visibility.Collapsed;
-                DetailCopyHubLinkButton.Tag = null;
-                DetailCreator.Text = $"Found {foundCount} of {missingDeps.Count} missing dependencies on Hub";
-                SetMissingDepsActionsPanelVisible(true);
-                DetailCreator.Foreground = new SolidColorBrush(Colors.White);  // Normal text, not blue
-                DetailCreator.TextDecorations = null;  // Remove underline
-                DetailCreator.Cursor = Cursors.Arrow;  // Not clickable
-                DetailCreator.ToolTip = null;  // Remove tooltip
-                DetailImageBorder.Visibility = Visibility.Collapsed;
-                SupportCreatorButton.Visibility = Visibility.Collapsed;
-                DetailCategory.Visibility = Visibility.Collapsed;
-                DetailDownloads.Text = "";
-                DetailRating.Text = "";
-                
-                // Hide all per-package elements (not applicable to collection views)
-                DetailDependencies.Visibility = Visibility.Collapsed;
-                DetailFileSize.Visibility = Visibility.Collapsed;
-                DetailLastUpdate.Visibility = Visibility.Collapsed;
-                DetailTagsPanel.Visibility = Visibility.Collapsed;
-                DetailTagLine.Visibility = Visibility.Collapsed;
-                DetailCreatorIcon.Visibility = Visibility.Collapsed;
-                DetailInLibraryBadge.Visibility = Visibility.Collapsed;
-                DetailUpdateBadge.Visibility = Visibility.Collapsed;
-                DetailExternalBadge.Visibility = Visibility.Collapsed;
-                
-                DetailFilesControl.ItemsSource = _currentFiles;
-                DependenciesHeader.Visibility = Visibility.Collapsed;
-                DetailDependenciesControl.ItemsSource = null;
-                
-                UpdateDownloadAllButton();
-                ExpandPanel();
-                
-                // Clear stack for missing deps view
-                ClearDetailStack();
-                _currentDetail = null;
-                _currentResource = null;
-                _currentResourceId = null;
-                
-                // Hide loading spinner
-                StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                StatusText.Text = $"Found {foundCount} missing dependencies available for download";
-            }
-            catch (Exception ex)
-            {
-                StatusLoadingSpinner.Visibility = Visibility.Collapsed;
-                StatusText.Text = $"Error: {ex.Message}";
-            }
-        }
-        
         /// <summary>
         /// Updates the missing dependencies panel after a package has been downloaded.
         /// Removes the downloaded package from the list and updates the title.
         /// </summary>
         private void UpdateMissingDepsPanelAfterDownload(string packageName)
         {
-            // Check if we're currently viewing the missing dependencies panel
-            if (DetailTitle.Text == null || !DetailTitle.Text.StartsWith("🔗 Missing Dependencies"))
+            if (_workView != HubWorkView.Missing)
                 return;
-            
-            // Count remaining missing dependencies (files that are not yet downloaded)
-            int remainingCount = 0;
-            int downloadedCount = 0;
-            
-            foreach (var file in _currentFiles)
-            {
-                if (file.IsInstalled || file.Status?.Contains("Downloaded") == true || file.Status?.Contains("Updated") == true)
-                {
-                    downloadedCount++;
-                }
-                else
-                {
-                    remainingCount++;
-                }
-            }
-            
-            // Update the title to reflect the new state
-            if (remainingCount == 0 && downloadedCount > 0)
-            {
-                DetailTitle.Text = $"🔗 Missing Dependencies (All {downloadedCount} downloaded!)";
-                DetailCreator.Text = "All missing dependencies have been downloaded";
-            }
-            else
-            {
-                DetailTitle.Text = $"🔗 Missing Dependencies ({remainingCount} remaining, {downloadedCount} downloaded)";
-                DetailCreator.Text = $"{downloadedCount} downloaded, {remainingCount} still available for download";
-            }
-            
-            // Keep text styling consistent (white, not blue, not clickable)
-            DetailCreator.Foreground = new SolidColorBrush(Colors.White);
-            DetailCreator.TextDecorations = null;
-            DetailCreator.Cursor = Cursors.Arrow;
-            DetailCreator.ToolTip = null;
+
+            var remaining = _missingItems.Count(f => f.CanDownload && !f.IsInstalled);
+            var downloaded = _missingItems.Count(f => f.IsInstalled);
+            SetMissingIdle(remaining == 0 && downloaded > 0
+                ? "All Hub-available missing dependencies downloaded"
+                : $"{remaining} remaining, {downloaded} downloaded");
         }
 
         private void SetMissingDepsExportList(IEnumerable<string> dependencies)
@@ -5097,6 +4840,8 @@ namespace VPM.Windows
         public bool NotOnHub { get; set; }
         public HubFile HubFile { get; set; }
         public string LocalPath { get; set; } // Path to installed file
+        public string VersionChange { get; set; }
+        public string PackageGroup { get; set; }
 
         public bool AlreadyHave
         {

@@ -21,6 +21,9 @@
             <Setter Property="SelectionMode" Value="Single"/>
             <Setter Property="RowHeight" Value="32"/>
             <Setter Property="MaxHeight" Value="160"/>
+            <Setter Property="MinColumnWidth" Value="48"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+            <EventSetter Event="PreviewMouseLeftButtonDown" Handler="DataGrid_PreventGripperAutoCollapse"/>
         </Style>
 
         <Style TargetType="DataGridColumnHeader">
@@ -58,6 +61,21 @@
             <Setter Property="Padding" Value="20,10"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                CornerRadius="3"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#505050"/>
@@ -84,7 +102,7 @@
                        FontSize="13" Foreground="#B0B0B0" TextWrapping="Wrap"/>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <ItemsControl x:Name="PackageGroupsItemsControl">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
@@ -97,16 +115,29 @@
                                 <DataGrid ItemsSource="{Binding Instances}"
                                           SelectedItem="{Binding SelectedInstance, Mode=TwoWay}">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Location" Width="*" Binding="{Binding RelativeLocation}" IsReadOnly="True">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="FontFamily" Value="Consolas"/>
-                                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                        <DataGridTemplateColumn Header="Location" Width="*" MinWidth="160" IsReadOnly="True">
+                                            <DataGridTemplateColumn.HeaderStyle>
+                                                <Style TargetType="DataGridColumnHeader">
+                                                    <Setter Property="Background" Value="#2D2D2D"/>
+                                                    <Setter Property="Foreground" Value="#E0E0E0"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="Padding" Value="12,8,10,8"/>
+                                                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                                                    <Setter Property="BorderBrush" Value="#3E3E3E"/>
+                                                    <Setter Property="HorizontalContentAlignment" Value="Left"/>
                                                 </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                        <DataGridTextColumn Header="Size" Width="90" Binding="{Binding FileSizeFormatted}" IsReadOnly="True"/>
-                                        <DataGridTextColumn Header="Modified" Width="130" Binding="{Binding ModifiedDateFormatted}" IsReadOnly="True"/>
+                                            </DataGridTemplateColumn.HeaderStyle>
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding RelativeLocation}"
+                                                               FontFamily="Consolas"
+                                                               VerticalAlignment="Center"
+                                                               Margin="12,0,8,0"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Size" Width="90" MinWidth="70" Binding="{Binding FileSizeFormatted}" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="Modified" Width="130" MinWidth="100" Binding="{Binding ModifiedDateFormatted}" IsReadOnly="True"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </StackPanel>

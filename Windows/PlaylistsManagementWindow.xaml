@@ -240,7 +240,7 @@
                         x:Name="UnloadOthersCheckBox"
                         Margin="0,12,0,0"
                         Checked="UnloadOthers_Changed"
-                        Content="Unload other packages when activated"
+                        Content="Exclusive: replace scan set / unload others"
                         FontSize="14"
                         Unchecked="UnloadOthers_Changed" />
                 </StackPanel>

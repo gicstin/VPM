@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace VPM.Models
@@ -23,7 +23,9 @@ namespace VPM.Models
             "SubfoldersFilter",
             "DamagedFilter",
             "DestinationsFilter",
-            "PlaylistsFilter"
+            "PlaylistsFilter",
+            "VpbRatingFilter",
+            "VpbTagFilter"
         };
 
         /// <summary>

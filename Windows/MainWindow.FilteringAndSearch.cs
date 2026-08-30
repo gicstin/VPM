@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -64,6 +64,10 @@ namespace VPM
                     return true;
                 if (PlaylistsFilterList?.SelectedItems?.Count > 0)
                     return true;
+                if (VpbRatingFilterList?.SelectedItems?.Count > 0)
+                    return true;
+                if (VpbTagFilterList?.SelectedItems?.Count > 0)
+                    return true;
 
                 if (DateFilterList?.SelectedIndex > 0)
                     return true;
@@ -81,6 +85,8 @@ namespace VPM
                 if (IsTextBoxActiveFilter(LicenseTypeFilterBox, null))
                     return true;
                 if (IsTextBoxActiveFilter(SubfoldersFilterBox, null))
+                    return true;
+                if (IsTextBoxActiveFilter(VpbTagFilterBox, null))
                     return true;
 
                 return false;
@@ -143,12 +149,18 @@ namespace VPM
                     return true;
                 if (PresetStatusFilterList?.SelectedItems?.Count > 0)
                     return true;
+                if (VpbRatingFilterList?.SelectedItems?.Count > 0)
+                    return true;
+                if (VpbTagFilterList?.SelectedItems?.Count > 0)
+                    return true;
 
                 if (IsTextBoxActiveFilter(CustomAtomSearchBox, null))
                     return true;
                 if (IsTextBoxActiveFilter(PresetCategoryFilterBox, null))
                     return true;
                 if (IsTextBoxActiveFilter(PresetSubfolderFilterBox, null))
+                    return true;
+                if (IsTextBoxActiveFilter(VpbTagFilterBox, null))
                     return true;
 
                 return false;
@@ -340,6 +352,26 @@ namespace VPM
                                 tokens.Add(new ActiveFilterToken { Kind = "PresetSearch", Label = $"Search: {text}", Value = text });
                         }
 
+                        if (VpbRatingFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbRatingFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbRating", Label = $"Rating: {text}", Value = text });
+                            }
+                        }
+
+                        if (VpbTagFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbTagFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbTag", Label = $"Tag: {text}", Value = text });
+                            }
+                        }
+
                         break;
                     }
                     default:
@@ -436,6 +468,26 @@ namespace VPM
                             }
                         }
 
+                        if (VpbRatingFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbRatingFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbRating", Label = $"Rating: {text}", Value = text });
+                            }
+                        }
+
+                        if (VpbTagFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbTagFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbTag", Label = $"Tag: {text}", Value = text });
+                            }
+                        }
+
                         if (DateFilterList?.SelectedIndex > 0 || StartDatePicker?.SelectedDate != null || EndDatePicker?.SelectedDate != null)
                         {
                             var description = _filterManager?.DateFilter != null ? _filterManager.DateFilter.GetDescription() : "Date";
@@ -486,8 +538,8 @@ namespace VPM
             var button = new Button
             {
                 Content = "X",
-                Width = 22,
-                Height = 22,
+                Width = 28,
+                Height = 28,
                 Padding = new Thickness(0),
                 Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -586,6 +638,12 @@ namespace VPM
                     break;
                 case "Playlist":
                     RemoveFromSelectedItems(PlaylistsFilterList, token.Value, stripCount: true);
+                    break;
+                case "VpbRating":
+                    RemoveFromSelectedItems(VpbRatingFilterList, token.Value, stripCount: true);
+                    break;
+                case "VpbTag":
+                    RemoveFromSelectedItems(VpbTagFilterList, token.Value, stripCount: true);
                     break;
                 case "SceneSearch":
                     if (SceneSearchBox != null)
@@ -803,7 +861,6 @@ namespace VPM
                 // Clear existing filters
                 _filterManager.SelectedStatuses.Clear();
                 _filterManager.SelectedFavoriteStatuses.Clear();
-                _filterManager.SelectedAutoInstallStatuses.Clear();
                 _filterManager.SelectedVersionStatuses.Clear();
                 _filterManager.SelectedCreators.Clear();
                 _filterManager.SelectedCategories.Clear();
@@ -841,10 +898,6 @@ namespace VPM
                         {
                             _filterManager.SelectedFavoriteStatuses.Add(status);
                         }
-                        else if (status == "AutoInstall")
-                        {
-                            _filterManager.SelectedAutoInstallStatuses.Add(status);
-                        }
                         else if (status == "Latest" || status == "Old")
                         {
                             _filterManager.SelectedVersionStatuses.Add(status);
@@ -863,8 +916,9 @@ namespace VPM
                         }
                         else
                         {
-                            _filterManager.SelectedStatuses.Add(status);
-                            seenStatuses.Add(status);
+                            var canonical = PackageStatusDisplay.FromUi(status);
+                            _filterManager.SelectedStatuses.Add(canonical);
+                            seenStatuses.Add(canonical);
                         }
                     }
                 }
@@ -885,6 +939,9 @@ namespace VPM
 
                 // Update playlists filter
                 CollectSelectedFilters(PlaylistsFilterList, _filterManager.SelectedPlaylistFilters);
+
+                CollectVpbRatingFilterSelections();
+                CollectVpbTagFilterSelections();
 
                 // Update damaged filter
                 if (DamagedFilterList?.SelectedItem != null)
@@ -1212,6 +1269,7 @@ namespace VPM
             UpdateContentTypesClearButton();
             UpdateLicenseTypeClearButton();
             UpdateSubfoldersClearButton();
+            UpdateVpbTagsClearButton();
             UpdateClearAllFiltersButtonVisibility();
         }
 
@@ -1360,6 +1418,24 @@ namespace VPM
             }
         }
 
+        private void UpdateVpbTagsClearButton()
+        {
+            if (!this.IsLoaded) return;
+
+            try
+            {
+                if (VpbTagsClearButton != null && VpbTagFilterBox != null && VpbTagFilterList != null)
+                {
+                    bool hasText = !string.IsNullOrWhiteSpace(VpbTagFilterBox.Text);
+                    bool hasSelection = VpbTagFilterList.SelectedItems.Count > 0;
+                    VpbTagsClearButton.Visibility = hasText || hasSelection ? Visibility.Visible : Visibility.Collapsed;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         #endregion
 
         #region Initialization Methods
@@ -1383,6 +1459,11 @@ namespace VPM
                 if (CreatorsFilterBox != null)
                 {
                     CreatorsFilterBox.Text = "";
+                }
+
+                if (VpbTagFilterBox != null)
+                {
+                    VpbTagFilterBox.Text = "";
                 }
 
             }
@@ -1501,12 +1582,14 @@ namespace VPM
 
                 foreach (var status in statusCounts.Where(s => s.Value > 0).OrderBy(s => s.Key))
                 {
-                    var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ? "Duplicates" : status.Key;
+                    var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase)
+                        ? "Duplicates"
+                        : PackageStatusDisplay.ForUi(status.Key);
                     var displayText = $"{displayName} ({status.Value})";
                     StatusFilterList.Items.Add(displayText);
 
                     // Restore selection if this status was previously selected
-                    if (selectedStatuses.Contains(status.Key))
+                    if (selectedStatuses.Contains(status.Key) || selectedStatuses.Contains(displayName))
                     {
                         StatusFilterList.SelectedItems.Add(displayText);
                     }
@@ -1582,29 +1665,6 @@ namespace VPM
                     if (selectedStatuses.Contains("Favorites"))
                     {
                         StatusFilterList.SelectedItems.Add(favText);
-                    }
-                }
-
-                // Add autoinstall option
-                if (_autoInstallManager != null && _packageManager?.PackageMetadata != null)
-                {
-                    var autoInstall = _autoInstallManager.GetAllAutoInstall();
-                    int autoInstallCount = 0;
-                    
-                    // Count from ALL packages, not filtered packages
-                    foreach (var pkg in _packageManager.PackageMetadata.Values)
-                    {
-                        var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
-                        if (autoInstall.Contains(pkgName))
-                            autoInstallCount++;
-                    }
-                    
-                    var autoInstallText = $"AutoInstall ({autoInstallCount:N0})";
-                    StatusFilterList.Items.Add(autoInstallText);
-                    
-                    if (selectedStatuses.Contains("AutoInstall"))
-                    {
-                        StatusFilterList.SelectedItems.Add(autoInstallText);
                     }
                 }
                 
@@ -2001,12 +2061,14 @@ namespace VPM
                     
                     foreach (var status in statusCounts.OrderBy(s => s.Key))
                     {
-                        var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase) ? "Duplicates" : status.Key;
+                        var displayName = status.Key.Equals("Duplicate", StringComparison.OrdinalIgnoreCase)
+                            ? "Duplicates"
+                            : PackageStatusDisplay.ForUi(status.Key);
                         var displayText = $"{displayName} ({status.Value})";
                         StatusFilterList.Items.Add(displayText);
                         
                         // Restore selection if this status was previously selected
-                        if (selectedStatuses.Contains(status.Key))
+                        if (selectedStatuses.Contains(status.Key) || selectedStatuses.Contains(displayName))
                         {
                             StatusFilterList.SelectedItems.Add(displayText);
                         }
@@ -2460,33 +2522,6 @@ namespace VPM
                     StatusFilterList.SelectedItems.Add(favText);
                 }
             }
-
-            // Add autoinstall option
-            if (_autoInstallManager != null && _packageManager?.PackageMetadata != null)
-            {
-                var autoInstall = _autoInstallManager.GetAllAutoInstall();
-                int autoInstallCount = 0;
-                
-                // Count from filtered packages, excluding external packages
-                foreach (var pkg in filteredPackages.Values)
-                {
-                    // Skip external packages - they should not appear in autoinstall filter
-                    if (pkg.IsExternal)
-                        continue;
-                    
-                    var pkgName = System.IO.Path.GetFileNameWithoutExtension(pkg.Filename);
-                    if (autoInstall.Contains(pkgName))
-                        autoInstallCount++;
-                }
-                
-                var autoInstallText = $"AutoInstall ({autoInstallCount:N0})";
-                StatusFilterList.Items.Add(autoInstallText);
-                
-                if (selectedStatuses.Contains("AutoInstall"))
-                {
-                    StatusFilterList.SelectedItems.Add(autoInstallText);
-                }
-            }
         }
 
         /// <summary>
@@ -2630,7 +2665,10 @@ namespace VPM
                 return status switch
                 {
                     "Loaded" => new SolidColorBrush(Color.FromRgb(76, 175, 80)),     // Green
+                    "In scan" => new SolidColorBrush(Color.FromRgb(76, 175, 80)),
+                    "Whitelisted" => new SolidColorBrush(Color.FromRgb(76, 175, 80)),
                     "Available" => new SolidColorBrush(Color.FromRgb(33, 150, 243)),  // Blue
+                    "On-demand" => new SolidColorBrush(Color.FromRgb(33, 150, 243)),
                     "Missing" => new SolidColorBrush(Color.FromRgb(244, 67, 54)),     // Red
                     "Outdated" => new SolidColorBrush(Color.FromRgb(255, 152, 0)),    // Orange
                     "Updating" => new SolidColorBrush(Color.FromRgb(156, 39, 176)),   // Purple
@@ -2658,7 +2696,10 @@ namespace VPM
                 return status switch
                 {
                     "Loaded" => "✓",
+                    "In scan" => "✓",
+                    "Whitelisted" => "✓",
                     "Available" => "○",
+                    "On-demand" => "○",
                     "Missing" => "✗",
                     "Outdated" => "⚠",
                     "Updating" => "↻",

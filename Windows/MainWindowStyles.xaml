@@ -15,6 +15,8 @@
         <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
         <Setter Property="BorderBrush" Value="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}" />
         <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Button}">
@@ -35,13 +37,49 @@
                 <Setter Property="BorderThickness" Value="1" />
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
-                <Setter Property="Background" Value="{StaticResource AccentPressedBrush}" />
-                <Setter Property="Foreground" Value="White" />
+                <Setter Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter Property="Opacity" Value="0.5" />
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <!--  VaM Hub: gold outline only so it reads as the special entry.  -->
+    <Style x:Key="VamHubShimmerButtonStyle" TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}" />
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}" />
+        <Setter Property="BorderBrush" Value="#C9A227" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border
+                        Padding="{TemplateBinding Padding}"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="3">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="BorderBrush" Value="#FFD54F" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!--  Universal Scrollbar Style for all scrollbars  -->
@@ -618,8 +656,8 @@
         x:Key="FilterToggleButtonStyle"
         BasedOn="{StaticResource BlueHoverButtonStyle}"
         TargetType="Button">
-        <Setter Property="Width" Value="27" />
-        <Setter Property="Height" Value="27" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="Margin" Value="0,0,6,0" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="FontSize" Value="15" />
@@ -631,8 +669,8 @@
         x:Key="FilterMoveUpButtonStyle"
         BasedOn="{StaticResource BlueHoverButtonStyle}"
         TargetType="Button">
-        <Setter Property="Width" Value="27" />
-        <Setter Property="Height" Value="27" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="Margin" Value="3,0,3,0" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Content" Value="▲" />
@@ -646,8 +684,8 @@
         x:Key="FilterMoveDownButtonStyle"
         BasedOn="{StaticResource BlueHoverButtonStyle}"
         TargetType="Button">
-        <Setter Property="Width" Value="27" />
-        <Setter Property="Height" Value="27" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="Margin" Value="0" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Content" Value="▼" />

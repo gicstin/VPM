@@ -10,6 +10,7 @@
     Width="1400"
     Height="900"
     Background="#FF202020"
+    ShowInTaskbar="True"
     SizeChanged="HubBrowserWindow_SizeChanged"
     WindowStartupLocation="CenterOwner"
     mc:Ignorable="d">
@@ -314,9 +315,52 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="HubSegmentRadioStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="#FF2B2B2B" />
+            <Setter Property="Foreground" Value="{StaticResource DarkTextSecondary}" />
+            <Setter Property="BorderBrush" Value="{StaticResource DarkBorder}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border
+                            x:Name="bd"
+                            Padding="{TemplateBinding Padding}"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="3">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource DarkText}" />
+                                <Setter TargetName="bd" Property="Background" Value="#FF3A3A3A" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter Property="Foreground" Value="White" />
+                                <Setter TargetName="bd" Property="Background" Value="#FF4A90D9" />
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FF4A90D9" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0">
         <Grid.ColumnDefinitions>
             <!--  Overview Panel (Left)  -->
             <ColumnDefinition
@@ -519,60 +563,91 @@
                 Visibility="Collapsed" />
 
             <!--  Main Content Area  -->
-            <Grid Grid.Column="0" Margin="8">
+            <Grid
+                x:Name="HubBrowseChrome"
+                Grid.Column="0"
+                Margin="8"
+                SizeChanged="HubBrowseChrome_SizeChanged">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!--  Header with Search  -->
-                <Grid Grid.Row="0" Margin="0,0,0,8">
+                <!--  Query chrome: one row when wide, two rows when side panes steal width  -->
+                <Grid
+                    x:Name="QueryChromeGrid"
+                    Grid.Row="0"
+                    Margin="0,0,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock
+                    <StackPanel
                         Grid.Column="0"
-                        HorizontalAlignment="Left"
+                        Margin="0,0,12,0"
                         VerticalAlignment="Center"
-                        FontSize="20"
-                        FontWeight="Bold"
-                        Foreground="{StaticResource DarkText}"
-                        Text="🌐 VaM Hub" />
+                        Orientation="Horizontal">
+                        <RadioButton
+                            x:Name="TabWorkBrowse"
+                            Click="WorkViewTab_Click"
+                            Content="Browse"
+                            GroupName="HubWorkView"
+                            IsChecked="True"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Browse Hub resources (Ctrl+1)" />
+                        <RadioButton
+                            x:Name="TabWorkUpdates"
+                            Click="WorkViewTab_Click"
+                            Content="Updates"
+                            GroupName="HubWorkView"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Packages in your library with newer Hub versions (Ctrl+2)" />
+                        <RadioButton
+                            x:Name="TabWorkMissing"
+                            Click="WorkViewTab_Click"
+                            Content="Missing"
+                            GroupName="HubWorkView"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Dependencies referenced by your library that are not on disk (Ctrl+3)" />
+                    </StackPanel>
 
                     <Grid
+                        x:Name="BrowseSearchHost"
                         Grid.Column="1"
-                        HorizontalAlignment="Center"
+                        Margin="0,0,8,0"
                         VerticalAlignment="Center">
-                        <Grid>
-                            <TextBox
-                                x:Name="SearchBox"
-                                Width="260"
-                                Height="32"
-                                Padding="8,4,32,4"
-                                VerticalContentAlignment="Center"
-                                FontSize="14"
-                                GotFocus="SearchBox_GotFocus"
-                                KeyDown="SearchBox_KeyDown"
-                                LostFocus="SearchBox_LostFocus"
-                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                TextChanged="SearchBox_TextChanged" />
-                            <TextBlock
-                                x:Name="SearchPlaceholder"
-                                Margin="10,0,0,0"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                FontSize="16"
-                                Foreground="{StaticResource DarkTextSecondary}"
-                                IsHitTestVisible="False"
-                                Text="Search titles, creators, tags..."
-                                Visibility="Visible" />
-                        </Grid>
+                        <TextBox
+                            x:Name="SearchBox"
+                            Height="32"
+                            MinWidth="160"
+                            Padding="8,4,32,4"
+                            VerticalContentAlignment="Center"
+                            FontSize="14"
+                            GotFocus="SearchBox_GotFocus"
+                            KeyDown="SearchBox_KeyDown"
+                            LostFocus="SearchBox_LostFocus"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            TextChanged="SearchBox_TextChanged" />
+                        <TextBlock
+                            x:Name="SearchPlaceholder"
+                            Margin="10,0,0,0"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            FontSize="13"
+                            Foreground="{StaticResource DarkTextSecondary}"
+                            IsHitTestVisible="False"
+                            Text="Search titles, creators, tags..."
+                            Visibility="Visible" />
                         <Button
                             x:Name="ClearSearchButton"
                             Width="24"
@@ -611,24 +686,149 @@
                         </Button>
                     </Grid>
 
+                    <StackPanel
+                        x:Name="HubStatusHost"
+                        Grid.Column="2"
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                        <Grid
+                            x:Name="StatusLoadingSpinner"
+                            Width="16"
+                            Height="16"
+                            Margin="0,0,8,0"
+                            Visibility="{Binding LoadingVisibility}">
+                            <ProgressBar Foreground="#FF4A90D9" IsIndeterminate="True" />
+                        </Grid>
+                        <TextBlock
+                            x:Name="StatusText"
+                            MaxWidth="240"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{StaticResource DarkTextSecondary}"
+                            Text="{Binding StatusText}"
+                            TextTrimming="CharacterEllipsis" />
+                        <Button
+                            x:Name="DownloadQueueButton"
+                            Margin="8,0,0,0"
+                            Padding="12,0"
+                            Click="DownloadQueueButton_Click"
+                            Visibility="Collapsed">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FF2196F3" />
+                                    <Setter Property="Foreground" Value="White" />
+                                    <Setter Property="BorderBrush" Value="#FF1976D2" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border
+                                                    x:Name="bd"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="3">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="bd" Property="Background" Value="#FF42A5F5" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⬇ Downloads: " />
+                                <TextBlock
+                                    x:Name="DownloadQueueCountText"
+                                    FontWeight="Bold"
+                                    Text="0" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
                     <Button
                         x:Name="RefreshButton"
-                        Grid.Column="2"
+                        Grid.Column="3"
                         Height="32"
+                        Margin="0,0,8,0"
                         Padding="12,0"
-                        HorizontalAlignment="Right"
                         Command="{Binding RefreshCommand}"
                         FontSize="14"
                         ToolTip="Refresh">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Margin="0,0,6,0" Text="🔄" />
-                            <TextBlock Text="Refresh" />
+                            <TextBlock x:Name="RefreshButtonIcon" Margin="0,0,6,0" Text="🔄" />
+                            <TextBlock x:Name="RefreshButtonLabel" Text="Refresh" />
                         </StackPanel>
                     </Button>
+
+                    <StackPanel
+                        x:Name="BrowsePagerControls"
+                        Grid.Column="4"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                        <Button
+                            x:Name="PrevPageButton"
+                            Margin="0,0,4,0"
+                            Padding="12,0"
+                            Command="{Binding PrevPageCommand}"
+                            Content="◀ Prev" />
+                        <StackPanel
+                            Margin="4,0"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal">
+                            <TextBlock
+                                x:Name="PageWordLabel"
+                                Margin="0,0,4,0"
+                                VerticalAlignment="Center"
+                                Foreground="{StaticResource DarkText}"
+                                Text="Page" />
+                            <TextBox
+                                x:Name="PageNumberBox"
+                                Width="40"
+                                Height="32"
+                                Padding="0,2"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                FontSize="15"
+                                KeyDown="PageNumberBox_KeyDown"
+                                LostFocus="PageNumberBox_LostFocus"
+                                Text="{Binding CurrentPage, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <TextBlock
+                                x:Name="PageOfLabel"
+                                Margin="4,0"
+                                VerticalAlignment="Center"
+                                Foreground="{StaticResource DarkText}"
+                                Text="of" />
+                            <TextBlock
+                                x:Name="TotalPagesText"
+                                VerticalAlignment="Center"
+                                Foreground="{StaticResource DarkText}"
+                                Text="{Binding TotalPages}" />
+                        </StackPanel>
+                        <Button
+                            x:Name="NextPageButton"
+                            Margin="4,0,0,0"
+                            Padding="12,0"
+                            Command="{Binding NextPageCommand}"
+                            Content="Next ▶" />
+                        <TextBlock
+                            x:Name="TotalCountText"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{StaticResource DarkTextSecondary}"
+                            Text="{Binding TotalCountText}" />
+                    </StackPanel>
                 </Grid>
 
                 <!--  Filters Row - Using WrapPanel for responsive wrapping  -->
                 <WrapPanel
+                    x:Name="BrowseFiltersRow"
                     Grid.Row="1"
                     Margin="0,0,0,4"
                     VerticalAlignment="Center">
@@ -886,10 +1086,46 @@
                         IsEnabled="False"
                         Visibility="Collapsed" />
 
-                    <!--  Spacer to push buttons to the right  -->
-                    <Border Width="0" />
-
-
+                    <StackPanel
+                        x:Name="LibraryFilterBar"
+                        Margin="0,4,0,0"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                        <TextBlock
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="{StaticResource DarkTextSecondary}"
+                            Text="Library:" />
+                        <RadioButton
+                            x:Name="FilterLibAll"
+                            Click="LibraryFilter_Click"
+                            Content="All"
+                            GroupName="HubLibraryFilter"
+                            IsChecked="True"
+                            Style="{StaticResource HubSegmentRadioStyle}" />
+                        <RadioButton
+                            x:Name="FilterLibNotInLibrary"
+                            Click="LibraryFilter_Click"
+                            Content="Not in library"
+                            GroupName="HubLibraryFilter"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Hide resources already on disk" />
+                        <RadioButton
+                            x:Name="FilterLibUpdates"
+                            Click="LibraryFilter_Click"
+                            Content="Updates"
+                            GroupName="HubLibraryFilter"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Only resources on this page with a newer Hub version" />
+                        <RadioButton
+                            x:Name="FilterLibMissing"
+                            Click="LibraryFilter_Click"
+                            Content="Missing deps"
+                            GroupName="HubLibraryFilter"
+                            Style="{StaticResource HubSegmentRadioStyle}"
+                            ToolTip="Only resources on this page with missing dependencies" />
+                    </StackPanel>
                 </WrapPanel>
 
                 <!--  Active Filters Chips Row  -->
@@ -897,7 +1133,7 @@
                     x:Name="ActiveFiltersBorder"
                     Grid.Row="2"
                     Margin="0,0,0,4"
-                    Padding="8,6"
+                    Padding="6,4"
                     Background="#262626"
                     BorderBrush="{StaticResource DarkBorder}"
                     BorderThickness="1"
@@ -959,6 +1195,7 @@
                     BorderThickness="1"
                     CornerRadius="4">
                     <Grid>
+                        <Grid x:Name="BrowseResultsHost">
                         <!--  Loading Indicator  -->
                         <!--  Loading Overlay  -->
                         <Grid
@@ -1557,99 +1794,342 @@
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
+
+                        <Border
+                            x:Name="FilteredEmptyPanel"
+                            Panel.ZIndex="12"
+                            Background="#CC1E1E1E"
+                            Visibility="Collapsed">
+                            <StackPanel
+                                Margin="20"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                                <TextBlock
+                                    x:Name="FilteredEmptyText"
+                                    HorizontalAlignment="Center"
+                                    FontSize="14"
+                                    Foreground="{StaticResource DarkText}"
+                                    Text="No results match this library filter."
+                                    TextAlignment="Center"
+                                    TextWrapping="Wrap" />
+                                <Button
+                                    Margin="0,14,0,0"
+                                    Padding="16,0"
+                                    Click="ShowAllLibraryFilter_Click"
+                                    Content="Show all on this page" />
+                            </StackPanel>
+                        </Border>
+                            </Grid>
+
+                            <Grid
+                                x:Name="UpdatesWorkPanel"
+                                Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Margin="8,8,8,4" LastChildFill="False">
+                                    <StackPanel
+                                        x:Name="UpdatesBusyCluster"
+                                        DockPanel.Dock="Right"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal"
+                                        Visibility="Collapsed">
+                                        <Grid
+                                            Width="16"
+                                            Height="16"
+                                            Margin="0,0,8,0">
+                                            <ProgressBar Foreground="#FF4A90D9" IsIndeterminate="True" />
+                                        </Grid>
+                                        <TextBlock
+                                            x:Name="UpdatesBusyText"
+                                            VerticalAlignment="Center"
+                                            FontSize="12"
+                                            Foreground="{StaticResource DarkTextSecondary}"
+                                            Text="Checking for updates…" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        Foreground="{StaticResource DarkText}"
+                                        Text="Library updates" />
+                                    <Button
+                                        x:Name="UpdatesDownloadSelectedButton"
+                                        Margin="12,0,0,0"
+                                        Padding="12,4"
+                                        Click="DownloadSelectedUpdates_Click"
+                                        Content="Update selected" />
+                                    <Button
+                                        x:Name="UpdatesDownloadAllButton"
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="DownloadAllUpdates_Click"
+                                        Content="Update all" />
+                                    <Button
+                                        x:Name="UpdatesRefreshButton"
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="RefreshUpdates_Click"
+                                        Content="Refresh" />
+                                </DockPanel>
+                                <DataGrid
+                                    x:Name="UpdatesWorkGrid"
+                                    Grid.Row="1"
+                                    Margin="8,0,8,8"
+                                    AutoGenerateColumns="False"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    CanUserAddRows="False"
+                                    CanUserDeleteRows="False"
+                                    GridLinesVisibility="None"
+                                    HeadersVisibility="Column"
+                                    IsReadOnly="True"
+                                    Foreground="#E0E0E0"
+                                    RowHeaderWidth="0"
+                                    RowBackground="#FF2D2D2D"
+                                    AlternatingRowBackground="#FF333333"
+                                    SelectionMode="Extended"
+                                    SelectionUnit="FullRow">
+                                    <DataGrid.ColumnHeaderStyle>
+                                        <Style TargetType="DataGridColumnHeader">
+                                            <Setter Property="Background" Value="#FF252525" />
+                                            <Setter Property="Foreground" Value="#FFE0E0E0" />
+                                            <Setter Property="BorderBrush" Value="#FF3F3F3F" />
+                                            <Setter Property="Padding" Value="8,4" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </Style>
+                                    </DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn
+                                            Width="*"
+                                            Binding="{Binding Filename}"
+                                            Header="Package" />
+                                        <DataGridTextColumn
+                                            Width="110"
+                                            Binding="{Binding VersionChange}"
+                                            Header="Local → Hub" />
+                                        <DataGridTextColumn
+                                            Width="90"
+                                            Binding="{Binding FileSizeFormatted}"
+                                            Header="Size" />
+                                        <DataGridTextColumn
+                                            Width="160"
+                                            Binding="{Binding Status}"
+                                            Header="Status" />
+                                        <DataGridTemplateColumn Width="110" Header="">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button
+                                                        Padding="10,4"
+                                                        Click="WorkItemDownload_Click"
+                                                        Content="{Binding ButtonText}"
+                                                        IsEnabled="{Binding CanDownload}"
+                                                        Tag="{Binding}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Border
+                                    x:Name="UpdatesEmptyPanel"
+                                    Grid.Row="1"
+                                    Background="#CC1E1E1E"
+                                    Visibility="Collapsed">
+                                    <TextBlock
+                                        x:Name="UpdatesEmptyText"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        FontSize="14"
+                                        Foreground="{StaticResource DarkText}"
+                                        Text="All packages are up to date."
+                                        TextAlignment="Center" />
+                                </Border>
+                                <Grid
+                                    x:Name="UpdatesLoadingPanel"
+                                    Grid.Row="1"
+                                    Panel.ZIndex="20"
+                                    Background="#AA1E1E1E"
+                                    Visibility="Collapsed">
+                                    <StackPanel
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock
+                                            x:Name="UpdatesLoadingPanelText"
+                                            HorizontalAlignment="Center"
+                                            FontSize="16"
+                                            Foreground="{StaticResource DarkText}"
+                                            Text="Checking for updates…" />
+                                        <ProgressBar
+                                            Width="200"
+                                            Height="20"
+                                            Margin="0,8,0,0"
+                                            IsIndeterminate="True" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+
+                            <Grid
+                                x:Name="MissingWorkPanel"
+                                Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <DockPanel Grid.Row="0" Margin="8,8,8,4" LastChildFill="False">
+                                    <StackPanel
+                                        x:Name="MissingBusyCluster"
+                                        DockPanel.Dock="Right"
+                                        VerticalAlignment="Center"
+                                        Orientation="Horizontal"
+                                        Visibility="Collapsed">
+                                        <Grid
+                                            Width="16"
+                                            Height="16"
+                                            Margin="0,0,8,0">
+                                            <ProgressBar Foreground="#FF4A90D9" IsIndeterminate="True" />
+                                        </Grid>
+                                        <TextBlock
+                                            x:Name="MissingBusyText"
+                                            VerticalAlignment="Center"
+                                            FontSize="12"
+                                            Foreground="{StaticResource DarkTextSecondary}"
+                                            Text="Scanning for missing dependencies…" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        Foreground="{StaticResource DarkText}"
+                                        Text="Missing dependencies" />
+                                    <Button
+                                        x:Name="MissingDownloadSelectedButton"
+                                        Margin="12,0,0,0"
+                                        Padding="12,4"
+                                        Click="DownloadSelectedMissing_Click"
+                                        Content="Download selected" />
+                                    <Button
+                                        x:Name="MissingDownloadAllButton"
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="DownloadAllMissing_Click"
+                                        Content="Download all on Hub" />
+                                    <Button
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="MissingDepsSaveListButton_Click"
+                                        Content="Save list" />
+                                    <Button
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="MissingDepsCopyListButton_Click"
+                                        Content="Copy list" />
+                                    <Button
+                                        x:Name="MissingRefreshButton"
+                                        Margin="6,0,0,0"
+                                        Padding="12,4"
+                                        Click="RefreshMissing_Click"
+                                        Content="Refresh" />
+                                </DockPanel>
+                                <DataGrid
+                                    x:Name="MissingWorkGrid"
+                                    Grid.Row="1"
+                                    Margin="8,0,8,8"
+                                    AutoGenerateColumns="False"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    CanUserAddRows="False"
+                                    CanUserDeleteRows="False"
+                                    GridLinesVisibility="None"
+                                    HeadersVisibility="Column"
+                                    IsReadOnly="True"
+                                    Foreground="#E0E0E0"
+                                    RowHeaderWidth="0"
+                                    RowBackground="#FF2D2D2D"
+                                    AlternatingRowBackground="#FF333333"
+                                    SelectionMode="Extended"
+                                    SelectionUnit="FullRow">
+                                    <DataGrid.ColumnHeaderStyle>
+                                        <Style TargetType="DataGridColumnHeader">
+                                            <Setter Property="Background" Value="#FF252525" />
+                                            <Setter Property="Foreground" Value="#FFE0E0E0" />
+                                            <Setter Property="BorderBrush" Value="#FF3F3F3F" />
+                                            <Setter Property="Padding" Value="8,4" />
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </Style>
+                                    </DataGrid.ColumnHeaderStyle>
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn
+                                            Width="*"
+                                            Binding="{Binding Filename}"
+                                            Header="Package" />
+                                        <DataGridTextColumn
+                                            Width="90"
+                                            Binding="{Binding FileSizeFormatted}"
+                                            Header="Size" />
+                                        <DataGridTextColumn
+                                            Width="140"
+                                            Binding="{Binding Status}"
+                                            Header="Status" />
+                                        <DataGridTemplateColumn Width="120" Header="">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button
+                                                        Padding="10,4"
+                                                        Click="WorkItemDownload_Click"
+                                                        Content="{Binding ButtonText}"
+                                                        IsEnabled="{Binding CanDownload}"
+                                                        Tag="{Binding}" />
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                                <Border
+                                    x:Name="MissingEmptyPanel"
+                                    Grid.Row="1"
+                                    Background="#CC1E1E1E"
+                                    Visibility="Collapsed">
+                                    <TextBlock
+                                        x:Name="MissingEmptyText"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        FontSize="14"
+                                        Foreground="{StaticResource DarkText}"
+                                        Text="No missing dependencies."
+                                        TextAlignment="Center"
+                                        TextWrapping="Wrap" />
+                                </Border>
+                                <Grid
+                                    x:Name="MissingLoadingPanel"
+                                    Grid.Row="1"
+                                    Panel.ZIndex="20"
+                                    Background="#AA1E1E1E"
+                                    Visibility="Collapsed">
+                                    <StackPanel
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <TextBlock
+                                            x:Name="MissingLoadingPanelText"
+                                            HorizontalAlignment="Center"
+                                            FontSize="16"
+                                            Foreground="{StaticResource DarkText}"
+                                            Text="Scanning for missing dependencies…" />
+                                        <ProgressBar
+                                            Width="200"
+                                            Height="20"
+                                            Margin="0,8,0,0"
+                                            IsIndeterminate="True" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
                     </Grid>
                 </Border>
 
-                <!--  Footer with Pagination  -->
-                <Grid Grid.Row="4" Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <!--  Status and Download Queue Button  -->
-                    <StackPanel
-                        Grid.Column="0"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal">
-                        <!--  Loading Spinner  -->
-                        <Grid
-                            x:Name="StatusLoadingSpinner"
-                            Width="16"
-                            Height="16"
-                            Margin="0,0,8,0"
-                            Visibility="{Binding LoadingVisibility}">
-                            <ProgressBar Foreground="#FF4A90D9" IsIndeterminate="True" />
-                        </Grid>
-
-                        <TextBlock
-                            x:Name="StatusText"
-                            MaxWidth="300"
-                            VerticalAlignment="Center"
-                            Foreground="{StaticResource DarkText}"
-                            Text="{Binding StatusText}"
-                            TextTrimming="CharacterEllipsis" />
-
-                        <!--  Missing Dependencies Button  -->
-                        <Button
-                            x:Name="MissingDepsPanelButton"
-                            Margin="12,0,0,0"
-                            Padding="12,0"
-                            Click="MissingDepsPanelButton_Click"
-                            Content="🔗 Missing"
-                            ToolTip="View missing dependencies" />
-
-                        <!--  Download Queue Button  -->
-                        <Button
-                            x:Name="DownloadQueueButton"
-                            Margin="16,0,0,0"
-                            Padding="12,0"
-                            Click="DownloadQueueButton_Click"
-                            Visibility="Collapsed">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="#FF2196F3" />
-                                    <Setter Property="Foreground" Value="White" />
-                                    <Setter Property="BorderBrush" Value="#FF1976D2" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border
-                                                    x:Name="bd"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    Background="{TemplateBinding Background}"
-                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                    BorderThickness="1"
-                                                    CornerRadius="3">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="bd" Property="Background" Value="#FF42A5F5" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </Button.Style>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="⬇ Downloads: " />
-                                <TextBlock
-                                    x:Name="DownloadQueueCountText"
-                                    FontWeight="Bold"
-                                    Text="0" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-
-                    <!--  Download Queue Popup  -->
                     <Popup
                         x:Name="DownloadQueuePopup"
-                        Grid.Column="0"
                         AllowsTransparency="True"
-                        Placement="Top"
+                        Placement="Bottom"
                         PlacementTarget="{Binding ElementName=DownloadQueueButton}"
                         StaysOpen="False">
                         <Border
@@ -1899,81 +2379,6 @@
                             </Grid>
                         </Border>
                     </Popup>
-
-                    <!--  Pagination and Controls  -->
-                    <StackPanel
-                        Grid.Column="1"
-                        HorizontalAlignment="Center"
-                        Orientation="Horizontal">
-
-                        <!--  Pagination  -->
-                        <Button
-                            x:Name="PrevPageButton"
-                            Margin="0,0,4,0"
-                            Padding="12,0"
-                            Command="{Binding PrevPageCommand}"
-                            Content="◀ Prev" />
-                        <StackPanel
-                            Margin="8,0"
-                            VerticalAlignment="Center"
-                            Orientation="Horizontal">
-                            <TextBlock
-                                Margin="0,0,4,0"
-                                VerticalAlignment="Center"
-                                Foreground="{StaticResource DarkText}"
-                                Text="Page" />
-                            <TextBox
-                                x:Name="PageNumberBox"
-                                Width="40"
-                                Height="32"
-                                Padding="0,2"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                FontSize="15"
-                                KeyDown="PageNumberBox_KeyDown"
-                                LostFocus="PageNumberBox_LostFocus"
-                                Text="{Binding CurrentPage, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
-                            <TextBlock
-                                Margin="4,0"
-                                VerticalAlignment="Center"
-                                Foreground="{StaticResource DarkText}"
-                                Text="of" />
-                            <TextBlock
-                                x:Name="TotalPagesText"
-                                VerticalAlignment="Center"
-                                Foreground="{StaticResource DarkText}"
-                                Text="{Binding TotalPages}" />
-                        </StackPanel>
-                        <Button
-                            x:Name="NextPageButton"
-                            Margin="4,0,0,0"
-                            Padding="12,0"
-                            Command="{Binding NextPageCommand}"
-                            Content="Next ▶" />
-                    </StackPanel>
-
-                    <!--  Updates + Total Count  -->
-                    <StackPanel
-                        Grid.Column="2"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Center"
-                        Orientation="Horizontal">
-
-                        <Button
-                            x:Name="UpdatesPanelButton"
-                            Margin="0,0,12,0"
-                            Padding="12,0"
-                            Click="UpdatesPanelButton_Click"
-                            Content="⬆ Updates"
-                            ToolTip="View available package updates" />
-
-                        <TextBlock
-                            x:Name="TotalCountText"
-                            VerticalAlignment="Center"
-                            Foreground="{StaticResource DarkText}"
-                            Text="{Binding TotalCountText}" />
-                    </StackPanel>
-                </Grid>
             </Grid>
 
             <!--  Detail Side Panel (Files Only)  -->
@@ -2445,7 +2850,7 @@
                             CornerRadius="4">
                             <Image
                                 x:Name="DetailImage"
-                                MaxHeight="500"
+                                MaxHeight="140"
                                 HorizontalAlignment="Stretch"
                                 VerticalAlignment="Top"
                                 RenderOptions.BitmapScalingMode="HighQuality"
@@ -2595,7 +3000,7 @@
                                                 <LineBreak />
                                                 <Run FontWeight="SemiBold" Text="Discard All Old:" />
                                                 <LineBreak />
-                                                <Run Text="Move all old versions to \DiscardedPackages\" />
+                                                <Run Text="Move all old versions to \DeletedPackages\OldVersions\" />
                                             </TextBlock>
                                         </ToolTip>
                                     </TextBlock.ToolTip>
@@ -3249,4 +3654,102 @@
             </Grid>
         </Grid>
     </Grid>
+
+        <Border
+            x:Name="DownloadDock"
+            Grid.Row="1"
+            Background="#FF1A1A1A"
+            BorderBrush="{StaticResource DarkBorder}"
+            BorderThickness="0,1,0,0"
+            Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid Grid.Row="0" Margin="8,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock
+                        x:Name="DownloadDockCountText"
+                        VerticalAlignment="Center"
+                        FontSize="13"
+                        FontWeight="SemiBold"
+                        Foreground="{StaticResource DarkText}"
+                        Text="Downloads" />
+                    <Button
+                        x:Name="DownloadDockCancelAll"
+                        Grid.Column="1"
+                        Margin="0,0,8,0"
+                        Padding="12,4"
+                        Click="CancelAllDownloads_Click"
+                        Content="Cancel all"
+                        FontSize="12" />
+                    <Button
+                        x:Name="DownloadDockToggle"
+                        Grid.Column="2"
+                        Width="32"
+                        Padding="0"
+                        Click="DownloadDockToggle_Click"
+                        Content="▼"
+                        FontSize="11"
+                        ToolTip="Collapse or expand download list" />
+                </Grid>
+                <ScrollViewer
+                    x:Name="DownloadDockBody"
+                    Grid.Row="1"
+                    MaxHeight="140"
+                    VerticalScrollBarVisibility="Auto">
+                    <ItemsControl x:Name="DownloadDockList" Margin="8,0,8,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Foreground="{StaticResource DarkText}"
+                                        Text="{Binding PackageName}"
+                                        TextTrimming="CharacterEllipsis" />
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        Margin="8,0"
+                                        VerticalAlignment="Center"
+                                        FontSize="11"
+                                        Foreground="{StaticResource DarkTextSecondary}"
+                                        Text="{Binding ProgressText}" />
+                                    <Button
+                                        Grid.Column="2"
+                                        Padding="8,2"
+                                        Click="CancelDownload_Click"
+                                        Content="Cancel"
+                                        FontSize="11"
+                                        Tag="{Binding}"
+                                        Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}" />
+                                    <ProgressBar
+                                        Grid.Row="1"
+                                        Grid.ColumnSpan="3"
+                                        Height="4"
+                                        Margin="0,4,0,0"
+                                        Maximum="100"
+                                        Value="{Binding ProgressPercentage}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+</Grid>
 </Window>

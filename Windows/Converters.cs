@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using VPM.Models;
 using VPM.Services;
+using VPM.Services.Vpb;
 
 namespace VPM.Windows
 {
@@ -88,7 +89,9 @@ namespace VPM.Windows
             try
             {
                 string status = value.ToString();
-                return status == "Loaded" ? "📤 Unload" : "📥 Load";
+                if (status == "Loaded")
+                    return PackageStatusDisplay.ExcludeVerb;
+                return PackageStatusDisplay.IncludeVerb;
             }
             catch
             {

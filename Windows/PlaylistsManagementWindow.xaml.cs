@@ -26,6 +26,7 @@ namespace VPM.Windows
         private readonly DependencyGraph _dependencyGraph;
         private readonly string _vamRootFolder;
         private readonly PackageFileManager _packageFileManager;
+        private readonly VPM.Services.Vpb.ScanControlService _scanControl;
         private PlaylistManager _playlistManager;
         private ObservableCollection<Playlist> _playlists;
         private ICollectionView _playlistsView;
@@ -44,20 +45,24 @@ namespace VPM.Windows
         private int _dropInsertIndex = -1;
 
         public PlaylistsManagementWindow(ISettingsManager settingsManager, PackageManager packageManager = null, 
-            DependencyGraph dependencyGraph = null, string vamRootFolder = null, PackageFileManager packageFileManager = null)
+            DependencyGraph dependencyGraph = null, string vamRootFolder = null, PackageFileManager packageFileManager = null,
+            VPM.Services.Vpb.ScanControlService scanControl = null)
         {
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
             _packageManager = packageManager;
             _dependencyGraph = dependencyGraph;
             _vamRootFolder = vamRootFolder;
             _packageFileManager = packageFileManager;
+            _scanControl = scanControl;
             
             if (packageManager != null && dependencyGraph != null && vamRootFolder != null)
             {
-                _playlistManager = new PlaylistManager(packageManager, dependencyGraph, vamRootFolder, packageFileManager);
+                _playlistManager = new PlaylistManager(packageManager, dependencyGraph, vamRootFolder, packageFileManager, scanControl);
             }
             
             InitializeComponent();
+            if (_scanControl?.IsWhitelistMode == true && UnloadOthersCheckBox != null)
+                UnloadOthersCheckBox.Content = "Exclusive: replace scan set";
             LoadPlaylists();
             _hasUnsavedChanges = false;
             UpdateUIState();
@@ -186,6 +191,24 @@ namespace VPM.Windows
             PackageCountTextBlock.Text = visible == total
                 ? $"{total} items"
                 : $"{visible} / {total} items";
+
+            if (_scanControl != null && _playlistManager != null && _currentPlaylist != null)
+            {
+                var closure = _playlistManager.GetAllPackagesToLoad(_currentPlaylist);
+                long bytes = 0;
+                int files = 0;
+                foreach (var key in closure)
+                {
+                    if (_packageManager?.PackageMetadata != null && _packageManager.PackageMetadata.TryGetValue(key, out var meta) && meta != null)
+                    {
+                        bytes += meta.FileSize;
+                        files += meta.FileCount;
+                    }
+                }
+                var gb = bytes / (1024d * 1024d * 1024d);
+                var size = gb >= 1 ? $"{gb:0.0} GB" : $"{bytes / (1024d * 1024d):0} MB";
+                PackageCountTextBlock.Text += $"  ·  scan {closure.Count:N0} pkgs / {size} / {files:N0} files";
+            }
         }
 
         private void ClearDetails()
@@ -627,8 +650,11 @@ namespace VPM.Windows
 
             var result = DarkMessageBox.Show(
                 $"Activate playlist \"{_currentPlaylist.Name}\"?\n\n" +
-                $"This will load {_currentPlaylist.PackageKeys.Count} packages and their dependencies." +
-                (_currentPlaylist.UnloadOtherPackages ? "\n\nPackages not in this playlist will be unloaded." : ""),
+                (_scanControl?.IsWhitelistMode == true
+                    ? $"This writes the VaM scan set from {_currentPlaylist.PackageKeys.Count} packages and their dependencies."
+                        + (_currentPlaylist.UnloadOtherPackages ? "\n\nExclusive: replaces the current scan set." : "\n\nAdditive: unions into the current scan set.")
+                    : $"This will load {_currentPlaylist.PackageKeys.Count} packages and their dependencies."
+                        + (_currentPlaylist.UnloadOtherPackages ? "\n\nPackages not in this playlist will be unloaded." : "")),
                 "Activate Playlist",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Question);
@@ -651,9 +677,11 @@ namespace VPM.Windows
                 var activationResult = await ActivatePlaylistAsync(_currentPlaylist);
 
                 var unloadText = _currentPlaylist.UnloadOtherPackages
-                    ? "Unload others: Yes"
-                    : "Unload others: No";
-                var details = $"Loaded: {activationResult.LoadedCount:N0}\nUnloaded: {activationResult.UnloadedCount:N0}\n{unloadText}";
+                    ? (_scanControl?.IsWhitelistMode == true ? "Exclusive: Yes" : "Unload others: Yes")
+                    : (_scanControl?.IsWhitelistMode == true ? "Exclusive: No" : "Unload others: No");
+                var details = _scanControl?.IsWhitelistMode == true
+                    ? $"{activationResult.Message}\n{unloadText}"
+                    : $"Loaded: {activationResult.LoadedCount:N0}\nUnloaded: {activationResult.UnloadedCount:N0}\n{unloadText}";
 
                 DarkMessageBox.Show(
                     $"Playlist activated successfully!\n\n{details}",

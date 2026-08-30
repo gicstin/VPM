@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using VPM.Models;
 using VPM.Services;
+using VPM.Services.Vpb;
 
 namespace VPM
 {
@@ -78,6 +79,7 @@ namespace VPM
                 return;
 
             _currentContentMode = mode;
+            UpdateStatusBarMeta();
 
             // Clear selections for all DataGrids
             if (PackageDataGrid != null)
@@ -150,13 +152,6 @@ namespace VPM
                 
                 PackageSortButton.IsEnabled = true;
                 
-                if (FavoriteToggleButton != null)
-                    FavoriteToggleButton.IsEnabled = true;
-                if (AutoInstallToggleButton != null)
-                    AutoInstallToggleButton.Visibility = Visibility.Visible;
-                if (HideToggleButton != null)
-                    HideToggleButton.Visibility = Visibility.Collapsed;
-                
                 DependenciesTabsContainer.Visibility = Visibility.Visible;
                 DependentsTab.Visibility = Visibility.Visible;
                 DependentsTabColumn.Width = new GridLength(1, GridUnitType.Star);
@@ -168,6 +163,8 @@ namespace VPM
                     SceneFiltersContainer.Visibility = Visibility.Collapsed;
                 if (PresetFiltersContainer != null)
                     PresetFiltersContainer.Visibility = Visibility.Collapsed;
+
+                SetPackageFilterSectionsForMode();
 
                 if (_settingsManager?.Settings != null)
                 {
@@ -198,27 +195,19 @@ namespace VPM
                 PackageSortButton.IsEnabled = true;
                 PackageSortButton.ToolTip = "Sort (Scroll to navigate)";
                 
-                if (FavoriteToggleButton != null)
-                    FavoriteToggleButton.IsEnabled = true;
-                if (AutoInstallToggleButton != null)
-                    AutoInstallToggleButton.Visibility = Visibility.Collapsed;
-                if (HideToggleButton != null)
-                {
-                    HideToggleButton.Visibility = Visibility.Visible;
-                    HideToggleButton.IsEnabled = true;
-                }
-                
                 DependenciesTabsContainer.Visibility = Visibility.Visible;
                 DependentsTab.Visibility = Visibility.Collapsed;
                 DependentsTabColumn.Width = new GridLength(0);
                 DependenciesTab.Margin = new Thickness(0);
                 
                 if (PackageFiltersContainer != null)
-                    PackageFiltersContainer.Visibility = Visibility.Collapsed;
+                    PackageFiltersContainer.Visibility = Visibility.Visible;
                 if (SceneFiltersContainer != null)
                     SceneFiltersContainer.Visibility = Visibility.Collapsed;
                 if (PresetFiltersContainer != null)
                     PresetFiltersContainer.Visibility = Visibility.Visible;
+
+                SetPackageFilterSectionsForMode();
 
                 // Populate custom content filters
                 if (CustomAtomItems.Count > 0)
@@ -228,6 +217,7 @@ namespace VPM
                     PopulatePresetDateFilter();
                     PopulatePresetFileSizeFilter();
                     PopulatePresetStatusFilter();
+                    PopulateVpbFilterListsFromCustomItems();
                 }
 
                 // Show overlay while first scan runs (including preload started in Packages mode)
@@ -257,9 +247,7 @@ namespace VPM
         {
             // Update toolbar buttons immediately
             UpdateToolbarButtons();
-            UpdateFavoriteCounter();
-            UpdateAutoinstallCounter();
-            UpdateHideCounter();
+            UpdateStatusBarMeta();
             
             if (ScenesDataGrid.SelectedItems.Count == 0)
             {
@@ -1491,6 +1479,16 @@ namespace VPM
                 var searchText = _customAtomSearchText;
                 var hasSearchText = !string.IsNullOrWhiteSpace(searchText);
 
+                CollectVpbRatingFilterSelections();
+                CollectVpbTagFilterSelections();
+                var selectedRatings = _filterManager != null
+                    ? new HashSet<string>(_filterManager.SelectedVpbRatings, StringComparer.OrdinalIgnoreCase)
+                    : null;
+                var selectedTags = _filterManager != null
+                    ? new HashSet<string>(_filterManager.SelectedVpbTags, StringComparer.OrdinalIgnoreCase)
+                    : null;
+                bool untaggedOnly = _filterManager?.VpbUntaggedOnly == true;
+
                 CustomAtomItemsView.Filter = (item) =>
                 {
                     if (item is not CustomAtomItem preset) return false;
@@ -1537,6 +1535,30 @@ namespace VPM
                     {
                         if (!PassesStatusFilter(preset.IsFavorite, preset.IsHidden, PresetStatusFilterList.SelectedItems.Cast<string>()))
                             return false;
+                    }
+
+                    if (selectedRatings != null && selectedRatings.Count > 0)
+                    {
+                        var key = VpbUserFileKeys.RelativeUid(_selectedFolder, preset.FilePath);
+                        int rating = _vpbData.RatingForFile(key);
+                        if (!selectedRatings.Contains(rating.ToString()))
+                            return false;
+                    }
+
+                    if ((selectedTags != null && selectedTags.Count > 0) || untaggedOnly)
+                    {
+                        var key = VpbUserFileKeys.RelativeUid(_selectedFolder, preset.FilePath);
+                        var tags = _vpbData.TagsForFile(key);
+                        bool matchesAnyTag = false;
+                        if (selectedTags != null)
+                        {
+                            foreach (var tag in selectedTags)
+                            {
+                                if (_vpbData.HasTagOnFile(key, tag)) { matchesAnyTag = true; break; }
+                            }
+                        }
+                        bool matchesUntagged = untaggedOnly && tags.Count == 0;
+                        if (!matchesAnyTag && !matchesUntagged) return false;
                     }
 
                     return true;

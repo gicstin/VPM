@@ -194,10 +194,20 @@ namespace VPM.Services
             // Ensure all required filters are present in filter orders
             EnsureAllFiltersInOrder(settings);
 
-            // Update version to current
             if (settings.SettingsVersion < 2)
             {
                 settings.SettingsVersion = 2;
+            }
+
+            // v3: UI scale 100% is the old 75% layout. Stored value is user-facing 0.5–1.5.
+            if (settings.SettingsVersion < 3)
+            {
+                if (Math.Abs(settings.UiScale - 0.75) < 0.001)
+                    settings.UiScale = UiScaleLevels.Default;
+                else
+                    settings.UiScale = UiScaleLevels.Snap(settings.UiScale);
+
+                settings.SettingsVersion = 3;
             }
         }
 

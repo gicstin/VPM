@@ -8,8 +8,9 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         SizeToContent="Height"
-        Topmost="True"
-        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}">
+        Topmost="False"
+        Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+        MaxHeight="520">
     
     <Window.Resources>
         <Style TargetType="Button">
@@ -52,21 +53,24 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
-        <!-- Message Content -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
-            <!-- Icon -->
-            <TextBlock x:Name="IconTextBlock" 
-                       FontSize="32" 
-                       Margin="0,0,15,0"
-                       VerticalAlignment="Top"/>
-            
-            <!-- Message Text -->
-            <TextBlock x:Name="MessageTextBlock" 
-                       TextWrapping="Wrap"
-                       VerticalAlignment="Center"
-                       MaxWidth="350"
-                       Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
-        </StackPanel>
+            <ScrollViewer
+                Grid.Row="0"
+                MaxHeight="360"
+                Margin="0,0,0,20"
+                VerticalScrollBarVisibility="Auto"
+                HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="IconTextBlock" 
+                               FontSize="32" 
+                               Margin="0,0,15,0"
+                               VerticalAlignment="Top"/>
+                    <TextBlock x:Name="MessageTextBlock" 
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               MaxWidth="350"
+                               Foreground="{DynamicResource {x:Static SystemColors.ControlTextBrushKey}}"/>
+                </StackPanel>
+            </ScrollViewer>
         
         <!-- Buttons -->
         <StackPanel Grid.Row="1" 

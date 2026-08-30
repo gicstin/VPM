@@ -23,6 +23,7 @@
             <Setter Property="CanUserDeleteRows" Value="False"/>
             <Setter Property="SelectionMode" Value="Extended"/>
             <Setter Property="RowHeight" Value="32"/>
+            <Setter Property="MinColumnWidth" Value="48"/>
         </Style>
         
         <!-- DataGrid Header Style -->
@@ -239,7 +240,7 @@
         <DataGrid x:Name="DuplicatesDataGrid" Grid.Row="2">
             <DataGrid.Columns>
                 <!-- Package Name Column -->
-                <DataGridTextColumn Header="Package Name" Width="*" Binding="{Binding PackageName}" IsReadOnly="True">
+                <DataGridTextColumn Header="Package Name" Width="*" MinWidth="160" Binding="{Binding PackageName}" IsReadOnly="True">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="Padding" Value="10,0"/>
@@ -249,7 +250,7 @@
                 </DataGridTextColumn>
                 
                 <!-- AllPackages Column with Checkbox -->
-                <DataGridTemplateColumn Width="150">
+                <DataGridTemplateColumn Width="150" MinWidth="120">
                     <DataGridTemplateColumn.Header>
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <TextBlock Text="AllPackages" FontWeight="SemiBold"/>
@@ -268,7 +269,7 @@
                 </DataGridTemplateColumn>
                 
                 <!-- AddonPackages Column with Checkbox -->
-                <DataGridTemplateColumn Width="150">
+                <DataGridTemplateColumn Width="150" MinWidth="120">
                     <DataGridTemplateColumn.Header>
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <TextBlock Text="AddonPackages" FontWeight="SemiBold"/>
@@ -287,7 +288,7 @@
                 </DataGridTemplateColumn>
 
                 <!-- External Column with Checkbox -->
-                <DataGridTemplateColumn Width="150">
+                <DataGridTemplateColumn Width="150" MinWidth="80">
                     <DataGridTemplateColumn.Header>
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <TextBlock Text="External" FontWeight="SemiBold"/>
@@ -303,7 +304,7 @@
                 </DataGridTemplateColumn>
 
                 <!-- OffloadedVars (BA) Column - hidden when BA integration is not active -->
-                <DataGridTemplateColumn x:Name="OffloadedVarsColumn" Width="160" Visibility="Collapsed">
+                <DataGridTemplateColumn x:Name="OffloadedVarsColumn" Width="160" MinWidth="140" Visibility="Collapsed">
                     <DataGridTemplateColumn.Header>
                         <StackPanel Orientation="Vertical" HorizontalAlignment="Center">
                             <TextBlock Text="OffloadedVars (BA)" FontWeight="SemiBold"/>

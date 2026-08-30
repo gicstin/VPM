@@ -115,6 +115,8 @@ namespace VPM
                             RefreshFilterLists();
                         }
                         
+                        EnsureVpbData();
+
                         // Check if each item is marked as favorite or hidden
                         foreach (var item in items)
                         {
@@ -125,6 +127,8 @@ namespace VPM
                             // For custom atoms, hidden items are stored as .vap.hide or .json.hide
                             var hidePath = item.FilePath + ".hide";
                             item.IsHidden = File.Exists(hidePath);
+
+                            ApplyVpbToCustomItem(item);
                         }
                         
                         CustomAtomItems.ReplaceAll(items);
@@ -138,6 +142,7 @@ namespace VPM
                             PopulatePresetDateFilter();
                             PopulatePresetFileSizeFilter();
                             PopulatePresetStatusFilter();
+                            PopulateVpbFilterListsFromCustomItems();
                         }
 
                         _customAtomLoadInProgress = false;
@@ -261,9 +266,8 @@ namespace VPM
         private void CustomAtomDataGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             // Update counters immediately
-            UpdateFavoriteCounter();
-            UpdateAutoinstallCounter();
-            UpdateHideCounter();
+            UpdateStatusBarMeta();
+            RefreshVpbTagsTab();
 
             if (CustomAtomDataGrid?.SelectedItems.Count == 0)
             {

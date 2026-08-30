@@ -16,11 +16,11 @@ namespace VPM.Services
     {
         private readonly Window _mainWindow;
         private readonly Dictionary<string, Control> _navigableControls;
-        private readonly List<string> _navigationOrder;
+        private bool _controlHandlersAttached;
         
         // UI Control references
-        private ListView _packageListView;
-        private ListView _dependenciesListView;
+        private Selector _packageListView;
+        private Selector _dependenciesListView;
         private ListBox _statusFilterList;
         private ListBox _contentTypesList;
         private ListBox _creatorsList;
@@ -37,20 +37,7 @@ namespace VPM.Services
         {
             _mainWindow = mainWindow ?? throw new ArgumentNullException(nameof(mainWindow));
             _navigableControls = new Dictionary<string, Control>();
-            _navigationOrder = new List<string>
-            {
-                "PackageSearchBox",
-                "PackageListView", 
-                "DepsSearchBox",
-                "DependenciesListView",
-                "StatusFilterList",
-                "ContentTypesFilterBox",
-                "ContentTypesList",
-                "CreatorsFilterBox",
-                "CreatorsList"
-            };
             
-            InitializeControlReferences();
             SetupKeyboardHandlers();
         }
         
@@ -60,8 +47,8 @@ namespace VPM.Services
         private void InitializeControlReferences()
         {
             // Find controls by name
-            _packageListView = FindControl<ListView>("PackageListView");
-            _dependenciesListView = FindControl<ListView>("DependenciesListView");
+            _packageListView = FindControl<Selector>("PackageDataGrid");
+            _dependenciesListView = FindControl<Selector>("DependenciesDataGrid");
             _statusFilterList = FindControl<ListBox>("StatusFilterList");
             _contentTypesList = FindControl<ListBox>("ContentTypesList");
             _creatorsList = FindControl<ListBox>("CreatorsList");
@@ -90,8 +77,27 @@ namespace VPM.Services
             // Main window key handlers
             _mainWindow.PreviewKeyDown += MainWindow_PreviewKeyDown;
             _mainWindow.KeyDown += MainWindow_KeyDown;
-            
-            // Set up individual control handlers
+
+            // Visual tree does not exist yet while the window is constructing — wiring here would find nothing.
+            if (_mainWindow.IsLoaded)
+                SetupControlHandlers();
+            else
+                _mainWindow.Loaded += MainWindow_Loaded;
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            _mainWindow.Loaded -= MainWindow_Loaded;
+            SetupControlHandlers();
+        }
+
+        /// <summary>Resolve control references and attach per-control handlers. Runs once, after load.</summary>
+        private void SetupControlHandlers()
+        {
+            if (_controlHandlersAttached) return;
+            _controlHandlersAttached = true;
+
+            InitializeControlReferences();
             SetupTextBoxHandlers();
             SetupListViewHandlers();
             SetupListBoxHandlers();
@@ -159,18 +165,13 @@ namespace VPM.Services
                     FocusSearchBox();
                     e.Handled = true;
                     break;
-                    
-                case Key.Tab:
-                    if (Keyboard.Modifiers == ModifierKeys.None || Keyboard.Modifiers == ModifierKeys.Shift)
+
+                case Key.Escape:
+                    if (Keyboard.FocusedElement is TextBox)
                     {
-                        HandleTabNavigation(Keyboard.Modifiers == ModifierKeys.Shift);
+                        HandleEscapeKey();
                         e.Handled = true;
                     }
-                    break;
-                    
-                case Key.Escape:
-                    HandleEscapeKey();
-                    e.Handled = true;
                     break;
             }
         }
@@ -241,7 +242,7 @@ namespace VPM.Services
         /// </summary>
         private void ListView_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            var listView = sender as ListView;
+            var listView = sender as Selector;
             if (listView == null) return;
             
             switch (e.Key)
@@ -329,7 +330,7 @@ namespace VPM.Services
         /// <summary>
         /// Handle right arrow key navigation from ListView
         /// </summary>
-        private void HandleRightArrowFromListView(ListView listView)
+        private void HandleRightArrowFromListView(Selector listView)
         {
             if (listView == _packageListView)
             {
@@ -354,7 +355,7 @@ namespace VPM.Services
         /// <summary>
         /// Handle left arrow key navigation from ListView
         /// </summary>
-        private void HandleLeftArrowFromListView(ListView listView)
+        private void HandleLeftArrowFromListView(Selector listView)
         {
             if (listView == _dependenciesListView)
             {
@@ -426,46 +427,6 @@ namespace VPM.Services
                 else if (_packageListView != null && HasItems(_packageListView))
                 {
                     FocusAndSelectFirst(_packageListView);
-                }
-            }
-        }
-        
-        /// <summary>
-        /// Handle Tab navigation between controls
-        /// </summary>
-        private void HandleTabNavigation(bool reverse)
-        {
-            var focusedElement = Keyboard.FocusedElement as FrameworkElement;
-            if (focusedElement == null) return;
-            
-            var currentControlName = GetControlName(focusedElement);
-            if (string.IsNullOrEmpty(currentControlName)) return;
-            
-            var currentIndex = _navigationOrder.IndexOf(currentControlName);
-            if (currentIndex == -1) return;
-            
-            int nextIndex;
-            if (reverse)
-            {
-                nextIndex = currentIndex - 1;
-                if (nextIndex < 0) nextIndex = _navigationOrder.Count - 1;
-            }
-            else
-            {
-                nextIndex = currentIndex + 1;
-                if (nextIndex >= _navigationOrder.Count) nextIndex = 0;
-            }
-            
-            var nextControlName = _navigationOrder[nextIndex];
-            if (_navigableControls.TryGetValue(nextControlName, out var nextControl))
-            {
-                if (nextControl is Selector selector)
-                {
-                    FocusAndSelectFirst(selector);
-                }
-                else
-                {
-                    nextControl.Focus();
                 }
             }
         }
@@ -584,26 +545,6 @@ namespace VPM.Services
         }
         
         /// <summary>
-        /// Get the name of a control for navigation purposes
-        /// </summary>
-        private string GetControlName(FrameworkElement element)
-        {
-            if (element == null) return null;
-            
-            // Try to match by reference first
-            foreach (var kvp in _navigableControls)
-            {
-                if (ReferenceEquals(kvp.Value, element))
-                {
-                    return kvp.Key;
-                }
-            }
-            
-            // Fallback to Name property
-            return element.Name;
-        }
-        
-        /// <summary>
         /// Find a control by name in the visual tree
         /// </summary>
         private T FindControl<T>(string name) where T : FrameworkElement
@@ -642,39 +583,33 @@ namespace VPM.Services
         /// </summary>
         public string GetKeyboardShortcutsHelp()
         {
-            return @"KEYBOARD SHORTCUTS:
+            return @"Keyboard shortcuts
 
-NAVIGATION:
-• Tab / Shift+Tab - Navigate between controls
-• Up/Down Arrow - Navigate within lists (preserves selection)
-• Ctrl+Left/Right - Switch between related tables/lists
-• Enter - Confirm selection / move to next control
-• Escape - Clear focused textbox or remove focus
+Global
+• F5 — Refresh packages
+• Ctrl+F — Focus package search
+• Ctrl+/- — Image columns
+• Ctrl+Alt++ / Ctrl+Alt+- — UI scale (5%)
+• Ctrl+Alt+0 — Reset UI scale to 100%
+• F1 — This list
+• Esc — Clear focused search box
+• Ctrl+← / Ctrl+→ — Move between packages, dependencies and filters
 
-GLOBAL SHORTCUTS:
-• F5 - Refresh packages
-• Ctrl+F - Focus main search box
-• Ctrl+B - Build cache
-• Ctrl+, - Open settings
-• Ctrl+- / Ctrl++ - Decrease/increase image columns
+Package list
+• Space — Whitelist/unlist (whitelist mode) or load/unload (file-move mode)
+• Ctrl+Space — Same for multiple selected packages
+• Shift+Space — Whitelist/load together with dependencies
+• C — Filter by creator (one selected)
+• Delete — Discard selected
 
-LIST NAVIGATION:
-• Up/Down - Navigate within current list
-• Ctrl+Left/Right - Move between related lists/tables
-• Space - Toggle selection (multi-select lists)
-• Enter - Confirm selection
+Filter lists (status / content types / creators)
+• Space — Toggle the focused filter entry
 
-TABLE SWITCHING:
-• Ctrl+Right from Packages †’ Dependencies †’ Filters
-• Ctrl+Left reverses the direction
-• Normal arrow keys work within each table
+Scenes / presets
+• Space — Load available dependencies
+• Delete — Discard selected
 
-SEARCH & FILTERS:
-• Escape - Clear current textbox
-• Enter/Down - Move from search to results
-• Type to search in any focused textbox
-
-The interface supports full keyboard navigation - you can operate the entire application without using a mouse!";
+Tab / Shift+Tab follow normal Windows focus order.";
         }
     }
 }

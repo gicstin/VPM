@@ -865,15 +865,7 @@ namespace VPM
                         }
                     }
                     
-                    var status = _packageFileManager?.GetPackageStatus(dependencyName) ?? "Unknown";
-                    
-                    // Check if dependency exists in external destinations
-                    var externalDestinationColor = CheckDependencyInExternalDestinations(baseName);
-                    if (!string.IsNullOrEmpty(externalDestinationColor))
-                    {
-                        // Found in external destination - use the destination's configured status color
-                        status = externalDestinationColor;
-                    }
+                    var status = StatusForDependencyRef(dependencyName, baseName);
                     
                     var dependencyItem = new DependencyItem
                     {
@@ -969,15 +961,7 @@ namespace VPM
                         
                         if (!allDependencies.ContainsKey(dependencyName))
                         {
-                            var status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
-                            
-                            // Check if dependency exists in external destinations
-                            var externalDestinationColor = CheckDependencyInExternalDestinations(baseName);
-                            if (!string.IsNullOrEmpty(externalDestinationColor))
-                            {
-                                // Found in external destination - use the destination's configured status color
-                                status = externalDestinationColor;
-                            }
+                            var status = StatusForDependencyRef(dependencyName, baseName);
                             
                             allDependencies[dependencyName] = new DependencyItem
                             {
@@ -1019,6 +1003,32 @@ namespace VPM
             
             // Update toolbar buttons after dependencies change
             UpdateToolbarButtons();
+        }
+
+        private string StatusForDependencyRef(string lookupName, string baseName)
+        {
+            var external = CheckDependencyInExternalDestinations(baseName);
+            if (!string.IsNullOrEmpty(external))
+                return external;
+            if (_scanControl?.IsWhitelistMode == true)
+                return _scanControl.ResolveDisplayStatus(lookupName);
+            return _packageFileManager?.GetPackageStatus(lookupName) ?? "Unknown";
+        }
+
+        private string StatusForDependentRef(string dependentName, string baseName)
+        {
+            if (_packageManager.PackageMetadata.TryGetValue(dependentName, out var dependentMetadata)
+                && dependentMetadata != null
+                && dependentMetadata.IsExternal
+                && !string.IsNullOrEmpty(dependentMetadata.ExternalDestinationColorHex))
+            {
+                return dependentMetadata.ExternalDestinationColorHex;
+            }
+            if (_scanControl?.IsWhitelistMode == true)
+                return _scanControl.ResolveDisplayStatus(dependentName);
+            if (dependentMetadata != null)
+                return dependentMetadata.Status;
+            return _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
         }
 
         private void DisplayDependents(PackageItem packageItem)
@@ -1072,25 +1082,7 @@ namespace VPM
                         }
                     }
                     
-                    // Check if dependent is in PackageMetadata (includes external packages)
-                    string status = "Unknown";
-                    if (_packageManager.PackageMetadata.TryGetValue(dependentName, out var dependentMetadata))
-                    {
-                        // For external packages, use their destination color; otherwise use file manager status
-                        if (dependentMetadata.IsExternal && !string.IsNullOrEmpty(dependentMetadata.ExternalDestinationColorHex))
-                        {
-                            status = dependentMetadata.ExternalDestinationColorHex;
-                        }
-                        else
-                        {
-                            status = dependentMetadata.Status;
-                        }
-                    }
-                    else
-                    {
-                        // Fallback to file manager status for non-metadata packages
-                        status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
-                    }
+                    string status = StatusForDependentRef(dependentName, baseName);
                     
                     var dependentItem = new DependencyItem
                     {
@@ -1196,25 +1188,7 @@ namespace VPM
                         }
                     }
                     
-                    // Check if dependent is in PackageMetadata (includes external packages)
-                    string status = "Unknown";
-                    if (_packageManager.PackageMetadata.TryGetValue(dependentName, out var dependentMetadata))
-                    {
-                        // For external packages, use their destination color; otherwise use file manager status
-                        if (dependentMetadata.IsExternal && !string.IsNullOrEmpty(dependentMetadata.ExternalDestinationColorHex))
-                        {
-                            status = dependentMetadata.ExternalDestinationColorHex;
-                        }
-                        else
-                        {
-                            status = dependentMetadata.Status;
-                        }
-                    }
-                    else
-                    {
-                        // Fallback to file manager status for non-metadata packages
-                        status = _packageFileManager?.GetPackageStatus(baseName) ?? "Unknown";
-                    }
+                    string status = StatusForDependentRef(dependentName, baseName);
                     
                     allDependents[dependentName] = new DependencyItem
                     {

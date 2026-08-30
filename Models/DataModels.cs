@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -24,7 +24,6 @@ namespace VPM.Models
         private bool _isOldVersion = false;
         private int _latestVersionNumber = 1;
         private bool _isFavorite = false;
-        private bool _isAutoInstall = false;
         private int _morphCount = 0;
         private int _hairCount = 0;
         private int _clothingCount = 0;
@@ -43,6 +42,9 @@ namespace VPM.Models
         private string _externalDestinationColorHex = "";
         private string _originalExternalDestinationColorHex = "";
         private string _playlistTags = "";
+        private int _vpbRating = 0;
+        private bool _isVpbRatingInherited = false;
+        private string _vpbTags = "";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -76,6 +78,52 @@ namespace VPM.Models
         }
 
         public bool HasPlaylists => !string.IsNullOrEmpty(_playlistTags);
+
+        /// <summary>0-5 star rating owned by VPB, 0 when unrated or when VPB is not installed.</summary>
+        public int VpbRating
+        {
+            get => _vpbRating;
+            set
+            {
+                if (SetProperty(ref _vpbRating, value < 0 ? 0 : value > 5 ? 5 : value))
+                {
+                    OnPropertyChanged(nameof(HasVpbRating));
+                    OnPropertyChanged(nameof(VpbRatingStars));
+                    OnPropertyChanged(nameof(VpbRatingTooltip));
+                }
+            }
+        }
+
+        public bool HasVpbRating => _vpbRating > 0;
+
+        public string VpbRatingStars => _vpbRating > 0 ? new string('★', _vpbRating) : "";
+
+        public string VpbRatingTooltip => $"Rated {_vpbRating}/5 in VPB";
+
+        /// <summary>Stars come from rated content inside the package rather than from the package itself.</summary>
+        public bool IsVpbRatingInherited
+        {
+            get => _isVpbRatingInherited;
+            set => SetProperty(ref _isVpbRatingInherited, value);
+        }
+
+        /// <summary>VPB user tags on this package, comma separated. Read-only mirror of VPB's own tags.</summary>
+        public string VpbTags
+        {
+            get => _vpbTags ?? "";
+            set
+            {
+                if (SetProperty(ref _vpbTags, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(HasVpbTags));
+                    OnPropertyChanged(nameof(VpbTagsDisplay));
+                }
+            }
+        }
+
+        public bool HasVpbTags => !string.IsNullOrEmpty(_vpbTags);
+
+        public string VpbTagsDisplay => HasVpbTags ? "🏷 " + _vpbTags : "";
 
         public string Name
         {
@@ -222,12 +270,6 @@ namespace VPM.Models
         {
             get => _isFavorite;
             set => SetProperty(ref _isFavorite, value);
-        }
-
-        public bool IsAutoInstall
-        {
-            get => _isAutoInstall;
-            set => SetProperty(ref _isAutoInstall, value);
         }
 
         public int MorphCount

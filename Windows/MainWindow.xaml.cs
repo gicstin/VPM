@@ -112,7 +112,8 @@ namespace VPM
         private readonly object _customDependencyIndexLock = new object();
         
         private readonly Dictionary<string, List<CustomDependencyLink>> _customDependencyIndex = new Dictionary<string, List<CustomDependencyLink>>(StringComparer.OrdinalIgnoreCase);
-        
+
+
         private sealed class CustomDependencyLink
         {
             public CustomAtomItem Item { get; init; }
@@ -207,9 +208,6 @@ namespace VPM
 
             // Initialize favorites manager
             InitializeFavoritesManager();
-
-            // Initialize autoinstall manager
-            InitializeAutoInstallManager();
 
             // Initialize renaming service
             InitializeRenamingService();

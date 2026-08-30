@@ -17,30 +17,15 @@ namespace VPM.Models
     [JsonSerializable(typeof(List<string>))]
     [JsonSerializable(typeof(Dictionary<string, SerializableSortingState>))]
     [JsonSerializable(typeof(SerializableSortingState))]
-    [JsonSerializable(typeof(AutoInstallData))]
-    [JsonSerializable(typeof(ShadowAutoInstallData))]
     [JsonSerializable(typeof(FavoritesData))]
     [JsonSerializable(typeof(ShadowFavoritesData))]
     [JsonSerializable(typeof(List<PackageDownloadInfo>))]
     [JsonSerializable(typeof(PackageDownloadInfo))]
     [JsonSerializable(typeof(MoveToDestination))]
     [JsonSerializable(typeof(List<MoveToDestination>))]
+    [JsonSerializable(typeof(VPM.Services.Vpb.ScanWhitelistData))]
     public partial class JsonSourceGenerationContext : JsonSerializerContext
     {
-    }
-
-    /// <summary>
-    /// Data models for auto-install functionality
-    /// </summary>
-    public class AutoInstallData
-    {
-        public List<string> Names { get; set; } = new List<string>();
-    }
-
-    public class ShadowAutoInstallData
-    {
-        public List<string> Additions { get; set; } = new List<string>();
-        public List<string> Removals { get; set; } = new List<string>();
     }
 
     /// <summary>

@@ -1,12 +1,11 @@
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using VPM.Services;
 
 namespace VPM
 {
-    /// <summary>
-    /// Custom MessageBox that supports dark mode theming
-    /// </summary>
+    /// <summary>Themed message box. No Topmost. Owner = active window. Esc/Enter wired via IsCancel/IsDefault.</summary>
     public partial class CustomMessageBox : Window
     {
         public MessageBoxResult Result { get; private set; } = MessageBoxResult.None;
@@ -17,17 +16,19 @@ namespace VPM
             Loaded += (s, e) => DarkTitleBarHelper.Apply(this);
         }
 
-        /// <summary>
-        /// Shows a custom message box with dark mode support
-        /// </summary>
-        public static MessageBoxResult Show(string message, string title = "Message", 
-            MessageBoxButton buttons = MessageBoxButton.OK, 
+        public static MessageBoxResult Show(string message, string title = "Message",
+            MessageBoxButton buttons = MessageBoxButton.OK,
             MessageBoxImage icon = MessageBoxImage.None)
         {
             var dialog = new CustomMessageBox
             {
                 Title = title
             };
+
+            var owner = Application.Current?.Windows.OfType<Window>().FirstOrDefault(w => w.IsActive)
+                ?? Application.Current?.MainWindow;
+            if (owner != null && owner.IsVisible && owner != dialog)
+                dialog.Owner = owner;
 
             dialog.MessageTextBlock.Text = message;
             dialog.SetIcon(icon);
@@ -107,4 +108,3 @@ namespace VPM
         }
     }
 }
-

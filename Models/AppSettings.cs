@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -15,6 +15,7 @@ namespace VPM.Models
         
         // UI Settings
         private string _theme = "System";
+        private double _uiScale = 1.0;
         private int _imageColumns = 3;
         private bool _imageMatchWidth = false;
         private string _selectedFolder = "";
@@ -53,7 +54,8 @@ namespace VPM.Models
         private string _creatorFilterText = "";
         private string _contentTypeFilterText = "";
         private bool _hideArchivedPackages = true;
-        
+        private bool _legacyDiscardsMigrated = false;
+
         // Filter List Heights
         private double _dateFilterHeight = 100;
         private double _statusFilterHeight = 120;
@@ -65,6 +67,8 @@ namespace VPM.Models
         private double _damagedFilterHeight = 80;
         private double _destinationsFilterHeight = 120;
         private double _playlistsFilterHeight = 120;
+        private double _vpbRatingFilterHeight = 120;
+        private double _vpbTagFilterHeight = 120;
         
         // Filter Section Visibility
         private bool _dateFilterVisible = true;
@@ -88,6 +92,8 @@ namespace VPM.Models
         private bool _presetStatusFilterVisible = true;
         private bool _destinationsFilterVisible = true;
         private bool _playlistsFilterVisible = true;
+        private bool _vpbRatingFilterVisible = true;
+        private bool _vpbTagFilterVisible = true;
         
         // File Size Filter Settings (in MB)
         private double _fileSizeTinyMax = 1;
@@ -127,7 +133,7 @@ namespace VPM.Models
         private string _preferredImageAreaTab = "Images"; // "Images" or "Hub"
         
         // Settings versioning for migrations
-        private int _settingsVersion = 2;
+        private int _settingsVersion = 3;
         
         // Filter Position Settings
         private List<string> _packageFilterOrder = new List<string>(FilterConfiguration.PackageFilters);
@@ -151,6 +157,10 @@ namespace VPM.Models
         // VPB Patcher Settings
         private string _vpbPreferredBranch = "main";
 
+        private ScanControlMode _scanControlMode = ScanControlMode.Auto;
+        private string _activePlaylistId = "";
+        private bool _whitelistLibraryConsolidated = false;
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         // First Launch Settings Properties
@@ -165,6 +175,13 @@ namespace VPM.Models
         {
             get => _theme;
             set => SetProperty(ref _theme, value);
+        }
+
+        /// <summary>User-facing UI scale (0.5–1.5). 1.0 is default; layout is this times <see cref="UiScaleLevels.LayoutBaseline"/>.</summary>
+        public double UiScale
+        {
+            get => _uiScale;
+            set => SetProperty(ref _uiScale, UiScaleLevels.Snap(value));
         }
 
         public int ImageColumns
@@ -372,6 +389,13 @@ namespace VPM.Models
             set => SetProperty(ref _hideArchivedPackages, value);
         }
 
+        /// <summary>Set after DiscardedPackages .var files were folded into DeletedPackages, so the one-time migration does not re-run.</summary>
+        public bool LegacyDiscardsMigrated
+        {
+            get => _legacyDiscardsMigrated;
+            set => SetProperty(ref _legacyDiscardsMigrated, value);
+        }
+
         // Filter List Height Properties
         public double DateFilterHeight
         {
@@ -431,6 +455,18 @@ namespace VPM.Models
         {
             get => _playlistsFilterHeight;
             set => SetProperty(ref _playlistsFilterHeight, Math.Max(80, Math.Min(400, value)));
+        }
+
+        public double VpbRatingFilterHeight
+        {
+            get => _vpbRatingFilterHeight;
+            set => SetProperty(ref _vpbRatingFilterHeight, Math.Max(80, Math.Min(400, value)));
+        }
+
+        public double VpbTagFilterHeight
+        {
+            get => _vpbTagFilterHeight;
+            set => SetProperty(ref _vpbTagFilterHeight, Math.Max(80, Math.Min(400, value)));
         }
 
         // Filter Section Visibility Properties
@@ -558,6 +594,18 @@ namespace VPM.Models
         {
             get => _playlistsFilterVisible;
             set => SetProperty(ref _playlistsFilterVisible, value);
+        }
+
+        public bool VpbRatingFilterVisible
+        {
+            get => _vpbRatingFilterVisible;
+            set => SetProperty(ref _vpbRatingFilterVisible, value);
+        }
+
+        public bool VpbTagFilterVisible
+        {
+            get => _vpbTagFilterVisible;
+            set => SetProperty(ref _vpbTagFilterVisible, value);
         }
 
         // File Size Filter Settings Properties
@@ -754,6 +802,24 @@ namespace VPM.Models
             set => SetProperty(ref _vpbPreferredBranch, string.IsNullOrWhiteSpace(value) ? "main" : value);
         }
 
+        public ScanControlMode ScanControlMode
+        {
+            get => _scanControlMode;
+            set => SetProperty(ref _scanControlMode, value);
+        }
+
+        public string ActivePlaylistId
+        {
+            get => _activePlaylistId;
+            set => SetProperty(ref _activePlaylistId, value ?? "");
+        }
+
+        public bool WhitelistLibraryConsolidated
+        {
+            get => _whitelistLibraryConsolidated;
+            set => SetProperty(ref _whitelistLibraryConsolidated, value);
+        }
+
         /// <summary>
         /// Helper method to set property values and raise PropertyChanged event
         /// </summary>
@@ -784,6 +850,7 @@ namespace VPM.Models
             {
                 IsFirstLaunch = true,
                 Theme = "Dark",
+                UiScale = UiScaleLevels.Default,
                 ImageColumns = 3,
                 ImageMatchWidth = false,
                 SelectedFolder = "",
@@ -819,6 +886,8 @@ namespace VPM.Models
                 DamagedFilterHeight = 80,
                 DestinationsFilterHeight = 100,
                 PlaylistsFilterHeight = 120,
+                VpbRatingFilterHeight = 120,
+                VpbTagFilterHeight = 120,
                 DateFilterVisible = true,
                 StatusFilterVisible = true,
                 ContentTypesFilterVisible = true,
@@ -829,6 +898,8 @@ namespace VPM.Models
                 DamagedFilterVisible = true,
                 DestinationsFilterVisible = true,
                 PlaylistsFilterVisible = true,
+                VpbRatingFilterVisible = true,
+                VpbTagFilterVisible = true,
                 SceneTypeFilterVisible = true,
                 SceneCreatorFilterVisible = true,
                 SceneSourceFilterVisible = true,
@@ -850,6 +921,7 @@ namespace VPM.Models
                 MaxSafeSelection = 200,
                 EnableAutoDownload = false,
                 HideArchivedPackages = true,
+                LegacyDiscardsMigrated = false,
                 HubBrowserSearchText = "",
                 HubBrowserSource = "All",
                 HubBrowserCategory = "All",
@@ -858,12 +930,15 @@ namespace VPM.Models
                 HubBrowserSortSecondary = "None",
                 HubBrowserCreator = "All",
                 HubBrowserTags = new List<string>(),
-                SettingsVersion = 2,
+                SettingsVersion = 3,
                 PackageFilterOrder = new List<string>(FilterConfiguration.PackageFilters),
                 SceneFilterOrder = new List<string>(FilterConfiguration.SceneFilters),
                 PresetFilterOrder = new List<string>(FilterConfiguration.PresetFilters),
                 SortingStates = new Dictionary<string, SerializableSortingState>(),
-                DisableMoveToConfirmation = false
+                DisableMoveToConfirmation = false,
+                ScanControlMode = ScanControlMode.Auto,
+                ActivePlaylistId = "",
+                WhitelistLibraryConsolidated = false
             };
         }
     }

@@ -15,14 +15,16 @@ namespace VPM.Services
         private readonly PackageManager _packageManager;
         private readonly DependencyGraph _dependencyGraph;
         private readonly PackageFileManager _packageFileManager;
+        private readonly Vpb.ScanControlService _scanControl;
         private readonly string _addonPackagesFolder;
         private readonly string _allPackagesFolder;
 
-        public PlaylistManager(PackageManager packageManager, DependencyGraph dependencyGraph, string vamRootFolder, PackageFileManager packageFileManager)
+        public PlaylistManager(PackageManager packageManager, DependencyGraph dependencyGraph, string vamRootFolder, PackageFileManager packageFileManager, Vpb.ScanControlService scanControl = null)
         {
             _packageManager = packageManager ?? throw new ArgumentNullException(nameof(packageManager));
             _dependencyGraph = dependencyGraph ?? throw new ArgumentNullException(nameof(dependencyGraph));
             _packageFileManager = packageFileManager; // Optional, but recommended for robust file operations
+            _scanControl = scanControl;
             _addonPackagesFolder = Path.Combine(vamRootFolder ?? throw new ArgumentNullException(nameof(vamRootFolder)), "AddonPackages");
             _allPackagesFolder = Path.Combine(vamRootFolder, "AllPackages");
         }
@@ -121,6 +123,52 @@ namespace VPM.Services
             }
 
             var packagesToLoad = GetAllPackagesToLoad(playlist);
+
+            if (_scanControl != null && _scanControl.IsWhitelistMode)
+            {
+                if (unloadOthers && playlist.UnloadOtherPackages && packagesToLoad.Count == 0)
+                {
+                    result.Success = false;
+                    result.Message = "Exclusive empty playlist would exclude all packages from VaM boot scan.";
+                    return result;
+                }
+
+                progress?.Report(new PlaylistActivationProgress
+                {
+                    Phase = "Writing scan set",
+                    Completed = 0,
+                    Total = 1,
+                    CurrentPackageKey = ""
+                });
+
+                var vamRoot = Directory.GetParent(_addonPackagesFolder)?.FullName;
+                var compiled = Vpb.WhitelistCompiler.Compile(
+                    packagesToLoad,
+                    _dependencyGraph,
+                    _packageManager.PackageMetadata,
+                    vamRoot,
+                    _scanControl.Whitelist,
+                    exclusive: unloadOthers && playlist.UnloadOtherPackages);
+
+                _scanControl.ActivateCompiled(compiled);
+                await Task.CompletedTask;
+                result.Success = true;
+                result.PackagesToLoad = packagesToLoad.ToList();
+                result.LoadedCount = packagesToLoad.Count;
+                result.UnloadedCount = 0;
+                result.Message = playlist.UnloadOtherPackages
+                    ? $"Scan set replaced: {packagesToLoad.Count} packages"
+                    : $"Scan set union: {packagesToLoad.Count} packages";
+                progress?.Report(new PlaylistActivationProgress
+                {
+                    Phase = "Complete",
+                    Completed = 1,
+                    Total = 1,
+                    CurrentPackageKey = ""
+                });
+                return result;
+            }
+
             var packagesToUnload = unloadOthers ? GetPackagesToUnload(playlist, respectUnloadSetting: true) : new List<string>();
 
             result.PackagesToLoad = packagesToLoad.ToList();

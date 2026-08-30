@@ -339,6 +339,9 @@ namespace VPM.Models
         private bool _isHidden = false;
         private string _status = "";
         private string _statusIcon = "";
+        private int _vpbRating = 0;
+        private bool _isVpbRatingInherited = false;
+        private string _vpbTags = "";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -531,6 +534,51 @@ namespace VPM.Models
         /// Content type: "Preset" or "Scene"
         /// </summary>
         public string ContentType { get; set; } = "Preset";
+
+        /// <summary>0-5 star rating owned by VPB, 0 when unrated.</summary>
+        public int VpbRating
+        {
+            get => _vpbRating;
+            set
+            {
+                if (SetProperty(ref _vpbRating, value < 0 ? 0 : value > 5 ? 5 : value))
+                {
+                    OnPropertyChanged(nameof(HasVpbRating));
+                    OnPropertyChanged(nameof(VpbRatingStars));
+                    OnPropertyChanged(nameof(VpbRatingTooltip));
+                }
+            }
+        }
+
+        public bool HasVpbRating => _vpbRating > 0;
+
+        public string VpbRatingStars => _vpbRating > 0 ? new string('★', _vpbRating) : "";
+
+        public string VpbRatingTooltip => $"Rated {_vpbRating}/5 in VPB";
+
+        /// <summary>Loose files have no package-internal ratings to inherit from.</summary>
+        public bool IsVpbRatingInherited
+        {
+            get => _isVpbRatingInherited;
+            set => SetProperty(ref _isVpbRatingInherited, value);
+        }
+
+        public string VpbTags
+        {
+            get => _vpbTags ?? "";
+            set
+            {
+                if (SetProperty(ref _vpbTags, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(HasVpbTags));
+                    OnPropertyChanged(nameof(VpbTagsDisplay));
+                }
+            }
+        }
+
+        public bool HasVpbTags => !string.IsNullOrEmpty(_vpbTags);
+
+        public string VpbTagsDisplay => HasVpbTags ? "🏷 " + _vpbTags : "";
 
         // Display properties
         public int DependencyCount => Dependencies?.Count ?? 0;

@@ -6,10 +6,7 @@ using System.Threading.Tasks;
 
 namespace VPM.Services
 {
-    /// <summary>
-    /// Base class for managing a set of names persisted to a file with shadow file support.
-    /// Used by FavoritesManager and AutoInstallManager to avoid code duplication.
-    /// </summary>
+    /// <summary>Set of names persisted to a file with shadow-file support. Shared by FavoritesManager.</summary>
     public abstract class NameSetManager : IDisposable
     {
         protected readonly string _mainFilePath;

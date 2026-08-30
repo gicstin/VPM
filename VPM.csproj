@@ -34,8 +34,10 @@
     <PackageReference Include="GraphShape" Version="1.2.1" />
     <PackageReference Include="GraphShape.Controls" Version="1.2.2" />
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
-    <PackageReference Include="SharpCompress" Version="0.49.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <PackageReference Include="SharpCompress" Version="0.50.4" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
   </ItemGroup>
   
   <ItemGroup>
