@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -1482,12 +1482,12 @@ namespace VPM
                     continue;
 
                 var lookup = string.IsNullOrEmpty(dep.DisplayName) ? dep.Name : dep.DisplayName;
-                var newStatus = _scanControl?.IsWhitelistMode == true
+                var newStatus = IsWhitelistModeActive()
                     ? _scanControl.ResolveDisplayStatus(lookup)
                     : (_packageFileManager?.GetPackageStatus(dep.Name) ?? "Unknown");
 
                 if (dep.Status != newStatus &&
-                    (_scanControl?.IsWhitelistMode == true || ShouldUpdateDependencyStatus(dep.Status, newStatus)))
+                    (IsWhitelistModeActive() || ShouldUpdateDependencyStatus(dep.Status, newStatus)))
                 {
                     dep.Status = newStatus;
                     
@@ -1659,7 +1659,7 @@ namespace VPM
                                     Services.BrowserAssistService.GetOffloadedVarsFolder(_selectedFolder)))
                                 return;
 
-                            if (_scanControl?.IsWhitelistMode == true)
+                            if (IsWhitelistModeActive())
                             {
                                 if (packageItem.Status == "Loaded")
                                     TryWhitelistExclude(new[] { packageItem });

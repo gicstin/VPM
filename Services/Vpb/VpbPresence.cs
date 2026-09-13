@@ -10,7 +10,11 @@ namespace VPM.Services.Vpb
         public static bool IsPluginInstalled(string vamRoot)
         {
             if (string.IsNullOrWhiteSpace(vamRoot)) return false;
-            try { return File.Exists(VpbPaths.VpbDllPath(vamRoot)); }
+            try
+            {
+                return File.Exists(VpbPaths.VpbDllPath(vamRoot))
+                    || File.Exists(VpbPaths.LegacyVpbDllPath(vamRoot));
+            }
             catch { return false; }
         }
 

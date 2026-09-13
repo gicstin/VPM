@@ -1,0 +1,1013 @@
+<Window
+    x:Class="VPM.Windows.VpbManagerWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="VPB"
+    Width="940"
+    Height="720"
+    MinWidth="780"
+    MinHeight="560"
+    Background="{DynamicResource WindowBackgroundBrush}"
+    Foreground="{DynamicResource TextBrush}"
+    ResizeMode="CanResize"
+    WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+
+        <!--  Accent is defined here rather than taken from the theme: the theme's accent is white in
+              both light and dark, which cannot carry a primary action.  -->
+        <SolidColorBrush x:Key="VpbAccent" Color="#2F6FB5" />
+        <SolidColorBrush x:Key="VpbAccentHover" Color="#3C82CF" />
+        <SolidColorBrush x:Key="VpbAccentPressed" Color="#255A94" />
+        <SolidColorBrush x:Key="VpbDanger" Color="#B0413E" />
+        <SolidColorBrush x:Key="VpbDangerHover" Color="#C94E4A" />
+
+        <Style x:Key="VpbBaseButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Background" Value="{DynamicResource ButtonBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="4">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource ButtonPressedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!--  Exactly one of these is on screen at a time — the recommended next step.  -->
+        <Style x:Key="VpbPrimaryButton" BasedOn="{StaticResource VpbBaseButton}" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource VpbAccent}" />
+            <Setter Property="BorderBrush" Value="{StaticResource VpbAccent}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="18,9" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border
+                            x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4">
+                            <ContentPresenter
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource VpbAccentHover}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{StaticResource VpbAccentPressed}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Root" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VpbQuietButton" BasedOn="{StaticResource VpbBaseButton}" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+
+        <Style x:Key="VpbDangerButton" BasedOn="{StaticResource VpbBaseButton}" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{StaticResource VpbDanger}" />
+            <Setter Property="Foreground" Value="{StaticResource VpbDangerHover}" />
+            <Setter Property="Padding" Value="12,6" />
+        </Style>
+
+        <!--  Row action: dimmed until the row is hovered or selected, but never hidden — a control the
+              user cannot see is a control they will not find. Opacity keeps the layout stable.  -->
+        <Style x:Key="VpbRowActionButton" BasedOn="{StaticResource VpbBaseButton}" TargetType="Button">
+            <Setter Property="Padding" Value="12,5" />
+            <Setter Property="MinWidth" Value="128" />
+            <Setter Property="Opacity" Value="0.35" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </DataTrigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="1" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="VpbCard" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+
+        <Style x:Key="VpbSectionLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Opacity" Value="0.9" />
+        </Style>
+
+        <Style x:Key="VpbTextBox" TargetType="TextBox">
+            <Setter Property="Background" Value="{DynamicResource TextBoxBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="CaretBrush" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <!--  The app themes style buttons and list boxes but not these three, so without templates here
+              they would render as default light chrome inside a dark window.  -->
+        <Style x:Key="VpbComboBox" TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="ComboBoxItem">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                        <Setter Property="Padding" Value="9,6" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="ComboBoxItem">
+                                    <Border
+                                        x:Name="Root"
+                                        Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True">
+                                            <Setter TargetName="Root" Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid x:Name="Root">
+                            <ToggleButton
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                ClickMode="Press"
+                                Focusable="False"
+                                IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border
+                                            x:Name="Chrome"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="4">
+                                            <Path
+                                                x:Name="Arrow"
+                                                Margin="0,0,10,0"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Data="M 0,0 L 5,5 L 10,0 Z"
+                                                Fill="{DynamicResource SecondaryTextBrush}" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource ButtonHoverBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <ContentPresenter
+                                Margin="10,0,26,0"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                IsHitTestVisible="False"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
+
+                            <Popup
+                                AllowsTransparency="True"
+                                Focusable="False"
+                                IsOpen="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                Placement="Bottom"
+                                PlacementTarget="{Binding ElementName=Root}"
+                                PopupAnimation="Fade">
+                                <Border
+                                    MinWidth="{Binding ActualWidth, ElementName=Root}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                    Background="{DynamicResource ControlBackgroundBrush}"
+                                    BorderBrush="{DynamicResource ControlBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="4">
+                                    <ScrollViewer>
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VpbCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Background="Transparent" Orientation="Horizontal">
+                            <Border
+                                x:Name="Box"
+                                Width="16"
+                                Height="16"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource TextBoxBackgroundBrush}"
+                                BorderBrush="{DynamicResource ControlBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="3">
+                                <Path
+                                    x:Name="Tick"
+                                    Margin="0,1,0,0"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Data="M 0,4 L 3,7 L 8,0"
+                                    Stroke="White"
+                                    StrokeThickness="1.8"
+                                    Visibility="Collapsed" />
+                            </Border>
+                            <ContentPresenter
+                                Margin="9,0,0,0"
+                                VerticalAlignment="Center"
+                                TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background" Value="{StaticResource VpbAccent}" />
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource VpbAccent}" />
+                                <Setter TargetName="Tick" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource VpbAccentHover}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VpbExpander" TargetType="Expander">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Expander">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <ToggleButton
+                                x:Name="HeaderButton"
+                                Grid.Row="0"
+                                HorizontalAlignment="Left"
+                                Cursor="Hand"
+                                Focusable="False"
+                                IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent" Padding="2,4">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path
+                                                    x:Name="Chevron"
+                                                    Width="8"
+                                                    Height="8"
+                                                    VerticalAlignment="Center"
+                                                    Data="M 0,0 L 5,4 L 0,8 Z"
+                                                    Fill="{DynamicResource SecondaryTextBrush}"
+                                                    RenderTransformOrigin="0.4,0.5"
+                                                    Stretch="Uniform" />
+                                                <ContentPresenter
+                                                    Margin="9,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    ContentSource="Content" />
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Chevron" Property="RenderTransform">
+                                                    <Setter.Value>
+                                                        <RotateTransform Angle="90" />
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                                <ContentPresenter ContentSource="Header" TextElement.Foreground="{DynamicResource SecondaryTextBrush}" />
+                            </ToggleButton>
+
+                            <!--  Collapsed rather than held in a zero-height row: a DataGrid measured
+                                  inside a 0px row throws from ComputeCellsPanelHorizontalOffset, and
+                                  hidden content should not be realised at all anyway.  -->
+                            <ContentPresenter
+                                x:Name="Body"
+                                Grid.Row="1"
+                                Visibility="Collapsed" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="Body" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VpbVersionItem" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,0,0,1" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border
+                            x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="0,0,0,1">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource ListBoxHoverBrush}" />
+                            </Trigger>
+                            <!--  Selection needs its own mark, or keyboard users have no cursor to follow.  -->
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource ListBoxHoverBrush}" />
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource VpbAccent}" />
+                                <Setter TargetName="Root" Property="BorderThickness" Value="0,0,0,2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Window.Resources>
+
+    <Grid Margin="18,16,18,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <!--  The version list is the point of this window, so it keeps a floor no amount of
+                  expanded diagnostics below it can take away.  -->
+            <RowDefinition Height="*" MinHeight="150" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!--  ── Header ───────────────────────────────────────────────────────────────────────  -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock
+                    FontSize="20"
+                    FontWeight="SemiBold"
+                    Text="VPB" />
+                <TextBlock
+                    x:Name="FolderText"
+                    Margin="0,2,12,0"
+                    Foreground="{DynamicResource SecondaryTextBrush}"
+                    FontSize="12"
+                    Text="{Binding FolderPath}"
+                    TextTrimming="CharacterEllipsis"
+                    ToolTip="{Binding FolderPath}" />
+            </StackPanel>
+
+            <Button
+                x:Name="RefreshButton"
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Click="Refresh_Click"
+                Content="↻  Check again"
+                IsEnabled="{Binding NotBusy}"
+                Style="{StaticResource VpbQuietButton}" />
+        </Grid>
+
+        <!--  ── Hero status ──────────────────────────────────────────────────────────────────
+              The one thing the window must answer before anything else: what is installed, what is
+              available, and what the recommended next step is.  -->
+        <Border
+            Grid.Row="1"
+            Margin="0,0,0,18"
+            Padding="18,16"
+            Style="{StaticResource VpbCard}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Ellipse
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Width="11"
+                    Height="11"
+                    Margin="0,7,12,0"
+                    VerticalAlignment="Top"
+                    Fill="{Binding StatusBrush}" />
+
+                <StackPanel Grid.Row="0" Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock
+                        FontSize="17"
+                        FontWeight="SemiBold"
+                        Text="{Binding StatusHeadline}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Margin="0,5,0,0"
+                        Foreground="{DynamicResource SecondaryTextBrush}"
+                        FontSize="12.5"
+                        Text="{Binding StatusDetail}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Row="0"
+                    Grid.Column="2"
+                    Margin="18,0,0,0"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Right">
+                    <Button
+                        x:Name="PrimaryButton"
+                        Click="PrimaryAction_Click"
+                        Content="{Binding PrimaryActionText}"
+                        IsEnabled="{Binding CanPrimaryAction}"
+                        Style="{StaticResource VpbPrimaryButton}"
+                        Visibility="{Binding PrimaryActionVisibility}" />
+                    <Button
+                        x:Name="ReturnToLatestButton"
+                        Margin="0,8,0,0"
+                        HorizontalAlignment="Stretch"
+                        Click="ReturnToLatest_Click"
+                        Content="{Binding ReturnToLatestText}"
+                        IsEnabled="{Binding NotBusy}"
+                        Style="{StaticResource VpbQuietButton}"
+                        ToolTip="Stop following the pinned build and track the branch again."
+                        Visibility="{Binding ReturnToLatestVisibility}" />
+                </StackPanel>
+
+                <!--  A single caution line, never a stack of them.  -->
+                <Border
+                    Grid.Row="1"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="3"
+                    Margin="0,14,0,0"
+                    Padding="12,9"
+                    Background="{DynamicResource WindowBackgroundBrush}"
+                    BorderBrush="{Binding NoticeBrush}"
+                    BorderThickness="0,0,0,0"
+                    CornerRadius="4"
+                    Visibility="{Binding NoticeVisibility}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Rectangle
+                            Grid.Column="0"
+                            Margin="-12,-9,0,-9"
+                            Fill="{Binding NoticeBrush}"
+                            RadiusX="1.5"
+                            RadiusY="1.5" />
+                        <TextBlock
+                            Grid.Column="1"
+                            Margin="12,0,0,0"
+                            FontSize="12.5"
+                            Text="{Binding NoticeText}"
+                            TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!--  ── Versions ─────────────────────────────────────────────────────────────────────
+              The rollback surface. A build is a thing with a date and a reason it exists, so the list
+              shows both rather than asking the user to decode a version number on its own.  -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" Margin="2,0,2,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Bottom">
+                    <TextBlock Style="{StaticResource VpbSectionLabel}" Text="VERSIONS" />
+                    <TextBlock
+                        Margin="0,3,0,0"
+                        Foreground="{DynamicResource SecondaryTextBrush}"
+                        FontSize="12"
+                        Text="{Binding VersionListCaption}" />
+                </StackPanel>
+
+                <!--  The branch decides which builds this list contains, so it belongs with the list
+                      rather than behind Advanced. Bound to the same property as the Advanced copy,
+                      so the two can never disagree.  -->
+                <StackPanel
+                    Grid.Column="1"
+                    Margin="0,0,10,0"
+                    VerticalAlignment="Bottom"
+                    Orientation="Horizontal">
+                    <TextBlock
+                        Margin="0,0,8,0"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource SecondaryTextBrush}"
+                        FontSize="12"
+                        Text="Branch" />
+                    <ComboBox
+                        Width="160"
+                        Height="32"
+                        IsEnabled="{Binding NotBusy}"
+                        IsSynchronizedWithCurrentItem="False"
+                        ItemsSource="{Binding Branches}"
+                        SelectedItem="{Binding SelectedBranch, Mode=TwoWay}"
+                        Style="{StaticResource VpbComboBox}"
+                        ToolTip="Each branch publishes its own builds. Switching branch clears any pin." />
+                </StackPanel>
+
+                <Grid
+                    Grid.Column="2"
+                    Width="230"
+                    Height="32"
+                    VerticalAlignment="Bottom">
+                    <TextBox
+                        x:Name="VersionFilterBox"
+                        Style="{StaticResource VpbTextBox}"
+                        Text="{Binding VersionFilter, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock
+                        Margin="10,0,0,0"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource SecondaryTextBrush}"
+                        FontSize="12"
+                        IsHitTestVisible="False"
+                        Text="Filter by version or notes">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=VersionFilterBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
+            </Grid>
+
+            <Border Grid.Row="1" Style="{StaticResource VpbCard}">
+                <Grid>
+                    <ListBox
+                        x:Name="VersionList"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ItemContainerStyle="{StaticResource VpbVersionItem}"
+                        ItemsSource="{Binding Versions}"
+                        ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                        VirtualizingPanel.IsVirtualizing="True"
+                        VirtualizingPanel.VirtualizationMode="Recycling">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Height="62" ToolTip="{Binding Tooltip}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="3" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Rectangle Grid.Column="0" Fill="{Binding RailBrush}" />
+
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        Margin="16,0,12,0"
+                                        VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock
+                                                FontFamily="Consolas, Cascadia Mono, monospace"
+                                                FontSize="14"
+                                                FontWeight="SemiBold"
+                                                Text="{Binding Version}" />
+                                            <TextBlock
+                                                Margin="12,1,0,0"
+                                                VerticalAlignment="Center"
+                                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                                FontSize="11.5"
+                                                Text="{Binding MetaText}" />
+                                            <Border
+                                                Margin="12,0,0,0"
+                                                Padding="7,1"
+                                                VerticalAlignment="Center"
+                                                Background="{Binding BadgeBrush}"
+                                                CornerRadius="3"
+                                                Visibility="{Binding BadgeVisibility}">
+                                                <TextBlock
+                                                    FontSize="9.5"
+                                                    FontWeight="Bold"
+                                                    Foreground="White"
+                                                    Text="{Binding BadgeText}" />
+                                            </Border>
+                                            <TextBlock
+                                                Margin="10,0,0,0"
+                                                VerticalAlignment="Center"
+                                                FontSize="13"
+                                                Text="⚠"
+                                                Foreground="#D29922"
+                                                ToolTip="{Binding SchemaWarning}"
+                                                Visibility="{Binding SchemaWarningVisibility}" />
+                                        </StackPanel>
+                                        <TextBlock
+                                            Margin="0,4,0,0"
+                                            Foreground="{DynamicResource SecondaryTextBrush}"
+                                            FontSize="12"
+                                            Text="{Binding Notes}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+
+                                    <Button
+                                        Grid.Column="2"
+                                        Margin="0,0,14,0"
+                                        VerticalAlignment="Center"
+                                        AutomationProperties.Name="{Binding ActionAccessibleName}"
+                                        Click="VersionAction_Click"
+                                        Content="{Binding ActionText}"
+                                        IsEnabled="{Binding CanApply}"
+                                        Style="{StaticResource VpbRowActionButton}"
+                                        Visibility="{Binding ActionVisibility}" />
+
+                                    <TextBlock
+                                        Grid.Column="2"
+                                        Margin="0,0,14,0"
+                                        MaxWidth="200"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource SecondaryTextBrush}"
+                                        FontSize="11"
+                                        FontStyle="Italic"
+                                        Text="Below the rollback floor"
+                                        TextWrapping="Wrap"
+                                        Visibility="{Binding BlockedVisibility}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock
+                        Margin="28"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Foreground="{DynamicResource SecondaryTextBrush}"
+                        FontSize="12.5"
+                        MaxWidth="520"
+                        Text="{Binding VersionsUnavailableText}"
+                        TextAlignment="Center"
+                        TextWrapping="Wrap"
+                        Visibility="{Binding VersionsUnavailableVisibility}" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!--  ── Advanced ─────────────────────────────────────────────────────────────────────
+              Branch, force reinstall, per-file checksums and uninstall are diagnostics and
+              power-user controls. They stay out of the way until asked for.  -->
+        <Expander
+            x:Name="AdvancedExpander"
+            Grid.Row="3"
+            Margin="0,14,0,0"
+            Collapsed="Advanced_Collapsed"
+            Expanded="Advanced_Expanded"
+            Header="Advanced"
+            IsExpanded="False"
+            Style="{StaticResource VpbExpander}">
+            <Border
+                x:Name="AdvancedContent"
+                Margin="0,10,0,0"
+                Padding="16"
+                Style="{StaticResource VpbCard}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel
+                            Grid.Column="0"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal">
+                            <TextBlock
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center"
+                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                FontSize="12"
+                                Text="Branch" />
+                            <ComboBox
+                                Width="190"
+                                Height="34"
+                                VerticalAlignment="Center"
+                                IsEnabled="{Binding NotBusy}"
+                                IsSynchronizedWithCurrentItem="False"
+                                ItemsSource="{Binding Branches}"
+                                SelectedItem="{Binding SelectedBranch, Mode=TwoWay}"
+                                Style="{StaticResource VpbComboBox}"
+                                ToolTip="Each branch publishes its own builds. Switching branch clears any pin." />
+                        </StackPanel>
+
+                        <CheckBox
+                            Grid.Column="1"
+                            Margin="24,0,0,0"
+                            VerticalAlignment="Center"
+                            Content="Force reinstall — rewrite every patch file even when the checksum already matches"
+                            IsChecked="{Binding ForceReinstall}"
+                            IsEnabled="{Binding NotBusy}"
+                            Style="{StaticResource VpbCheckBox}" />
+
+                        <StackPanel
+                            Grid.Column="2"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal">
+                            <!--  When everything matches there is no primary action, so repairing an
+                                  install has to live somewhere. It is a diagnostic, so it lives here.  -->
+                            <Button
+                                x:Name="RepairButton"
+                                Height="34"
+                                Margin="0,0,10,0"
+                                VerticalAlignment="Center"
+                                Click="Repair_Click"
+                                Content="Reinstall current build"
+                                IsEnabled="{Binding NotBusy}"
+                                Style="{StaticResource VpbQuietButton}"
+                                ToolTip="Re-fetch every file for the ref this install follows. Use this to repair a damaged or half-applied install." />
+                            <Button
+                                Height="34"
+                                VerticalAlignment="Center"
+                                Click="CopyReport_Click"
+                                Content="Copy report"
+                                Style="{StaticResource VpbQuietButton}" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="0,18,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="180" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock
+                            Grid.Row="0"
+                            Margin="0,0,0,6"
+                            Style="{StaticResource VpbSectionLabel}">
+                            <Run Text="FILES" />
+                            <Run Foreground="{DynamicResource SecondaryTextBrush}" Text="  —  " />
+                            <Run Text="{Binding FileTotal, Mode=OneWay}" />
+                            <Run Text="total," />
+                            <Run Text="{Binding FileMissing, Mode=OneWay}" />
+                            <Run Text="missing," />
+                            <Run Text="{Binding FileOutdated, Mode=OneWay}" />
+                            <Run Text="outdated" />
+                        </TextBlock>
+
+                        <DataGrid
+                            x:Name="FilesGrid"
+                            Grid.Row="1"
+                            AutoGenerateColumns="False"
+                            Background="{DynamicResource TextBoxBackgroundBrush}"
+                            BorderBrush="{DynamicResource ControlBorderBrush}"
+                            BorderThickness="1"
+                            CanUserAddRows="False"
+                            CanUserDeleteRows="False"
+                            Foreground="{DynamicResource TextBrush}"
+                            GridLinesVisibility="None"
+                            HeadersVisibility="Column"
+                            IsReadOnly="True"
+                            ItemsSource="{Binding Files}"
+                            RowBackground="Transparent"
+                            RowHeight="26">
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader">
+                                    <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                    <Setter Property="Padding" Value="10,6" />
+                                    <Setter Property="BorderBrush" Value="{DynamicResource ControlBorderBrush}" />
+                                    <Setter Property="BorderThickness" Value="0,0,1,1" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Left" />
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
+                            <DataGrid.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Setter Property="BorderThickness" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+                                    <Setter Property="Padding" Value="8,3" />
+                                </Style>
+                            </DataGrid.CellStyle>
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="90" Header="Status">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock
+                                                Margin="8,0,0,0"
+                                                VerticalAlignment="Center"
+                                                FontWeight="SemiBold"
+                                                Foreground="{Binding StatusBrush}"
+                                                Text="{Binding Status}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn
+                                    Width="*"
+                                    Binding="{Binding RelativePath}"
+                                    Header="Path" />
+                                <DataGridTextColumn
+                                    Width="200"
+                                    Binding="{Binding Reason}"
+                                    Header="Reason" />
+                                <DataGridTextColumn
+                                    Width="180"
+                                    Binding="{Binding ExpectedSha}"
+                                    Header="Expected" />
+                                <DataGridTextColumn
+                                    Width="180"
+                                    Binding="{Binding LocalSha}"
+                                    Header="Local" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+
+                    <Border
+                        Grid.Row="2"
+                        Margin="0,18,0,0"
+                        Padding="0,14,0,0"
+                        BorderBrush="{DynamicResource ControlBorderBrush}"
+                        BorderThickness="0,1,0,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                Grid.Column="0"
+                                VerticalAlignment="Center"
+                                Foreground="{DynamicResource SecondaryTextBrush}"
+                                FontSize="12"
+                                Text="Removing the patch restores the files VPB replaced and deletes the ones it added."
+                                TextWrapping="Wrap" />
+                            <Button
+                                x:Name="UninstallButton"
+                                Grid.Column="1"
+                                Margin="16,0,0,0"
+                                VerticalAlignment="Center"
+                                Click="Uninstall_Click"
+                                Content="Uninstall VPB"
+                                IsEnabled="{Binding NotBusy}"
+                                Style="{StaticResource VpbDangerButton}"
+                                Visibility="{Binding UninstallVisibility}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Expander>
+
+        <!--  ── Footer ───────────────────────────────────────────────────────────────────────  -->
+        <Grid Grid.Row="4" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel
+                Grid.Column="0"
+                Margin="0,0,16,0"
+                VerticalAlignment="Center"
+                Visibility="{Binding ProgressVisibility}">
+                <TextBlock
+                    Foreground="{DynamicResource SecondaryTextBrush}"
+                    FontSize="12"
+                    Text="{Binding ProgressText}"
+                    TextTrimming="CharacterEllipsis" />
+                <ProgressBar
+                    Height="6"
+                    Margin="0,6,0,0"
+                    Background="{DynamicResource TextBoxBackgroundBrush}"
+                    BorderThickness="0"
+                    Foreground="{StaticResource VpbAccent}"
+                    IsIndeterminate="{Binding ProgressIndeterminate}"
+                    Maximum="{Binding ProgressMaximum}"
+                    Value="{Binding ProgressValue}" />
+            </StackPanel>
+
+            <StackPanel
+                Grid.Column="1"
+                HorizontalAlignment="Right"
+                Orientation="Horizontal">
+                <Button
+                    x:Name="StopButton"
+                    MinWidth="110"
+                    Margin="0,0,10,0"
+                    Click="Stop_Click"
+                    Content="Stop"
+                    Style="{StaticResource VpbQuietButton}"
+                    Visibility="{Binding ProgressVisibility}" />
+                <Button
+                    x:Name="CloseButton"
+                    MinWidth="110"
+                    Click="Close_Click"
+                    Content="Close"
+                    Style="{StaticResource VpbQuietButton}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

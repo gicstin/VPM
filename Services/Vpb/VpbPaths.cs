@@ -31,6 +31,22 @@ namespace VPM.Services.Vpb
             Path.Combine(PluginDataDirectory(vamRoot), DatabaseFileName);
 
         public static string VpbDllPath(string vamRoot) =>
+            Path.Combine(vamRoot ?? "", "BepInEx", "plugins", "VPB", "VPB.dll");
+
+        public static string LegacyVpbDllPath(string vamRoot) =>
             Path.Combine(vamRoot ?? "", "BepInEx", "plugins", "VPB.dll");
+
+        public static string ResolveInstalledVpbDllPath(string vamRoot)
+        {
+            var nested = VpbDllPath(vamRoot);
+            if (File.Exists(nested))
+                return nested;
+
+            var legacy = LegacyVpbDllPath(vamRoot);
+            if (File.Exists(legacy))
+                return legacy;
+
+            return nested;
+        }
     }
 }

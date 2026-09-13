@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -61,6 +61,21 @@ namespace VPM.Services
 
         public VPM.Services.Vpb.VpbLibraryData VpbData { get; set; }
 
+        public VPM.Services.Vpb.VpbLookData VpbLookData { get; set; }
+        public bool VpbLookSearchEnabled { get; set; } = true;
+        public bool VpbLookTagSearchEnabled { get; set; }
+
+        public HashSet<string> SelectedVpbLookSubjects { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public bool VpbLookUnmatchedOnly { get; set; }
+
+        public HashSet<string> SelectedVpbHubCategories { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public bool VpbHubUncategorizedOnly { get; set; }
+
+        public HashSet<string> SelectedVpbHubTags { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public bool VpbHubUntaggedOnly { get; set; }
+
+        public bool VpbHubCategoryOverrideEnabled { get; set; }
+
         public void ClearAllFilters()
         {
             SelectedStatus = null;
@@ -91,6 +106,12 @@ namespace VPM.Services
             SelectedVpbRatings.Clear();
             SelectedVpbTags.Clear();
             VpbUntaggedOnly = false;
+            SelectedVpbLookSubjects.Clear();
+            VpbLookUnmatchedOnly = false;
+            SelectedVpbHubCategories.Clear();
+            VpbHubUncategorizedOnly = false;
+            SelectedVpbHubTags.Clear();
+            VpbHubUntaggedOnly = false;
         }
 
         public void ClearVpbFilter()
@@ -98,6 +119,12 @@ namespace VPM.Services
             SelectedVpbRatings.Clear();
             SelectedVpbTags.Clear();
             VpbUntaggedOnly = false;
+            SelectedVpbLookSubjects.Clear();
+            VpbLookUnmatchedOnly = false;
+            SelectedVpbHubCategories.Clear();
+            VpbHubUncategorizedOnly = false;
+            SelectedVpbHubTags.Clear();
+            VpbHubUntaggedOnly = false;
         }
 
         public void ClearCategoryFilter()
@@ -171,9 +198,13 @@ namespace VPM.Services
 
         public bool MatchesSearch(string packageName, VarMetadata metadata = null)
         {
-            // Simple, fast "starts with" search on package name only
-            // No description/tags/categories search for maximum performance
-            return SearchHelper.MatchesPackageSearch(packageName, _searchTerms);
+            if (metadata == null)
+                return SearchHelper.MatchesPackageSearch(packageName, _searchTerms);
+
+            return MatchesSearchText(
+                packageName, metadata, _searchTerms,
+                VpbLookSearchEnabled ? VpbLookData : null,
+                VpbLookTagSearchEnabled);
         }
 
         /// <summary>
@@ -228,8 +259,120 @@ namespace VPM.Services
                 SelectedVpbRatings = new HashSet<string>(SelectedVpbRatings, StringComparer.OrdinalIgnoreCase),
                 SelectedVpbTags = new HashSet<string>(SelectedVpbTags, StringComparer.OrdinalIgnoreCase),
                 VpbUntaggedOnly = VpbUntaggedOnly,
-                VpbData = VpbData
+                VpbData = VpbData,
+                VpbLookData = VpbLookData,
+                VpbLookSearchEnabled = VpbLookSearchEnabled,
+                VpbLookTagSearchEnabled = VpbLookTagSearchEnabled,
+                SelectedVpbLookSubjects = new HashSet<string>(SelectedVpbLookSubjects, StringComparer.OrdinalIgnoreCase),
+                VpbLookUnmatchedOnly = VpbLookUnmatchedOnly,
+                SelectedVpbHubCategories = new HashSet<string>(SelectedVpbHubCategories, StringComparer.OrdinalIgnoreCase),
+                VpbHubUncategorizedOnly = VpbHubUncategorizedOnly,
+                SelectedVpbHubTags = new HashSet<string>(SelectedVpbHubTags, StringComparer.OrdinalIgnoreCase),
+                VpbHubUntaggedOnly = VpbHubUntaggedOnly,
+                VpbHubCategoryOverrideEnabled = VpbHubCategoryOverrideEnabled
             };
+        }
+
+        private static bool MatchesVpbHubFilters(VarMetadata metadata, FilterState state)
+        {
+            bool hasCategoryFilter = state.SelectedVpbHubCategories != null && state.SelectedVpbHubCategories.Count > 0;
+            bool hasTagFilter = state.SelectedVpbHubTags != null && state.SelectedVpbHubTags.Count > 0;
+
+            if (!hasCategoryFilter && !hasTagFilter && !state.VpbHubUncategorizedOnly && !state.VpbHubUntaggedOnly)
+                return true;
+
+            var look = state.VpbLookData;
+            if (look == null) return false;
+
+            var uid = VPM.Services.Vpb.VpbLibraryData.UidFor(metadata);
+
+            if (hasCategoryFilter || state.VpbHubUncategorizedOnly)
+            {
+                var category = look.HubCategoryFor(uid);
+
+                bool matchesCategory = hasCategoryFilter
+                    && category.Length > 0
+                    && state.SelectedVpbHubCategories.Contains(category);
+
+                bool matchesUncategorized = state.VpbHubUncategorizedOnly && category.Length == 0;
+
+                if (!matchesCategory && !matchesUncategorized) return false;
+            }
+
+            if (hasTagFilter || state.VpbHubUntaggedOnly)
+            {
+                bool matchesAnyTag = false;
+                if (hasTagFilter)
+                {
+                    foreach (var tag in state.SelectedVpbHubTags)
+                    {
+                        if (look.HasHubTag(uid, tag)) { matchesAnyTag = true; break; }
+                    }
+                }
+
+                bool matchesUntagged = state.VpbHubUntaggedOnly && look.HubTagsFor(uid).Count == 0;
+
+                if (!matchesAnyTag && !matchesUntagged) return false;
+            }
+
+            return true;
+        }
+
+        internal static string[] EffectiveCategories(
+            VarMetadata metadata,
+            VPM.Services.Vpb.VpbLookData look,
+            bool overrideEnabled)
+        {
+            var detected = metadata?.Categories ?? Array.Empty<string>();
+            if (!overrideEnabled || metadata == null || look == null || !look.HasAnything) return detected;
+
+            var hubCategory = look.HubCategoryFor(VPM.Services.Vpb.VpbLibraryData.UidFor(metadata));
+            if (hubCategory.Length == 0) return detected;
+
+            var mapped = VPM.Services.Vpb.VpbHubCategoryMap.ToVpmCategories(hubCategory);
+            return mapped.Length > 0 ? mapped : detected;
+        }
+
+        public string[] EffectiveCategoriesFor(VarMetadata metadata) =>
+            EffectiveCategories(metadata, VpbLookData, VpbHubCategoryOverrideEnabled);
+
+        internal static bool MatchesSearchText(string packageName, VarMetadata metadata, FilterState state) =>
+            MatchesSearchText(
+                packageName, metadata, state.SearchTerms,
+                state.VpbLookSearchEnabled ? state.VpbLookData : null,
+                state.VpbLookTagSearchEnabled);
+
+        private static bool MatchesSearchText(
+            string packageName,
+            VarMetadata metadata,
+            string[] terms,
+            VPM.Services.Vpb.VpbLookData look,
+            bool includeTags)
+        {
+            if (terms == null || terms.Length == 0)
+                return true;
+
+            if (look == null || !look.HasAnything)
+                return SearchHelper.MatchesPackageSearch(packageName, terms);
+
+            string uid = null;
+            bool uidResolved = false;
+            for (int i = 0; i < terms.Length; i++)
+            {
+                if (SearchHelper.ContainsSearch(packageName, terms[i]))
+                    continue;
+
+                if (!uidResolved)
+                {
+                    uid = VPM.Services.Vpb.VpbLibraryData.UidFor(metadata);
+                    uidResolved = true;
+                }
+
+                if (!look.MatchesTerm(uid, terms[i], includeTags))
+                    return false;
+            }
+
+            return true;
         }
 
         private static string GetBasePackageKey(string key)
@@ -343,6 +486,26 @@ namespace VPM.Services
                 }
             }
 
+            bool hasLookFilter = state.SelectedVpbLookSubjects != null && state.SelectedVpbLookSubjects.Count > 0;
+            if (hasLookFilter || state.VpbLookUnmatchedOnly)
+            {
+                var look = state.VpbLookData;
+                if (look == null) return false;
+
+                var lookUid = VPM.Services.Vpb.VpbLibraryData.UidFor(metadata);
+                var subject = look.SubjectFor(lookUid);
+
+                bool matchesSubject = hasLookFilter
+                    && subject.Length > 0
+                    && state.SelectedVpbLookSubjects.Contains(subject);
+
+                bool matchesUnmatched = state.VpbLookUnmatchedOnly && subject.Length == 0;
+
+                if (!matchesSubject && !matchesUnmatched) return false;
+            }
+
+            if (!MatchesVpbHubFilters(metadata, state)) return false;
+
             // CRITICAL: Early filter for external packages
             // External packages should ONLY appear when:
             // 1. "External" filter is explicitly selected in SelectedStatuses, OR
@@ -383,7 +546,7 @@ namespace VPM.Services
             // 1. Search text filter (most restrictive, check first)
             if (!string.IsNullOrEmpty(state.SearchText))
             {
-                if (!SearchHelper.MatchesPackageSearch(packageName, state.SearchTerms))
+                if (!MatchesSearchText(packageName, metadata, state))
                     return false;
             }
 
@@ -485,17 +648,22 @@ namespace VPM.Services
             }
 
             // 8. Category filter
-            if (!string.IsNullOrEmpty(state.SelectedCategory))
+            if (!string.IsNullOrEmpty(state.SelectedCategory) || state.SelectedCategories.Count > 0)
             {
-                if (metadata.Categories == null || !metadata.Categories.Contains(state.SelectedCategory, StringComparer.OrdinalIgnoreCase))
-                    return false;
-            }
-            
-            if (state.SelectedCategories.Count > 0)
-            {
-                // Use Any + Contains to leverage SelectedCategories' case-insensitive comparer
-                if (metadata.Categories == null || !metadata.Categories.Any(c => state.SelectedCategories.Contains(c)))
-                    return false;
+                var categories = EffectiveCategories(metadata, state.VpbLookData, state.VpbHubCategoryOverrideEnabled);
+
+                if (!string.IsNullOrEmpty(state.SelectedCategory))
+                {
+                    if (!categories.Contains(state.SelectedCategory, StringComparer.OrdinalIgnoreCase))
+                        return false;
+                }
+
+                if (state.SelectedCategories.Count > 0)
+                {
+                    // Use Any + Contains to leverage SelectedCategories' case-insensitive comparer
+                    if (!categories.Any(c => state.SelectedCategories.Contains(c)))
+                        return false;
+                }
             }
 
             // 9. Creator filter
@@ -772,9 +940,10 @@ namespace VPM.Services
             // The packages dictionary is not modified during iteration
             foreach (var package in packages.Values)
             {
-                if (package.Categories != null)
+                var packageCategories = EffectiveCategoriesFor(package);
+                if (packageCategories != null)
                 {
-                    foreach (var category in package.Categories)
+                    foreach (var category in packageCategories)
                     {
                         if (!string.IsNullOrEmpty(category))
                         {

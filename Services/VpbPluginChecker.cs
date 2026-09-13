@@ -4,9 +4,8 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
+using VPM.Services.Vpb;
 
 namespace VPM.Services
 {
@@ -19,35 +18,47 @@ namespace VPM.Services
         public string LocalSha { get; set; }
         public string DownloadUrl { get; set; }
         public DateTimeOffset? RemoteLastModified { get; set; }
+
+        public string GitRef { get; set; }
+
+        public bool IsPinned { get; set; }
+
+        public string PinnedVersion { get; set; }
     }
 
     public class VpbPluginChecker : IDisposable
     {
         private readonly HttpClient _httpClient;
-        private const string RepoOwner = "gicstin";
-        private const string RepoName = "VPB";
-        private const string FilePath = "vam_patch/BepInEx/plugins/VPB.dll";
 
         public VpbPluginChecker()
         {
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("VPM/1.0");
-            _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github.v3+json");
+            _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         }
 
         public async Task<VpbPluginCheckResult> CheckAsync(string vamRoot, string gitRef = "main")
         {
             if (string.IsNullOrWhiteSpace(gitRef))
-                gitRef = "main";
+                gitRef = VpbUpdateConfigFile.DefaultBranch;
 
-            var result = new VpbPluginCheckResult();
-            var localPath = Path.Combine(vamRoot, "BepInEx", "plugins", "VPB.dll");
+            var config = VpbUpdateConfigFile.Load(vamRoot);
+            var effectiveRef = config.Pinned ? config.EffectiveRef : gitRef;
 
-            // 1. Check local file
+            var result = new VpbPluginCheckResult
+            {
+                GitRef = effectiveRef,
+                IsPinned = config.Pinned,
+                PinnedVersion = config.Pinned ? config.PinnedVersion : null,
+                DownloadUrl = VpbGitHubMetadata.GetVpbDllDownloadUrl(effectiveRef)
+            };
+
+            var localPath = VpbPaths.ResolveInstalledVpbDllPath(vamRoot);
+
             if (File.Exists(localPath))
             {
                 result.IsInstalled = true;
-                result.LocalSha = await Task.Run(() => ComputeGitBlobSha1Hex(localPath));
+                result.LocalSha = await Task.Run(() => ComputeGitBlobSha1Hex(localPath)).ConfigureAwait(false);
                 try
                 {
                     var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(localPath);
@@ -60,67 +71,46 @@ namespace VPM.Services
                 result.IsInstalled = false;
             }
 
-            // 2. Get remote info (Content for SHA, Commits for Date)
             try
             {
-                // Get SHA
-                var contentUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/contents/{FilePath}?ref={Uri.EscapeDataString(gitRef)}";
-                var contentResponse = await _httpClient.GetAsync(contentUrl);
-                
-                if (contentResponse.IsSuccessStatusCode)
+                var manifest = await VpbPatchManifest.TryFetchAsync(_httpClient, effectiveRef).ConfigureAwait(false);
+                if (manifest != null)
                 {
-                    var json = await contentResponse.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(json);
-                    var root = doc.RootElement;
-                    
-                    if (root.TryGetProperty("sha", out var shaElement))
+                    foreach (var file in manifest.Files)
                     {
-                        result.RemoteSha = shaElement.GetString();
-                    }
-
-                    if (root.TryGetProperty("download_url", out var downloadUrlElement))
-                    {
-                        result.DownloadUrl = downloadUrlElement.GetString();
-                    }
-                }
-
-                // Get Date (Commit)
-                var commitsUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/commits?path={FilePath}&per_page=1&sha={Uri.EscapeDataString(gitRef)}";
-                var commitsResponse = await _httpClient.GetAsync(commitsUrl);
-
-                if (commitsResponse.IsSuccessStatusCode)
-                {
-                    var json = await commitsResponse.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
-                    {
-                        var commitObj = doc.RootElement[0];
-                        // commit -> committer -> date
-                        if (commitObj.TryGetProperty("commit", out var commitProp) &&
-                            commitProp.TryGetProperty("committer", out var committerProp) &&
-                            committerProp.TryGetProperty("date", out var dateProp) &&
-                            dateProp.TryGetDateTimeOffset(out var date))
+                        if (!file.IsDirectory
+                            && file.RelativePath.EndsWith("plugins/VPB/VPB.dll", StringComparison.OrdinalIgnoreCase))
                         {
-                            result.RemoteLastModified = date;
+                            result.RemoteSha = file.Sha1;
+                            break;
                         }
                     }
                 }
+
+                if (string.IsNullOrEmpty(result.RemoteSha))
+                {
+                    if (VpbGitHubMetadata.TryGetCachedBlobSha(effectiveRef, VpbGitHubMetadata.VpbDllRepoPath, out var cachedSha))
+                    {
+                        result.RemoteSha = cachedSha;
+                    }
+                    else
+                    {
+                        var tree = await VpbGitHubMetadata.GetPatchBlobShasAsync(_httpClient, effectiveRef).ConfigureAwait(false);
+                        if (tree.TryGetValue(VpbGitHubMetadata.VpbDllRepoPath, out var sha))
+                            result.RemoteSha = sha;
+                    }
+                }
             }
-            catch (Exception)
+            catch
             {
-                // Log or handle error? For now we just return what we have
+                // Rate limit / network — leave RemoteSha unset so we do not falsely claim an update.
             }
 
             // 3. Compare
-            if (!string.IsNullOrEmpty(result.RemoteSha))
+            if (!string.IsNullOrEmpty(result.RemoteSha) && result.IsInstalled)
             {
-                if (result.IsInstalled)
-                {
-                    if (!string.Equals(result.LocalSha, result.RemoteSha, StringComparison.OrdinalIgnoreCase))
-                    {
-                        result.IsUpdateAvailable = true;
-                    }
-                }
+                if (!string.Equals(result.LocalSha, result.RemoteSha, StringComparison.OrdinalIgnoreCase))
+                    result.IsUpdateAvailable = true;
             }
 
             return result;

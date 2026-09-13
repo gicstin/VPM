@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -12,6 +13,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using VPM.Services.Vpb;
 
 namespace VPM.Services
 {
@@ -44,6 +46,17 @@ namespace VPM.Services
     {
         public VpbPatchStatus Status { get; init; }
         public string GitRef { get; init; }
+
+        public string RemoteVersion { get; init; }
+
+        public int RemoteSchema { get; init; }
+
+        public string InstalledVersion { get; init; }
+
+        public bool UsedFastPath { get; init; }
+
+        public long BytesToDownload { get; init; }
+
         public int TotalFiles { get; init; }
         public int MissingFiles { get; init; }
         public int OutdatedFiles { get; init; }
@@ -58,6 +71,7 @@ namespace VPM.Services
     public sealed class VpbPatchApplyResult
     {
         public string GitRef { get; init; }
+        public string Version { get; init; }
         public int TotalFiles { get; init; }
         public int UpdatedFiles { get; init; }
         public int SkippedFiles { get; init; }
@@ -80,9 +94,6 @@ namespace VPM.Services
 
     public sealed class VpbPatcherService : IDisposable
     {
-        private const string RepoOwner = "gicstin";
-        private const string RepoName = "VPB";
-        private const string PatchRoot = "vam_patch/";
         private const string BackupFileName = "vpb_backup.zip";
 
         private class PatchManifestItem
@@ -141,8 +152,9 @@ namespace VPM.Services
                 // Ignore cleanup errors
             }
 
-            var manifest = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
-            var usedGitRef = manifest.Count > 0 ? manifest[0].GitRef : gitRef;
+            var resolved = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
+            var manifest = resolved.Entries;
+            var usedGitRef = resolved.GitRef ?? gitRef;
 
             // Cleanup any .bak.remove files from previous uninstall attempts
             foreach (var entry in manifest)
@@ -295,10 +307,21 @@ namespace VPM.Services
             else if (outdated.Count > 0)
                 status = VpbPatchStatus.NeedsUpdate;
 
+            var bytesToDownload = manifest
+                .Where(m => !m.IsDirectory
+                            && (missing.Contains(NormalizeRelativePath(m.RelativePath))
+                                || outdated.Contains(NormalizeRelativePath(m.RelativePath))))
+                .Sum(m => m.Size);
+
             return new VpbPatchCheckResult
             {
                 Status = status,
                 GitRef = usedGitRef,
+                RemoteVersion = resolved.Version,
+                RemoteSchema = resolved.Schema,
+                InstalledVersion = ReadInstalledVersion(gameFolder),
+                UsedFastPath = resolved.FromManifest2,
+                BytesToDownload = bytesToDownload,
                 TotalFiles = manifest.Count,
                 MissingFiles = missing.Count,
                 OutdatedFiles = outdated.Count,
@@ -332,8 +355,9 @@ namespace VPM.Services
 
             gameFolder = Path.GetFullPath(gameFolder);
 
-            var manifest = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
-            var usedGitRef = manifest.Count > 0 ? manifest[0].GitRef : gitRef;
+            var resolved = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
+            var manifest = resolved.Entries;
+            var usedGitRef = resolved.GitRef ?? gitRef;
 
             var backupPath = Path.Combine(gameFolder, BackupFileName);
             if (!File.Exists(backupPath))
@@ -517,6 +541,7 @@ namespace VPM.Services
             return new VpbPatchApplyResult
             {
                 GitRef = usedGitRef,
+                Version = resolved.Version,
                 TotalFiles = manifest.Count,
                 UpdatedFiles = updated,
                 SkippedFiles = skipped,
@@ -535,8 +560,9 @@ namespace VPM.Services
 
             gameFolder = Path.GetFullPath(gameFolder);
 
-            var manifest = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
-            var usedGitRef = manifest.Count > 0 ? manifest[0].GitRef : gitRef;
+            var resolved = await GetManifestAsync(gitRef, cancellationToken).ConfigureAwait(false);
+            var manifest = resolved.Entries;
+            var usedGitRef = resolved.GitRef ?? gitRef;
 
             var restoredFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var removed = 0;
@@ -567,7 +593,16 @@ namespace VPM.Services
                                 Message = "Restoring"
                             });
 
-                            var destPath = Path.Combine(gameFolder, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+                            string destPath;
+                            try
+                            {
+                                destPath = GetDestinationPath(gameFolder, entry.FullName);
+                            }
+                            catch
+                            {
+                                continue;
+                            }
+
                             try
                             {
                                 var dir = Path.GetDirectoryName(destPath);
@@ -706,6 +741,7 @@ namespace VPM.Services
             return new VpbPatchApplyResult
             {
                 GitRef = usedGitRef,
+                Version = resolved.Version,
                 TotalFiles = manifest.Count,
                 UpdatedFiles = removed,
                 SkippedFiles = skipped
@@ -714,7 +750,7 @@ namespace VPM.Services
 
         private string GetRawUrl(string gitRef, string relativePath)
         {
-            return $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{gitRef}/{PatchRoot}{NormalizeRelativePath(relativePath)}";
+            return VpbGitHubMetadata.GetRawUrl(gitRef, NormalizeRelativePath(relativePath));
         }
 
         private async Task CreateBackupAsync(string gameFolder, List<ManifestEntry> manifest, string backupPath, IProgress<VpbPatcherProgress> progress, CancellationToken cancellationToken)
@@ -793,109 +829,166 @@ namespace VPM.Services
             return relativePath.Replace('\\', '/').TrimStart('/');
         }
 
-        public async Task<IReadOnlyList<string>> GetBranchesAsync(CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<string>> GetBranchesAsync(CancellationToken cancellationToken = default)
         {
-            var url = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/branches";
-            using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var items = JsonSerializer.Deserialize<List<GitHubBranchItem>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            var names = items?
-                .Select(b => b.Name)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .OrderBy(n => n == "main" ? 0 : 1)
-                .ThenBy(n => n, StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? new List<string>();
-
-            return names;
+            return VpbGitHubMetadata.GetBranchesAsync(_httpClient, cancellationToken);
         }
 
-        private async Task<List<ManifestEntry>> GetManifestAsync(string gitRef, CancellationToken cancellationToken)
+        public Task<VpbReleaseIndex> GetReleaseIndexAsync(
+            string branch,
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
         {
-            var treeUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/trees/{gitRef}?recursive=1";
-            
-            List<PatchManifestItem> requiredItems = null;
+            return VpbReleaseIndex.FetchAsync(_httpClient, branch, forceRefresh, cancellationToken);
+        }
+
+        public async Task<bool> RefIsAvailableAsync(string gitRef, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(gitRef))
+                return false;
+
+            foreach (var path in new[] { VpbPatchManifest.RepoPath, "patch_manifest.json" })
+            {
+                try
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Head, GetRawUrl(gitRef, path));
+                    using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode)
+                        return true;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+            }
+
+            return false;
+        }
+
+        public static string ReadInstalledVersion(string gameFolder)
+        {
+            try
+            {
+                var path = VpbPaths.ResolveInstalledVpbDllPath(gameFolder);
+                if (!File.Exists(path))
+                    return null;
+
+                var version = FileVersionInfo.GetVersionInfo(path).FileVersion;
+                return string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private async Task<ResolvedManifest> GetManifestAsync(string gitRef, CancellationToken cancellationToken)
+        {
+            var fast = await VpbPatchManifest.TryFetchAsync(_httpClient, gitRef, cancellationToken).ConfigureAwait(false);
+            if (fast != null)
+            {
+                return new ResolvedManifest
+                {
+                    GitRef = gitRef,
+                    Version = fast.Version,
+                    Schema = fast.Schema,
+                    FromManifest2 = true,
+                    Entries = fast.Files
+                        .Select(f => new ManifestEntry
+                        {
+                            RelativePath = f.RelativePath,
+                            BlobSha = f.IsDirectory ? "UNKNOWN" : f.Sha1,
+                            GitRef = gitRef,
+                            IsDirectory = f.IsDirectory,
+                            Size = f.Size
+                        })
+                        .ToList()
+                };
+            }
+
+            List<PatchManifestItem> requiredItems;
             try
             {
                 var manifestUrl = GetRawUrl(gitRef, "patch_manifest.json");
                 using var jsonResponse = await _httpClient.GetAsync(manifestUrl, cancellationToken).ConfigureAwait(false);
-                if (jsonResponse.IsSuccessStatusCode)
+                if (!jsonResponse.IsSuccessStatusCode)
                 {
-                     var jsonContent = await jsonResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                     requiredItems = JsonSerializer.Deserialize<List<PatchManifestItem>>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    throw new IOException(
+                        $"Failed to download VPB patch_manifest.json from GitHub raw ({(int)jsonResponse.StatusCode}). " +
+                        "Check network access to raw.githubusercontent.com.");
                 }
+
+                var jsonContent = await jsonResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                requiredItems = JsonSerializer.Deserialize<List<PatchManifestItem>>(jsonContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             }
-            catch
+            catch (IOException)
             {
-                // Failed to fetch manifest
+                throw;
             }
-
-            if (requiredItems == null)
+            catch (Exception ex)
             {
-                return new List<ManifestEntry>();
+                throw new IOException($"Failed to load VPB patch_manifest.json: {ex.Message}", ex);
             }
 
-            var manifest = new List<ManifestEntry>();
+            if (requiredItems == null || requiredItems.Count == 0)
+            {
+                throw new IOException("VPB patch_manifest.json was empty or invalid.");
+            }
 
+            var remoteFiles = await VpbGitHubMetadata.GetPatchBlobShasAsync(_httpClient, gitRef, cancellationToken).ConfigureAwait(false);
+
+            var entries = new List<ManifestEntry>(requiredItems.Count);
+            foreach (var item in requiredItems)
+            {
+                var fullPath = (VpbGitHubMetadata.PatchRoot + item.RelativePath).Replace('\\', '/');
+
+                string sha = "UNKNOWN";
+                if (!item.IsDirectory && remoteFiles.TryGetValue(fullPath, out var foundSha))
+                    sha = foundSha;
+
+                entries.Add(new ManifestEntry
+                {
+                    RelativePath = item.RelativePath,
+                    BlobSha = sha,
+                    GitRef = gitRef,
+                    IsDirectory = item.IsDirectory
+                });
+            }
+
+            return new ResolvedManifest
+            {
+                GitRef = gitRef,
+                Version = await TryFetchLegacyVersionAsync(gitRef, cancellationToken).ConfigureAwait(false),
+                Schema = 0,
+                FromManifest2 = false,
+                Entries = entries
+            };
+        }
+
+        private async Task<string> TryFetchLegacyVersionAsync(string gitRef, CancellationToken cancellationToken)
+        {
             try
             {
-                // Use the API to get file metadata (SHAs) for checksum validation
-                using var response = await _httpClient.GetAsync(treeUrl, cancellationToken).ConfigureAwait(false);
-                
-                Dictionary<string, string> remoteFiles = null;
-                
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                    var treeResponse = JsonSerializer.Deserialize<GitHubTreeResponse>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var url = $"https://raw.githubusercontent.com/{VpbGitHubMetadata.RepoOwner}/{VpbGitHubMetadata.RepoName}/{gitRef}/plugin_version.txt";
+                using var response = await _httpClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                    return null;
 
-                    // Partial trees would leave many paths without SHAs and silently skip updates — treat as unavailable.
-                    if (treeResponse?.Truncated == true)
-                        remoteFiles = null;
-                    else
-                        remoteFiles = treeResponse?.Tree
-                            .Where(x => x.Type == "blob" && x.Path.StartsWith(PatchRoot, StringComparison.OrdinalIgnoreCase))
-                            .ToDictionary(x => x.Path, x => x.Sha, StringComparer.OrdinalIgnoreCase);
-                }
-
-                foreach (var item in requiredItems)
-                {
-                    var fullPath = PatchRoot + item.RelativePath;
-                    fullPath = fullPath.Replace('\\', '/');
-
-                    string sha = "UNKNOWN";
-                    if (!item.IsDirectory && remoteFiles != null && remoteFiles.TryGetValue(fullPath, out var foundSha))
-                    {
-                        sha = foundSha;
-                    }
-
-                    manifest.Add(new ManifestEntry
-                    {
-                        RelativePath = item.RelativePath,
-                        BlobSha = sha,
-                        GitRef = gitRef,
-                        IsDirectory = item.IsDirectory
-                    });
-                }
+                var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var lines = text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                return lines.Length >= 2 ? lines[0].Trim() + "." + lines[1].Trim() : null;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch
             {
-                // Fallback on error
-                 foreach (var item in requiredItems)
-                 {
-                     manifest.Add(new ManifestEntry
-                     {
-                         RelativePath = item.RelativePath,
-                         BlobSha = "UNKNOWN",
-                         GitRef = gitRef,
-                         IsDirectory = item.IsDirectory
-                     });
-                 }
+                return null;
             }
-
-            return manifest;
         }
 
         private static bool SameGitBlobFileContent(string pathA, string pathB)
@@ -956,26 +1049,18 @@ namespace VPM.Services
             public string BlobSha { get; init; }
             public string GitRef { get; init; }
             public bool IsDirectory { get; init; }
+            public long Size { get; init; }
         }
 
-        private sealed class GitHubTreeResponse
+        private sealed class ResolvedManifest
         {
-            public List<GitHubTreeItem> Tree { get; set; }
-            public bool Truncated { get; set; }
-        }
+            public List<ManifestEntry> Entries { get; init; } = new List<ManifestEntry>();
+            public string GitRef { get; init; }
+            public string Version { get; init; }
+            public int Schema { get; init; }
+            public bool FromManifest2 { get; init; }
 
-        private sealed class GitHubTreeItem
-        {
-            public string Path { get; set; }
-            public string Mode { get; set; }
-            public string Type { get; set; }
-            public string Sha { get; set; }
-            public long Size { get; set; }
-        }
-
-        private sealed class GitHubBranchItem
-        {
-            public string Name { get; set; }
+            public int Count => Entries.Count;
         }
     }
 }

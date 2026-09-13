@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -69,6 +69,9 @@ namespace VPM.Models
         private double _playlistsFilterHeight = 120;
         private double _vpbRatingFilterHeight = 120;
         private double _vpbTagFilterHeight = 120;
+        private double _vpbLookFilterHeight = 120;
+        private double _vpbHubCategoryFilterHeight = 120;
+        private double _vpbHubTagFilterHeight = 120;
         
         // Filter Section Visibility
         private bool _dateFilterVisible = true;
@@ -94,6 +97,9 @@ namespace VPM.Models
         private bool _playlistsFilterVisible = true;
         private bool _vpbRatingFilterVisible = true;
         private bool _vpbTagFilterVisible = true;
+        private bool _vpbLookFilterVisible = true;
+        private bool _vpbHubCategoryFilterVisible = true;
+        private bool _vpbHubTagFilterVisible = true;
         
         // File Size Filter Settings (in MB)
         private double _fileSizeTinyMax = 1;
@@ -113,6 +119,10 @@ namespace VPM.Models
         // Integration Settings
         private bool _browserAssistIntegration = false;
         private bool _hasSeenBrowserAssistIntro = false;
+        private bool _vpbLookSearchEnabled = true;
+        private bool _vpbLookTagSearchEnabled = false;
+        private bool _vpbHubTagsEnabled = true;
+        private bool _vpbHubCategoryOverrideEnabled = true;
 
         // App Update Settings
         private bool _checkForAppUpdates = true;
@@ -469,6 +479,24 @@ namespace VPM.Models
             set => SetProperty(ref _vpbTagFilterHeight, Math.Max(80, Math.Min(400, value)));
         }
 
+        public double VpbLookFilterHeight
+        {
+            get => _vpbLookFilterHeight;
+            set => SetProperty(ref _vpbLookFilterHeight, Math.Max(80, Math.Min(400, value)));
+        }
+
+        public double VpbHubCategoryFilterHeight
+        {
+            get => _vpbHubCategoryFilterHeight;
+            set => SetProperty(ref _vpbHubCategoryFilterHeight, Math.Max(80, Math.Min(400, value)));
+        }
+
+        public double VpbHubTagFilterHeight
+        {
+            get => _vpbHubTagFilterHeight;
+            set => SetProperty(ref _vpbHubTagFilterHeight, Math.Max(80, Math.Min(400, value)));
+        }
+
         // Filter Section Visibility Properties
         public bool DateFilterVisible
         {
@@ -608,6 +636,24 @@ namespace VPM.Models
             set => SetProperty(ref _vpbTagFilterVisible, value);
         }
 
+        public bool VpbLookFilterVisible
+        {
+            get => _vpbLookFilterVisible;
+            set => SetProperty(ref _vpbLookFilterVisible, value);
+        }
+
+        public bool VpbHubCategoryFilterVisible
+        {
+            get => _vpbHubCategoryFilterVisible;
+            set => SetProperty(ref _vpbHubCategoryFilterVisible, value);
+        }
+
+        public bool VpbHubTagFilterVisible
+        {
+            get => _vpbHubTagFilterVisible;
+            set => SetProperty(ref _vpbHubTagFilterVisible, value);
+        }
+
         // File Size Filter Settings Properties
         public double FileSizeTinyMax
         {
@@ -675,6 +721,30 @@ namespace VPM.Models
         {
             get => _hasSeenBrowserAssistIntro;
             set => SetProperty(ref _hasSeenBrowserAssistIntro, value);
+        }
+
+        public bool VpbLookSearchEnabled
+        {
+            get => _vpbLookSearchEnabled;
+            set => SetProperty(ref _vpbLookSearchEnabled, value);
+        }
+
+        public bool VpbLookTagSearchEnabled
+        {
+            get => _vpbLookTagSearchEnabled;
+            set => SetProperty(ref _vpbLookTagSearchEnabled, value);
+        }
+
+        public bool VpbHubTagsEnabled
+        {
+            get => _vpbHubTagsEnabled;
+            set => SetProperty(ref _vpbHubTagsEnabled, value);
+        }
+
+        public bool VpbHubCategoryOverrideEnabled
+        {
+            get => _vpbHubCategoryOverrideEnabled;
+            set => SetProperty(ref _vpbHubCategoryOverrideEnabled, value);
         }
 
         public bool CheckForAppUpdates
@@ -888,6 +958,9 @@ namespace VPM.Models
                 PlaylistsFilterHeight = 120,
                 VpbRatingFilterHeight = 120,
                 VpbTagFilterHeight = 120,
+                VpbLookFilterHeight = 120,
+                VpbHubCategoryFilterHeight = 120,
+                VpbHubTagFilterHeight = 120,
                 DateFilterVisible = true,
                 StatusFilterVisible = true,
                 ContentTypesFilterVisible = true,
@@ -900,6 +973,9 @@ namespace VPM.Models
                 PlaylistsFilterVisible = true,
                 VpbRatingFilterVisible = true,
                 VpbTagFilterVisible = true,
+                VpbLookFilterVisible = true,
+                VpbHubCategoryFilterVisible = true,
+                VpbHubTagFilterVisible = true,
                 SceneTypeFilterVisible = true,
                 SceneCreatorFilterVisible = true,
                 SceneSourceFilterVisible = true,

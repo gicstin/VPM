@@ -227,9 +227,10 @@ namespace VPM.Services.Vpb
             Commit(compiled, allowEnabledEmpty);
         }
 
-        public void Include(IEnumerable<string> keys, bool exclusive, bool withDeps)
+        public WhitelistCompileReport Include(IEnumerable<string> keys, bool exclusive, bool withDeps)
         {
             var list = keys?.Where(k => !string.IsNullOrWhiteSpace(k)).ToList() ?? new List<string>();
+            var report = new WhitelistCompileReport();
 
             // Compile resolves the closure itself, so the graph is what decides whether dependencies come along. Handing it one regardless would ignore withDeps.
             var compiled = WhitelistCompiler.Compile(
@@ -238,8 +239,57 @@ namespace VPM.Services.Vpb
                 _packageManager.PackageMetadata,
                 _vamRoot,
                 _whitelist,
-                exclusive);
+                exclusive,
+                report);
             Commit(compiled);
+            return report;
+        }
+
+        public int CountMissingDependencies(IEnumerable<string> roots)
+        {
+            var metadata = _packageManager?.PackageMetadata;
+            if (metadata == null || roots == null) return 0;
+
+            var index = VpbPackageKeyIndex.Build(metadata);
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var missing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var queue = new Queue<string>();
+
+            foreach (var root in roots)
+            {
+                var uid = index.ResolveUid(root);
+                if (uid == null)
+                {
+                    var canonical = VpbUid.Canonical(root);
+                    if (canonical != null) missing.Add(canonical);
+                    continue;
+                }
+                queue.Enqueue(uid);
+            }
+
+            while (queue.Count > 0)
+            {
+                var uid = queue.Dequeue();
+                if (!visited.Add(uid)) continue;
+
+                var meta = index.Lookup(uid);
+                if (meta?.Dependencies == null) continue;
+
+                foreach (var dep in meta.Dependencies)
+                {
+                    if (string.IsNullOrWhiteSpace(dep)) continue;
+                    var depUid = index.ResolveUid(dep);
+                    if (depUid == null)
+                    {
+                        var canonical = VpbUid.Canonical(dep);
+                        if (canonical != null) missing.Add(canonical);
+                        continue;
+                    }
+                    queue.Enqueue(depUid);
+                }
+            }
+
+            return missing.Count;
         }
 
         public void Exclude(IEnumerable<string> keys)
@@ -256,6 +306,8 @@ namespace VPM.Services.Vpb
 
         public void UpdateVamRoot(string vamRoot)
         {
+            if (string.Equals(_vamRoot, vamRoot, StringComparison.OrdinalIgnoreCase))
+                return;
             _vamRoot = vamRoot;
             Reload();
         }

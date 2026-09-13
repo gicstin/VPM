@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -594,6 +594,28 @@ namespace VPM
                 BrowserAssistIntegrationMenuItem.IsChecked = settings.BrowserAssistIntegration;
             }
 
+            if (VpbLookSearchMenuItem != null)
+            {
+                VpbLookSearchMenuItem.IsChecked = settings.VpbLookSearchEnabled;
+            }
+
+            if (VpbLookTagSearchMenuItem != null)
+            {
+                VpbLookTagSearchMenuItem.IsChecked = settings.VpbLookTagSearchEnabled;
+            }
+
+            if (VpbHubTagsMenuItem != null)
+            {
+                VpbHubTagsMenuItem.IsChecked = settings.VpbHubTagsEnabled;
+            }
+
+            if (VpbHubCategoryOverrideMenuItem != null)
+            {
+                VpbHubCategoryOverrideMenuItem.IsChecked = settings.VpbHubCategoryOverrideEnabled;
+            }
+
+            ApplyVpbLookSearchSettings();
+
             if (!_settingsPropertyChangedHooked && settings != null)
             {
                 settings.PropertyChanged += Settings_PropertyChanged;
@@ -632,9 +654,17 @@ namespace VPM
         {
             if (PackageFiltersContainer == null) return;
             bool customOnlyVpb = _currentContentMode == "Custom";
+            bool hubTagsOff = _settingsManager?.Settings != null && !_settingsManager.Settings.VpbHubTagsEnabled;
             foreach (var child in PackageFiltersContainer.Children.OfType<FrameworkElement>())
             {
                 bool isVpb = child.Name == "VpbRatingFilterSection" || child.Name == "VpbTagFilterSection";
+
+                if (hubTagsOff && child.Name == "VpbHubTagFilterSection")
+                {
+                    child.Visibility = System.Windows.Visibility.Collapsed;
+                    continue;
+                }
+
                 child.Visibility = customOnlyVpb && !isVpb
                     ? System.Windows.Visibility.Collapsed
                     : System.Windows.Visibility.Visible;
@@ -725,6 +755,27 @@ namespace VPM
                     VpbTagFilterList.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
                     VpbTagFilterExpandedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
                     VpbTagFilterCollapsedGrid.Visibility = settings.VpbTagFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+
+                if (VpbLookFilterList != null && VpbLookFilterExpandedGrid != null && VpbLookFilterCollapsedGrid != null)
+                {
+                    VpbLookFilterList.Visibility = settings.VpbLookFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbLookFilterExpandedGrid.Visibility = settings.VpbLookFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbLookFilterCollapsedGrid.Visibility = settings.VpbLookFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+
+                if (VpbHubCategoryFilterList != null && VpbHubCategoryFilterExpandedGrid != null && VpbHubCategoryFilterCollapsedGrid != null)
+                {
+                    VpbHubCategoryFilterList.Visibility = settings.VpbHubCategoryFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbHubCategoryFilterExpandedGrid.Visibility = settings.VpbHubCategoryFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbHubCategoryFilterCollapsedGrid.Visibility = settings.VpbHubCategoryFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+                }
+
+                if (VpbHubTagFilterList != null && VpbHubTagFilterExpandedGrid != null && VpbHubTagFilterCollapsedGrid != null)
+                {
+                    VpbHubTagFilterList.Visibility = settings.VpbHubTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbHubTagFilterExpandedGrid.Visibility = settings.VpbHubTagFilterVisible ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+                    VpbHubTagFilterCollapsedGrid.Visibility = settings.VpbHubTagFilterVisible ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
                 }
                 
                 // Subfolders Filter
@@ -1173,7 +1224,7 @@ namespace VPM
                 await UpdatePackageListAsync();
 
                 EnsureScanControl();
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     var rescan = await EnsureWhitelistLibraryAsync();
                     if (rescan)
@@ -1391,7 +1442,7 @@ namespace VPM
                     // This ensures startup respects the last session sort.
                     if (savedSortDescriptions.Count == 0)
                     {
-                        SortPackageKeys(allKeys);
+                        SortPackageKeys(allKeys, dependentsCount);
                     }
                     
                     // Update UI
@@ -1534,7 +1585,7 @@ namespace VPM
                 {
                     string packageName = key.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
                         ? key : Path.GetFileNameWithoutExtension(metadata.Filename);
-                    if (!SearchHelper.MatchesPackageSearch(packageName, filterSnapshot.SearchTerms))
+                    if (!FilterManager.MatchesSearchText(packageName, metadata, filterSnapshot))
                         return false;
                 }
                 
@@ -1586,9 +1637,13 @@ namespace VPM
             return _filterManager.MatchesFilters(metadata, filterSnapshot, key);
         }
         
-        /// <summary>
-        /// Gets a cached PackageItem or creates a new one.
-        /// </summary>
+        private string GetPackageDisplayKey(string metadataKey, VarMetadata metadata)
+        {
+            return metadataKey != null && metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase)
+                ? metadataKey
+                : Path.GetFileNameWithoutExtension(metadata?.Filename ?? "");
+        }
+
         private PackageItem GetOrCreatePackageItem(string metadataKey, VarMetadata metadata, Dictionary<string, int> dependentsCount)
         {
             string baseKey = GetBasePackageKey(metadataKey);
@@ -1604,9 +1659,8 @@ namespace VPM
                 return cachedItem;
             }
             
-            string packageName = metadataKey.EndsWith("#archived", StringComparison.OrdinalIgnoreCase) 
-                ? metadataKey : Path.GetFileNameWithoutExtension(metadata.Filename);
-            
+            string packageName = GetPackageDisplayKey(metadataKey, metadata);
+
             var newItem = new PackageItem
             {
                 MetadataKey = metadataKey,
@@ -1752,8 +1806,10 @@ namespace VPM
             return Task.CompletedTask;
         }
 
-        private void SortPackageKeys(List<string> keys)
+        private void SortPackageKeys(List<string> keys, Dictionary<string, int> dependentsCount = null)
         {
+            dependentsCount ??= _currentDependentsCounts;
+
             var sortState = _sortingManager?.GetSortingState("Packages");
             PackageSortOption sortOption;
             bool isAscending;
@@ -1785,7 +1841,8 @@ namespace VPM
                     switch (sortOption)
                     {
                         case PackageSortOption.Name:
-                            result = StringComparer.OrdinalIgnoreCase.Compare(metaA.PackageName, metaB.PackageName);
+                            result = StringComparer.OrdinalIgnoreCase.Compare(
+                                GetPackageDisplayKey(keyA, metaA), GetPackageDisplayKey(keyB, metaB));
                             break;
                         case PackageSortOption.Date:
                             result = Nullable.Compare(metaA.ModifiedDate, metaB.ModifiedDate);
@@ -1797,8 +1854,8 @@ namespace VPM
                             result = (metaA.Dependencies?.Length ?? 0).CompareTo(metaB.Dependencies?.Length ?? 0);
                             break;
                         case PackageSortOption.Dependents:
-                            int depA = _currentDependentsCounts.TryGetValue(metaA.PackageName, out var cA) ? cA : 0;
-                            int depB = _currentDependentsCounts.TryGetValue(metaB.PackageName, out var cB) ? cB : 0;
+                            int depA = dependentsCount.TryGetValue(GetPackageDisplayKey(keyA, metaA), out var cA) ? cA : 0;
+                            int depB = dependentsCount.TryGetValue(GetPackageDisplayKey(keyB, metaB), out var cB) ? cB : 0;
                             result = depA.CompareTo(depB);
                             break;
                         case PackageSortOption.Status:
@@ -2697,7 +2754,7 @@ namespace VPM
             {
                 var metadata = kvp.Value;
                 var packageFullName = $"{metadata.CreatorName}.{metadata.PackageName}.{metadata.Version}";
-                var displayName = Path.GetFileNameWithoutExtension(metadata.Filename);
+                var displayName = GetPackageDisplayKey(kvp.Key, metadata);
 
                 // Get dependents count from the graph (var-to-var)
                 var count = _packageManager.GetPackageDependentsCount(packageFullName);

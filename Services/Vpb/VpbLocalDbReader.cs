@@ -17,8 +17,7 @@ namespace VPM.Services.Vpb
         public bool CleanupExcluded { get; init; }
     }
 
-    /// <summary>Read-only VPB SQLite index. WAL so VaM and VPM never block each other; queries gate on Schema rather than an assumed version.</summary>
-    public sealed class VpbLocalDbReader : IDisposable
+    public sealed partial class VpbLocalDbReader : IDisposable
     {
         private const int BusyTimeoutMs = 4000;
 

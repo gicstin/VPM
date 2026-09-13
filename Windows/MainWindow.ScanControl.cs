@@ -26,6 +26,12 @@ namespace VPM
                 _scanControl.UpdateVamRoot(root);
         }
 
+        private bool IsWhitelistModeActive()
+        {
+            EnsureScanControl();
+            return _scanControl?.IsWhitelistMode == true;
+        }
+
         private void RefreshScanStatusChrome()
         {
             EnsureScanControl();
@@ -129,9 +135,10 @@ namespace VPM
             var keys = packages.Select(p => p.MetadataKey).Where(k => !string.IsNullOrEmpty(k)).ToList();
             try
             {
-                _scanControl.Include(keys, exclusive, withDeps);
+                var report = _scanControl.Include(keys, exclusive, withDeps);
                 ApplyWhitelistStatusesToUi();
                 SetStatus(withDeps ? "Added to scan set (+ deps)" : "Added to scan set");
+                ReportWhitelistProblems(report);
                 return true;
             }
             catch (Exception ex)
@@ -139,6 +146,94 @@ namespace VPM
                 DarkMessageBox.Show(ex.Message, "Scan set", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return true;
             }
+        }
+
+        private async Task<(bool success, int missingCount)> WhitelistIncludeWithDependenciesAsync(List<string> packageNames, bool interactive)
+        {
+            EnsureScanControl();
+            if (_scanControl?.IsWhitelistMode != true)
+                return (false, 0);
+
+            var missingCount = _scanControl.CountMissingDependencies(packageNames);
+
+            await CopyExternalPackagesForWhitelistAsync(packageNames);
+
+            try
+            {
+                var report = _scanControl.Include(packageNames, exclusive: false, withDeps: true);
+                ApplyWhitelistStatusesToUi();
+                SetStatus("Added to scan set (+ deps)");
+                if (interactive)
+                    ReportWhitelistProblems(report);
+                return (true, missingCount);
+            }
+            catch (Exception ex)
+            {
+                if (interactive)
+                    DarkMessageBox.Show(ex.Message, "Scan set", MessageBoxButton.OK, MessageBoxImage.Warning);
+                SetStatus("Scan set update failed");
+                return (false, missingCount);
+            }
+        }
+
+        private async Task CopyExternalPackagesForWhitelistAsync(List<string> packageNames)
+        {
+            var metadata = _packageManager?.PackageMetadata;
+            if (metadata == null || packageNames == null || _packageFileManager == null) return;
+
+            var externals = new List<(string Name, string Path)>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var name in packageNames)
+            {
+                if (string.IsNullOrWhiteSpace(name) || !seen.Add(name)) continue;
+                if (!metadata.TryGetValue(name, out var meta) || meta == null) continue;
+                if (!meta.IsExternal || string.IsNullOrEmpty(meta.FilePath)) continue;
+                externals.Add((name, meta.FilePath));
+            }
+
+            if (externals.Count == 0) return;
+
+            var copied = new List<string>();
+            foreach (var (name, path) in externals)
+            {
+                try
+                {
+                    var result = await _packageFileManager.LoadPackageFromExternalPathAsync(name, path, suppressIndexUpdate: true);
+                    if (result.success && !string.IsNullOrEmpty(result.filePath))
+                        copied.Add(result.filePath);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ScanControl] external copy failed for {name}: {ex.Message}");
+                }
+            }
+
+            if (copied.Count > 0)
+            {
+                await (_imageManager?.BuildImageIndexFromVarsAsync(copied, forceRebuild: false) ?? Task.CompletedTask);
+                _packageFileManager.InvalidatePackageIndex();
+                SetStatus($"Copied {copied.Count} external package(s) into AddonPackages");
+            }
+        }
+
+        private void ReportWhitelistProblems(WhitelistCompileReport report)
+        {
+            if (report == null || report.Unreachable.Count == 0) return;
+
+            var preview = string.Join(Environment.NewLine, report.Unreachable.Take(10));
+            if (report.Unreachable.Count > 10)
+                preview += $"{Environment.NewLine}… and {report.Unreachable.Count - 10} more";
+
+            DarkMessageBox.Show(
+                $"{report.Unreachable.Count} package(s) were added to the scan set but VaM cannot load them: "
+                + "their .var file is not in AddonPackages (parked in AllPackages, or in an external folder)."
+                + Environment.NewLine + Environment.NewLine
+                + preview
+                + Environment.NewLine + Environment.NewLine
+                + "Move them into AddonPackages first — a whitelist entry alone cannot reach them.",
+                "Not in AddonPackages",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
         }
 
         private bool TryWhitelistExclude(IEnumerable<PackageItem> packages)
@@ -237,11 +332,13 @@ namespace VPM
             if (keys.Count == 0) return false;
             try
             {
+                WhitelistCompileReport report = null;
                 if (include)
-                    _scanControl.Include(keys, exclusive: false, withDeps: false);
+                    report = _scanControl.Include(keys, exclusive: false, withDeps: false);
                 else
                     _scanControl.Exclude(keys);
                 ApplyWhitelistStatusesToUi();
+                ReportWhitelistProblems(report);
                 SetStatus(include
                     ? $"Added {keys.Count} package(s) to scan set"
                     : $"Removed {keys.Count} package(s) from scan set");
@@ -348,8 +445,9 @@ namespace VPM
                 MessageBoxImage.Question);
             if (result != MessageBoxResult.Yes) return;
 
-            _scanControl.Include(hot.Select(r => r.Uid), exclusive: false, withDeps: false);
+            var promoteReport = _scanControl.Include(hot.Select(r => r.Uid), exclusive: false, withDeps: false);
             ApplyWhitelistStatusesToUi();
+            ReportWhitelistProblems(promoteReport);
         }
 
         private void IncludeSceneInScan_Click(object sender, RoutedEventArgs e)
@@ -375,9 +473,10 @@ namespace VPM
             }
             try
             {
-                _scanControl.Include(new[] { key }, exclusive: false, withDeps: true);
+                var report = _scanControl.Include(new[] { key }, exclusive: false, withDeps: true);
                 ApplyWhitelistStatusesToUi();
                 SetStatus($"Included scene + deps in scan set ({key})");
+                ReportWhitelistProblems(report);
             }
             catch (Exception ex)
             {
@@ -392,8 +491,13 @@ namespace VPM
                 DarkMessageBox.Show("Select a scene first.", "Load in VaM", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
-            var path = scene.FilePath;
-            if (string.IsNullOrEmpty(path)) path = scene.Name;
+            var root = _settingsManager?.Settings?.SelectedFolder ?? _selectedFolder;
+            var path = VpbScenePath.ToSceneValue(root, scene.FilePath) ?? scene.Name;
+            if (string.IsNullOrEmpty(path))
+            {
+                DarkMessageBox.Show("Could not resolve a scene path VPB understands.", "Load in VaM", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             if (!VpbCompanionClient.TryLoadScene(path))
                 DarkMessageBox.Show("VaM not connected. Scene load needs a running VaM with VPB.", "Load in VaM", MessageBoxButton.OK, MessageBoxImage.Information);
             else

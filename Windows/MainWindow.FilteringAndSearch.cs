@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -68,6 +68,12 @@ namespace VPM
                     return true;
                 if (VpbTagFilterList?.SelectedItems?.Count > 0)
                     return true;
+                if (VpbLookFilterList?.SelectedItems?.Count > 0)
+                    return true;
+                if (VpbHubCategoryFilterList?.SelectedItems?.Count > 0)
+                    return true;
+                if (VpbHubTagFilterList?.SelectedItems?.Count > 0)
+                    return true;
 
                 if (DateFilterList?.SelectedIndex > 0)
                     return true;
@@ -87,6 +93,12 @@ namespace VPM
                 if (IsTextBoxActiveFilter(SubfoldersFilterBox, null))
                     return true;
                 if (IsTextBoxActiveFilter(VpbTagFilterBox, null))
+                    return true;
+                if (IsTextBoxActiveFilter(VpbLookFilterBox, null))
+                    return true;
+                if (IsTextBoxActiveFilter(VpbHubCategoryFilterBox, null))
+                    return true;
+                if (IsTextBoxActiveFilter(VpbHubTagFilterBox, null))
                     return true;
 
                 return false;
@@ -488,6 +500,36 @@ namespace VPM
                             }
                         }
 
+                        if (VpbLookFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbLookFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbLook", Label = $"Looks like: {text}", Value = text });
+                            }
+                        }
+
+                        if (VpbHubCategoryFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbHubCategoryFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbHubCategory", Label = $"Hub category: {text}", Value = text });
+                            }
+                        }
+
+                        if (VpbHubTagFilterList?.SelectedItems?.Count > 0)
+                        {
+                            foreach (var item in VpbHubTagFilterList.SelectedItems)
+                            {
+                                var text = ExtractFilterValue(GetListBoxItemText(item));
+                                if (!string.IsNullOrEmpty(text))
+                                    tokens.Add(new ActiveFilterToken { Kind = "VpbHubTag", Label = $"Hub tag: {text}", Value = text });
+                            }
+                        }
+
                         if (DateFilterList?.SelectedIndex > 0 || StartDatePicker?.SelectedDate != null || EndDatePicker?.SelectedDate != null)
                         {
                             var description = _filterManager?.DateFilter != null ? _filterManager.DateFilter.GetDescription() : "Date";
@@ -644,6 +686,15 @@ namespace VPM
                     break;
                 case "VpbTag":
                     RemoveFromSelectedItems(VpbTagFilterList, token.Value, stripCount: true);
+                    break;
+                case "VpbLook":
+                    RemoveFromSelectedItems(VpbLookFilterList, token.Value, stripCount: true);
+                    break;
+                case "VpbHubCategory":
+                    RemoveFromSelectedItems(VpbHubCategoryFilterList, token.Value, stripCount: true);
+                    break;
+                case "VpbHubTag":
+                    RemoveFromSelectedItems(VpbHubTagFilterList, token.Value, stripCount: true);
                     break;
                 case "SceneSearch":
                     if (SceneSearchBox != null)
@@ -942,6 +993,9 @@ namespace VPM
 
                 CollectVpbRatingFilterSelections();
                 CollectVpbTagFilterSelections();
+                CollectVpbLookFilterSelections();
+                CollectVpbHubCategoryFilterSelections();
+                CollectVpbHubTagFilterSelections();
 
                 // Update damaged filter
                 if (DamagedFilterList?.SelectedItem != null)
@@ -1270,6 +1324,9 @@ namespace VPM
             UpdateLicenseTypeClearButton();
             UpdateSubfoldersClearButton();
             UpdateVpbTagsClearButton();
+            UpdateVpbLookClearButton();
+            UpdateVpbHubCategoryClearButton();
+            UpdateVpbHubTagClearButton();
             UpdateClearAllFiltersButtonVisibility();
         }
 
@@ -1436,6 +1493,60 @@ namespace VPM
             }
         }
 
+        private void UpdateVpbLookClearButton()
+        {
+            if (!this.IsLoaded) return;
+
+            try
+            {
+                if (VpbLookClearButton != null && VpbLookFilterBox != null && VpbLookFilterList != null)
+                {
+                    bool hasText = !string.IsNullOrWhiteSpace(VpbLookFilterBox.Text);
+                    bool hasSelection = VpbLookFilterList.SelectedItems.Count > 0;
+                    VpbLookClearButton.Visibility = hasText || hasSelection ? Visibility.Visible : Visibility.Collapsed;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void UpdateVpbHubCategoryClearButton()
+        {
+            if (!this.IsLoaded) return;
+
+            try
+            {
+                if (VpbHubCategoryClearButton != null && VpbHubCategoryFilterBox != null && VpbHubCategoryFilterList != null)
+                {
+                    bool hasText = !string.IsNullOrWhiteSpace(VpbHubCategoryFilterBox.Text);
+                    bool hasSelection = VpbHubCategoryFilterList.SelectedItems.Count > 0;
+                    VpbHubCategoryClearButton.Visibility = hasText || hasSelection ? Visibility.Visible : Visibility.Collapsed;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void UpdateVpbHubTagClearButton()
+        {
+            if (!this.IsLoaded) return;
+
+            try
+            {
+                if (VpbHubTagClearButton != null && VpbHubTagFilterBox != null && VpbHubTagFilterList != null)
+                {
+                    bool hasText = !string.IsNullOrWhiteSpace(VpbHubTagFilterBox.Text);
+                    bool hasSelection = VpbHubTagFilterList.SelectedItems.Count > 0;
+                    VpbHubTagClearButton.Visibility = hasText || hasSelection ? Visibility.Visible : Visibility.Collapsed;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         #endregion
 
         #region Initialization Methods
@@ -1464,6 +1575,21 @@ namespace VPM
                 if (VpbTagFilterBox != null)
                 {
                     VpbTagFilterBox.Text = "";
+                }
+
+                if (VpbLookFilterBox != null)
+                {
+                    VpbLookFilterBox.Text = "";
+                }
+
+                if (VpbHubCategoryFilterBox != null)
+                {
+                    VpbHubCategoryFilterBox.Text = "";
+                }
+
+                if (VpbHubTagFilterBox != null)
+                {
+                    VpbHubTagFilterBox.Text = "";
                 }
 
             }

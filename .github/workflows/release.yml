@@ -20,6 +20,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Release notes are built from the commits since the last tag, so the
+          # shallow default clone is not enough.
+          fetch-depth: 0
 
       - name: Read version
         id: version
@@ -40,11 +44,53 @@ jobs:
             exit 1
           fi
 
+      - name: Build release notes from commit messages
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          if [ -n "$previous" ]; then
+            range="$previous..HEAD"
+            echo "Collecting commits in $range"
+          else
+            range="HEAD"
+            echo "No previous v* tag found, collecting the whole history"
+          fi
+
+          # Subject in bold, then the commit body verbatim — the bullets people write
+          # in their commit messages are the release notes. cat -s collapses the blank
+          # runs left by commits with no body.
+          git log --no-merges --reverse --pretty=format:'**%s**%n%n%b%n' "$range" \
+            | tr -d '\r' \
+            | cat -s > notes-body.md
+
+          if [ ! -s notes-body.md ]; then
+            echo "No commits in range; falling back to the tag name." >&2
+            printf 'Release %s\n' "${{ steps.version.outputs.tag }}" > notes-body.md
+          fi
+
+          {
+            echo "## What's new"
+            echo
+            if [ "$(wc -c < notes-body.md)" -gt 100000 ]; then
+              head -c 100000 notes-body.md
+              echo
+              echo "_(notes truncated)_"
+            else
+              cat notes-body.md
+            fi
+            if [ -n "$previous" ]; then
+              echo
+              echo "**Full changelog**: ${{ github.server_url }}/${{ github.repository }}/compare/$previous...${{ steps.version.outputs.tag }}"
+            fi
+          } > notes.md
+
+          echo "----- release notes -----"
+          cat notes.md
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.tag }}
           files: release/VPM.exe
-          generate_release_notes: true
+          body_path: notes.md
           fail_on_unmatched_files: true

@@ -490,6 +490,36 @@
                             Header="_JayJayWon's BrowserAssist (BA) Integration"
                             IsCheckable="True"
                             ToolTip="Scan BA's OffloadedVARs folder so offloaded packages satisfy dependency checks, and clean up BA's cache when moving packages out of OffloadedVARs." />
+                        <Separator />
+                        <MenuItem
+                            x:Name="VpbLookSearchMenuItem"
+                            Click="ToggleVpbLookSearch_Click"
+                            Header="_Look-A-Pedia Search (via VPB)"
+                            IsCheckable="True"
+                            ToolTip="Search the &quot;this looks like&quot; subject and category VPB's Look-A-Pedia data pack matched to each package, so searching Jinx finds a look named Kinx. Requires VPB with the data pack applied." />
+                        <MenuItem
+                            x:Name="VpbLookTagSearchMenuItem"
+                            Click="ToggleVpbLookTagSearch_Click"
+                            Header="Look-A-Pedia Search Includes Hub _Tags"
+                            IsCheckable="True"
+                            ToolTip="Also search the Hub tags on the matched resource. Tags are broad, so this widens results considerably." />
+                        <MenuItem
+                            x:Name="VpbHubTagsMenuItem"
+                            Click="ToggleVpbHubTags_Click"
+                            Header="_Hub Tags (read-only, from the resource listing)"
+                            IsCheckable="True"
+                            ToolTip="Show the tags the creator put on the Hub resource as a read-only tag category: in the tag editor, in the package tooltip and as its own filter. Hide individual tags from the tag editor." />
+                        <MenuItem
+                            x:Name="VpbHubCategoryOverrideMenuItem"
+                            Click="ToggleVpbHubCategoryOverride_Click"
+                            Header="Categorise by H_ub Category"
+                            IsCheckable="True"
+                            ToolTip="Use the category the creator uploaded the var under on the Hub as its VPM category, so Looks are Looks and Scenes are real scenes. Packages the data packs do not cover keep the categories VPM detects from their files." />
+                        <MenuItem
+                            x:Name="VpbShowHiddenHubTagsMenuItem"
+                            Click="ShowAllHiddenHubTags_Click"
+                            Header="Unhide _All Hidden Hub Tags..."
+                            ToolTip="Clear every hub tag hide rule, both the global ones and the per-package ones." />
                     </MenuItem>
 
                     <Separator />
@@ -1885,6 +1915,322 @@
                                             Tag="VpbTagFilter" />
                                     </StackPanel>
 
+                                    <!--  Look-A-Pedia "This Looks Like" Filter Section  -->
+                                    <StackPanel x:Name="VpbLookFilterSection" Margin="0,6,0,0">
+                                        <Grid
+                                            x:Name="VpbLookFilterCollapsedGrid"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbLookFilterToggleButton"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➕"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbLookFilter" />
+                                            <Label Grid.Column="1" Content="Filter looks like" />
+                                            <Button
+                                                x:Name="VpbLookFilterMoveUpButton"
+                                                Grid.Column="2"
+                                                Click="FilterMoveUp_Click"
+                                                Style="{StaticResource FilterMoveUpButtonStyle}"
+                                                Tag="VpbLookFilter" />
+                                            <Button
+                                                x:Name="VpbLookFilterMoveDownButton"
+                                                Grid.Column="3"
+                                                Click="FilterMoveDown_Click"
+                                                Style="{StaticResource FilterMoveDownButtonStyle}"
+                                                Tag="VpbLookFilter" />
+                                        </Grid>
+
+                                        <Grid x:Name="VpbLookFilterExpandedGrid" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" MinWidth="110" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbLookFilterToggleButtonExpanded"
+                                                Grid.Column="0"
+                                                Height="{Binding ElementName=VpbLookFilterBox, Path=ActualHeight}"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➖"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbLookFilter" />
+                                            <Grid Grid.Column="1">
+                                                <TextBox
+                                                    x:Name="VpbLookFilterBox"
+                                                    Style="{StaticResource FilterTextBoxStyle}"
+                                                    TextChanged="VpbLookFilterBox_TextChanged" />
+                                                <TextBlock
+                                                    Margin="12,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    IsHitTestVisible="False"
+                                                    Text="👤 Filter looks like...">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ElementName=VpbLookFilterBox, Path=Text}" Value="">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                            <Button
+                                                x:Name="VpbLookClearButton"
+                                                Grid.Column="2"
+                                                Height="{Binding ElementName=VpbLookFilterBox, Path=ActualHeight}"
+                                                Click="ClearFilterButton_Click"
+                                                Style="{StaticResource FilterClearButtonStyle}" />
+                                            <Button
+                                                x:Name="VpbLookSortButton"
+                                                Grid.Column="3"
+                                                Height="{Binding ElementName=VpbLookFilterBox, Path=ActualHeight}"
+                                                Click="VpbLookSortButton_Click"
+                                                Style="{StaticResource FilterSortButtonStyle}" />
+                                        </Grid>
+
+                                        <ListBox
+                                            x:Name="VpbLookFilterList"
+                                            Height="{Binding VpbLookFilterHeight, Mode=TwoWay}"
+                                            MinHeight="80"
+                                            MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
+                                            SelectionChanged="VpbLookFilterList_SelectionChanged"
+                                            SelectionMode="Multiple"
+                                            Style="{StaticResource FilterListBoxStyle}" />
+                                        <Thumb
+                                            DragCompleted="FilterResizeThumb_DragCompleted"
+                                            DragDelta="FilterResizeThumb_DragDelta"
+                                            Style="{StaticResource FilterResizeThumbStyle}"
+                                            Tag="VpbLookFilter" />
+                                    </StackPanel>
+
+                                    <!--  Hub Category Filter Section (what the creator uploaded the var as)  -->
+                                    <StackPanel x:Name="VpbHubCategoryFilterSection" Margin="0,6,0,0">
+                                        <Grid
+                                            x:Name="VpbHubCategoryFilterCollapsedGrid"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbHubCategoryFilterToggleButton"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➕"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbHubCategoryFilter" />
+                                            <Label Grid.Column="1" Content="Filter hub category" />
+                                            <Button
+                                                x:Name="VpbHubCategoryFilterMoveUpButton"
+                                                Grid.Column="2"
+                                                Click="FilterMoveUp_Click"
+                                                Style="{StaticResource FilterMoveUpButtonStyle}"
+                                                Tag="VpbHubCategoryFilter" />
+                                            <Button
+                                                x:Name="VpbHubCategoryFilterMoveDownButton"
+                                                Grid.Column="3"
+                                                Click="FilterMoveDown_Click"
+                                                Style="{StaticResource FilterMoveDownButtonStyle}"
+                                                Tag="VpbHubCategoryFilter" />
+                                        </Grid>
+
+                                        <Grid x:Name="VpbHubCategoryFilterExpandedGrid" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" MinWidth="110" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbHubCategoryFilterToggleButtonExpanded"
+                                                Grid.Column="0"
+                                                Height="{Binding ElementName=VpbHubCategoryFilterBox, Path=ActualHeight}"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➖"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbHubCategoryFilter" />
+                                            <Grid Grid.Column="1">
+                                                <TextBox
+                                                    x:Name="VpbHubCategoryFilterBox"
+                                                    Style="{StaticResource FilterTextBoxStyle}"
+                                                    TextChanged="VpbHubCategoryFilterBox_TextChanged" />
+                                                <TextBlock
+                                                    Margin="12,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    IsHitTestVisible="False"
+                                                    Text="🗂 Filter hub category...">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ElementName=VpbHubCategoryFilterBox, Path=Text}" Value="">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                            <Button
+                                                x:Name="VpbHubCategoryClearButton"
+                                                Grid.Column="2"
+                                                Height="{Binding ElementName=VpbHubCategoryFilterBox, Path=ActualHeight}"
+                                                Click="ClearFilterButton_Click"
+                                                Style="{StaticResource FilterClearButtonStyle}" />
+                                            <Button
+                                                x:Name="VpbHubCategorySortButton"
+                                                Grid.Column="3"
+                                                Height="{Binding ElementName=VpbHubCategoryFilterBox, Path=ActualHeight}"
+                                                Click="VpbHubCategorySortButton_Click"
+                                                Style="{StaticResource FilterSortButtonStyle}" />
+                                        </Grid>
+
+                                        <ListBox
+                                            x:Name="VpbHubCategoryFilterList"
+                                            Height="{Binding VpbHubCategoryFilterHeight, Mode=TwoWay}"
+                                            MinHeight="80"
+                                            MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
+                                            SelectionChanged="VpbHubCategoryFilterList_SelectionChanged"
+                                            SelectionMode="Multiple"
+                                            Style="{StaticResource FilterListBoxStyle}" />
+                                        <Thumb
+                                            DragCompleted="FilterResizeThumb_DragCompleted"
+                                            DragDelta="FilterResizeThumb_DragDelta"
+                                            Style="{StaticResource FilterResizeThumbStyle}"
+                                            Tag="VpbHubCategoryFilter" />
+                                    </StackPanel>
+
+                                    <!--  Hub Tag Filter Section  -->
+                                    <StackPanel x:Name="VpbHubTagFilterSection" Margin="0,6,0,0">
+                                        <Grid
+                                            x:Name="VpbHubTagFilterCollapsedGrid"
+                                            Margin="0,0,0,6"
+                                            Visibility="Collapsed">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbHubTagFilterToggleButton"
+                                                Grid.Column="0"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➕"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbHubTagFilter" />
+                                            <Label Grid.Column="1" Content="Filter hub tags" />
+                                            <Button
+                                                x:Name="VpbHubTagFilterMoveUpButton"
+                                                Grid.Column="2"
+                                                Click="FilterMoveUp_Click"
+                                                Style="{StaticResource FilterMoveUpButtonStyle}"
+                                                Tag="VpbHubTagFilter" />
+                                            <Button
+                                                x:Name="VpbHubTagFilterMoveDownButton"
+                                                Grid.Column="3"
+                                                Click="FilterMoveDown_Click"
+                                                Style="{StaticResource FilterMoveDownButtonStyle}"
+                                                Tag="VpbHubTagFilter" />
+                                        </Grid>
+
+                                        <Grid x:Name="VpbHubTagFilterExpandedGrid" Margin="0,0,0,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" MinWidth="110" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button
+                                                x:Name="VpbHubTagFilterToggleButtonExpanded"
+                                                Grid.Column="0"
+                                                Height="{Binding ElementName=VpbHubTagFilterBox, Path=ActualHeight}"
+                                                Click="ToggleFilterVisibility_Click"
+                                                Content="➖"
+                                                Style="{StaticResource FilterToggleButtonStyle}"
+                                                Tag="VpbHubTagFilter" />
+                                            <Grid Grid.Column="1">
+                                                <TextBox
+                                                    x:Name="VpbHubTagFilterBox"
+                                                    Style="{StaticResource FilterTextBoxStyle}"
+                                                    TextChanged="VpbHubTagFilterBox_TextChanged" />
+                                                <TextBlock
+                                                    Margin="12,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    Foreground="{DynamicResource {x:Static SystemColors.GrayTextBrushKey}}"
+                                                    IsHitTestVisible="False"
+                                                    Text="🏷 Filter hub tags...">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ElementName=VpbHubTagFilterBox, Path=Text}" Value="">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                            <Button
+                                                x:Name="VpbHubTagClearButton"
+                                                Grid.Column="2"
+                                                Height="{Binding ElementName=VpbHubTagFilterBox, Path=ActualHeight}"
+                                                Click="ClearFilterButton_Click"
+                                                Style="{StaticResource FilterClearButtonStyle}" />
+                                            <Button
+                                                x:Name="VpbHubTagSortButton"
+                                                Grid.Column="3"
+                                                Height="{Binding ElementName=VpbHubTagFilterBox, Path=ActualHeight}"
+                                                Click="VpbHubTagSortButton_Click"
+                                                Style="{StaticResource FilterSortButtonStyle}" />
+                                        </Grid>
+
+                                        <ListBox
+                                            x:Name="VpbHubTagFilterList"
+                                            Height="{Binding VpbHubTagFilterHeight, Mode=TwoWay}"
+                                            MinHeight="80"
+                                            MouseLeftButtonDown="FilterList_MouseLeftButtonDown"
+                                            SelectionChanged="VpbHubTagFilterList_SelectionChanged"
+                                            SelectionMode="Multiple"
+                                            Style="{StaticResource FilterListBoxStyle}">
+                                            <ListBox.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem
+                                                        Click="HideHubTagsGlobally_Click"
+                                                        Header="Hide selected hub tag(s) everywhere"
+                                                        ToolTip="Stop showing these hub tags anywhere in the library. Saved as a local preference in VPB, so it survives data pack updates." />
+                                                    <Separator />
+                                                    <MenuItem
+                                                        Click="ShowAllHiddenHubTags_Click"
+                                                        Header="Unhide all hidden hub tags..." />
+                                                </ContextMenu>
+                                            </ListBox.ContextMenu>
+                                        </ListBox>
+                                        <Thumb
+                                            DragCompleted="FilterResizeThumb_DragCompleted"
+                                            DragDelta="FilterResizeThumb_DragDelta"
+                                            Style="{StaticResource FilterResizeThumbStyle}"
+                                            Tag="VpbHubTagFilter" />
+                                    </StackPanel>
+
                                 </StackPanel>
 
                                 <!--  Scene Filters Container (Scene Mode Only)  -->
@@ -3191,6 +3537,26 @@
                                                                 TextTrimming="CharacterEllipsis"
                                                                 ToolTip="{Binding VpbTags}"
                                                                 Visibility="{Binding HasVpbTags, Converter={StaticResource BoolToVis}}" />
+                                                            <!--  Hub tags: the creator's own, amber so they never read as your tags  -->
+                                                            <TextBlock
+                                                                MaxWidth="180"
+                                                                Margin="0,0,3,0"
+                                                                FontSize="11"
+                                                                Foreground="#E2B341"
+                                                                Text="{Binding VpbHubTagsDisplay}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                ToolTip="{Binding VpbHubTags}"
+                                                                Visibility="{Binding HasVpbHubTags, Converter={StaticResource BoolToVis}}" />
+                                                            <!--  Look-A-Pedia "this looks like" subject, from VPB's data packs  -->
+                                                            <TextBlock
+                                                                MaxWidth="180"
+                                                                Margin="0,0,3,0"
+                                                                FontSize="11"
+                                                                Foreground="#6FC3A0"
+                                                                Text="{Binding VpbLookSubjectDisplay}"
+                                                                TextTrimming="CharacterEllipsis"
+                                                                ToolTip="{Binding VpbLookDetails}"
+                                                                Visibility="{Binding HasVpbLookSubject, Converter={StaticResource BoolToVis}}" />
                                                             <windows:VpbStarStrip
                                                                 Margin="0,0,3,0"
                                                                 IsInherited="{Binding IsVpbRatingInherited, Mode=OneWay}"
@@ -3727,6 +4093,17 @@
                                                     TextTrimming="CharacterEllipsis"
                                                     ToolTip="{Binding VpbTags}"
                                                     Visibility="{Binding HasVpbTags, Converter={StaticResource BoolToVis}}" />
+                                                <!--  Hub tags: the creator's own, amber so they never read as your tags  -->
+                                                <TextBlock
+                                                    MaxWidth="180"
+                                                    Margin="3,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Foreground="#E2B341"
+                                                    Text="{Binding VpbHubTagsDisplay}"
+                                                    TextTrimming="CharacterEllipsis"
+                                                    ToolTip="{Binding VpbHubTags}"
+                                                    Visibility="{Binding HasVpbHubTags, Converter={StaticResource BoolToVis}}" />
                                                 <windows:VpbStarStrip
                                                     Margin="3,0,0,0"
                                                     IsInherited="{Binding IsVpbRatingInherited, Mode=OneWay}"
@@ -5022,6 +5399,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
 
@@ -5103,9 +5481,70 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
 
+                                <!--  Hub tags: the creator's own, read-only and amber so they never read as yours  -->
+                                <StackPanel
+                                    x:Name="VpbHubTagsSection"
+                                    Grid.Row="3"
+                                    Margin="0,0,0,8"
+                                    Visibility="Collapsed">
+                                    <TextBlock
+                                        x:Name="VpbHubTagsHeader"
+                                        Margin="0,0,0,4"
+                                        FontSize="11"
+                                        Foreground="#E2B341"
+                                        Text="Hub tags (read-only)" />
+                                    <ItemsControl x:Name="VpbHubTagsPanel">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border
+                                                    Margin="0,0,4,4"
+                                                    Padding="6,2"
+                                                    Background="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"
+                                                    BorderBrush="#E2B341"
+                                                    BorderThickness="1"
+                                                    CornerRadius="9"
+                                                    ToolTip="{Binding ScopeTooltip}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock
+                                                            Foreground="#E2B341"
+                                                            Opacity="{Binding LabelOpacity}"
+                                                            Text="{Binding Label}" />
+                                                        <Button
+                                                            Margin="5,0,0,0"
+                                                            Padding="0"
+                                                            Background="Transparent"
+                                                            BorderThickness="0"
+                                                            Click="VpbHideHubTagChip_Click"
+                                                            Content="✕"
+                                                            Cursor="Hand"
+                                                            FontSize="10"
+                                                            Foreground="#E57373"
+                                                            Tag="{Binding Name}"
+                                                            ToolTip="Hide this hub tag on the selection. Right-click for more.">
+                                                            <Button.ContextMenu>
+                                                                <ContextMenu>
+                                                                    <MenuItem
+                                                                        Click="VpbHideHubTagEverywhere_Click"
+                                                                        Header="Hide this hub tag everywhere"
+                                                                        Tag="{Binding Name}" />
+                                                                </ContextMenu>
+                                                            </Button.ContextMenu>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
                                 <ListBox
                                     x:Name="VpbTagSuggestionList"
-                                    Grid.Row="3"
+                                    Grid.Row="4"
                                     Background="{DynamicResource {x:Static SystemColors.WindowBrushKey}}"
                                     BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}"
                                     BorderThickness="1"

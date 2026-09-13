@@ -45,6 +45,9 @@ namespace VPM.Models
         private int _vpbRating = 0;
         private bool _isVpbRatingInherited = false;
         private string _vpbTags = "";
+        private string _vpbLookSubject = "";
+        private string _vpbLookDetails = "";
+        private string _vpbHubTags = "";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -124,6 +127,46 @@ namespace VPM.Models
         public bool HasVpbTags => !string.IsNullOrEmpty(_vpbTags);
 
         public string VpbTagsDisplay => HasVpbTags ? "🏷 " + _vpbTags : "";
+
+        public string VpbLookSubject
+        {
+            get => _vpbLookSubject ?? "";
+            set
+            {
+                if (SetProperty(ref _vpbLookSubject, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(HasVpbLookSubject));
+                    OnPropertyChanged(nameof(VpbLookSubjectDisplay));
+                }
+            }
+        }
+
+        public bool HasVpbLookSubject => !string.IsNullOrEmpty(_vpbLookSubject);
+
+        public string VpbLookSubjectDisplay => HasVpbLookSubject ? "👤 " + _vpbLookSubject : "";
+
+        public string VpbLookDetails
+        {
+            get => _vpbLookDetails ?? "";
+            set => SetProperty(ref _vpbLookDetails, value ?? "");
+        }
+
+        public string VpbHubTags
+        {
+            get => _vpbHubTags ?? "";
+            set
+            {
+                if (SetProperty(ref _vpbHubTags, value ?? ""))
+                {
+                    OnPropertyChanged(nameof(HasVpbHubTags));
+                    OnPropertyChanged(nameof(VpbHubTagsDisplay));
+                }
+            }
+        }
+
+        public bool HasVpbHubTags => !string.IsNullOrEmpty(_vpbHubTags);
+
+        public string VpbHubTagsDisplay => HasVpbHubTags ? "🏷 " + _vpbHubTags : "";
 
         public string Name
         {

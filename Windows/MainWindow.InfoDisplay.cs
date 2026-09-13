@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -170,6 +170,12 @@ namespace VPM
                 if (!string.IsNullOrEmpty(packageMetadata.Description))
                 {
                     info.AppendLine($"Description: {packageMetadata.Description}");
+                }
+
+                var lookDetails = _vpbLookData?.DetailsFor(VPM.Services.Vpb.VpbLibraryData.UidFor(packageMetadata));
+                if (!string.IsNullOrEmpty(lookDetails))
+                {
+                    info.AppendLine(lookDetails);
                 }
 
                 PackageInfoTextBlock.Text = info.ToString();
@@ -604,7 +610,7 @@ namespace VPM
                     creatorCounts[packageMetadata.CreatorName] = creatorCounts.ContainsKey(packageMetadata.CreatorName) ? creatorCounts[packageMetadata.CreatorName] + 1 : 1;
 
                     // Count categories
-                    foreach (var category in packageMetadata.Categories)
+                    foreach (var category in _filterManager?.EffectiveCategoriesFor(packageMetadata) ?? packageMetadata.Categories)
                     {
                         categoryCounts[category] = categoryCounts.ContainsKey(category) ? categoryCounts[category] + 1 : 1;
                     }
@@ -1010,7 +1016,7 @@ namespace VPM
             var external = CheckDependencyInExternalDestinations(baseName);
             if (!string.IsNullOrEmpty(external))
                 return external;
-            if (_scanControl?.IsWhitelistMode == true)
+            if (IsWhitelistModeActive())
                 return _scanControl.ResolveDisplayStatus(lookupName);
             return _packageFileManager?.GetPackageStatus(lookupName) ?? "Unknown";
         }
@@ -1024,7 +1030,7 @@ namespace VPM
             {
                 return dependentMetadata.ExternalDestinationColorHex;
             }
-            if (_scanControl?.IsWhitelistMode == true)
+            if (IsWhitelistModeActive())
                 return _scanControl.ResolveDisplayStatus(dependentName);
             if (dependentMetadata != null)
                 return dependentMetadata.Status;

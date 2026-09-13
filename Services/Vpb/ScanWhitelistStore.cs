@@ -160,7 +160,7 @@ namespace VPM.Services.Vpb
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var u in uids)
             {
-                var n = u?.Trim();
+                var n = VpbUid.Canonical(u);
                 if (string.IsNullOrEmpty(n) || !seen.Add(n)) continue;
                 result.Add(n);
             }

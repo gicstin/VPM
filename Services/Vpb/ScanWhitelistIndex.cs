@@ -40,7 +40,7 @@ namespace VPM.Services.Vpb
             {
                 foreach (var u in data.IncludedPackageUids)
                 {
-                    var n = u?.Trim();
+                    var n = VpbUid.Canonical(u);
                     if (!string.IsNullOrEmpty(n)) uids.Add(n);
                 }
             }
@@ -52,7 +52,8 @@ namespace VPM.Services.Vpb
         public bool Contains(string varFilePath, string uid)
         {
             if (!Enabled) return false;
-            if (!string.IsNullOrEmpty(uid) && _uids.Contains(uid)) return true;
+            var canonicalUid = VpbUid.Canonical(uid);
+            if (!string.IsNullOrEmpty(canonicalUid) && _uids.Contains(canonicalUid)) return true;
             if (string.IsNullOrEmpty(varFilePath)) return true;
 
             var norm = varFilePath.Replace('\\', '/');

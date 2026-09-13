@@ -77,6 +77,9 @@ namespace VPM
                 RestoreFilterListSorting("LicenseTypes", LicenseTypeList, LicenseTypeSortButton);
                 RestoreFilterListSorting("Subfolders", SubfoldersFilterList, SubfoldersSortButton);
                 RestoreFilterListSorting("VpbTags", VpbTagFilterList, VpbTagsSortButton);
+                RestoreFilterListSorting("VpbLook", VpbLookFilterList, VpbLookSortButton);
+                RestoreFilterListSorting("VpbHubCategory", VpbHubCategoryFilterList, VpbHubCategorySortButton);
+                RestoreFilterListSorting("VpbHubTag", VpbHubTagFilterList, VpbHubTagSortButton);
             }
             catch (Exception)
             {
@@ -632,6 +635,15 @@ namespace VPM
 
         private void VpbTagsSortButton_Click(object sender, RoutedEventArgs e) =>
             ShowFilterSortMenu("VpbTags", VpbTagFilterList, VpbTagsSortButton);
+
+        private void VpbLookSortButton_Click(object sender, RoutedEventArgs e) =>
+            ShowFilterSortMenu("VpbLook", VpbLookFilterList, VpbLookSortButton);
+
+        private void VpbHubCategorySortButton_Click(object sender, RoutedEventArgs e) =>
+            ShowFilterSortMenu("VpbHubCategory", VpbHubCategoryFilterList, VpbHubCategorySortButton);
+
+        private void VpbHubTagSortButton_Click(object sender, RoutedEventArgs e) =>
+            ShowFilterSortMenu("VpbHubTag", VpbHubTagFilterList, VpbHubTagSortButton);
 
 
         private void ShowFilterSortMenu(string filterType, ListBox listBox, Button sortButton)

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using VPM.Models;
 
@@ -61,5 +61,25 @@ namespace VPM.Services
 
         /// <summary>Ratings and tags VPB currently knows about, keyed by package uid.</summary>
         public VPM.Services.Vpb.VpbLibraryData VpbData { get; set; }
+
+        public VPM.Services.Vpb.VpbLookData VpbLookData { get; set; }
+
+        public HashSet<string> SelectedVpbLookSubjects { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public bool VpbLookUnmatchedOnly { get; set; }
+
+        public bool VpbLookSearchEnabled { get; set; }
+
+        public bool VpbLookTagSearchEnabled { get; set; }
+
+        public HashSet<string> SelectedVpbHubCategories { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public bool VpbHubUncategorizedOnly { get; set; }
+
+        public HashSet<string> SelectedVpbHubTags { get; set; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        public bool VpbHubUntaggedOnly { get; set; }
+
+        public bool VpbHubCategoryOverrideEnabled { get; set; }
     }
 }

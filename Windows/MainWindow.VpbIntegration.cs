@@ -17,19 +17,45 @@ namespace VPM
     {
         private const string VpbUnratedLabel = "Unrated";
         private const string VpbUntaggedLabel = "Untagged";
+        private const string VpbLookUnmatchedLabel = "Unmatched";
+        private const string VpbHubUncategorizedLabel = "No hub category";
+        private const string VpbHubUntaggedLabel = "No hub tags";
 
         private VpbLibraryData _vpbData = VpbLibraryData.Empty;
+        private VpbLookData _vpbLookData = VpbLookData.Empty;
         private bool _vpbDataLoaded;
         private bool _vpbRatingWarningAccepted;
         private Dictionary<string, int> _vpbTagFilterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         private int _vpbUntaggedCount;
+        private Dictionary<string, int> _vpbLookFilterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private int _vpbLookUnmatchedCount;
+        private Dictionary<string, int> _vpbHubCategoryFilterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private int _vpbHubUncategorizedCount;
+        private Dictionary<string, int> _vpbHubTagFilterCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private int _vpbHubUntaggedCount;
         private int _vpbToolbarCheckGen;
 
         /// <summary>Local VPB.dll presence sets gold Install VPB vs Patch VaM; GitHub check may flip to Update VPB.</summary>
         private void RefreshVpbToolbarChrome()
         {
             var installed = VpbPresence.IsPluginInstalled(_selectedFolder);
-            ApplyVpbToolbarState(installed, updateAvailable: false);
+
+            var pinned = false;
+            string pinnedVersion = null;
+            if (installed && !string.IsNullOrEmpty(_selectedFolder))
+            {
+                try
+                {
+                    var config = VpbUpdateConfigFile.Load(_selectedFolder);
+                    pinned = config.Pinned;
+                    pinnedVersion = config.PinnedVersion;
+                }
+                catch
+                {
+                }
+            }
+
+            ApplyVpbToolbarState(installed, updateAvailable: false, pinned, pinnedVersion);
 
             var gen = Interlocked.Increment(ref _vpbToolbarCheckGen);
             _ = RefreshVpbToolbarUpdateStateAsync(gen);
@@ -43,10 +69,10 @@ namespace VPM
                 return;
             }
 
-            ApplyVpbToolbarState(check.IsInstalled, check.IsUpdateAvailable);
+            ApplyVpbToolbarState(check.IsInstalled, check.IsUpdateAvailable, check.IsPinned, check.PinnedVersion);
         }
 
-        private void ApplyVpbToolbarState(bool installed, bool updateAvailable)
+        private void ApplyVpbToolbarState(bool installed, bool updateAvailable, bool pinned = false, string pinnedVersion = null)
         {
             if (VpbPatchToolbarButton == null) return;
 
@@ -58,6 +84,14 @@ namespace VPM
                 gold = true;
                 content = "🧩 Install VPB";
                 tooltip = "Install VPB plugin for VaM";
+            }
+            else if (pinned)
+            {
+                gold = false;
+                content = "🧩 VPB pinned";
+                tooltip = string.IsNullOrWhiteSpace(pinnedVersion)
+                    ? "Pinned to an earlier VPB build — open to manage versions"
+                    : $"Pinned to VPB {pinnedVersion} — open to manage versions";
             }
             else if (updateAvailable)
             {
@@ -132,8 +166,23 @@ namespace VPM
                 _vpbData = VpbLibraryData.Empty;
             }
 
+            try
+            {
+                _vpbLookData = VpbLookData.Load(
+                    _selectedFolder,
+                    _settingsManager?.Settings?.VpbHubTagsEnabled ?? true);
+            }
+            catch
+            {
+                _vpbLookData = VpbLookData.Empty;
+            }
+
             if (_filterManager != null)
+            {
                 _filterManager.VpbData = _vpbData;
+                _filterManager.VpbLookData = _vpbLookData;
+                ApplyVpbLookSearchSettings();
+            }
 
             if (_packageManager?.PackageMetadata != null)
             {
@@ -159,6 +208,242 @@ namespace VPM
             item.VpbRating = _vpbData.RatingFor(uid);
             item.IsVpbRatingInherited = _vpbData.IsRatingInherited(uid);
             item.VpbTags = _vpbData.TagsDisplayFor(uid);
+            item.VpbLookSubject = _vpbLookData.SubjectFor(uid);
+            item.VpbLookDetails = _vpbLookData.DetailsFor(uid);
+            item.VpbHubTags = _vpbLookData.HubTagsDisplayFor(uid);
+        }
+
+        private void ApplyVpbLookSearchSettings()
+        {
+            if (_filterManager == null) return;
+            var settings = _settingsManager?.Settings;
+            _filterManager.VpbLookSearchEnabled = settings?.VpbLookSearchEnabled ?? true;
+            _filterManager.VpbLookTagSearchEnabled = settings?.VpbLookTagSearchEnabled ?? false;
+            _filterManager.VpbHubCategoryOverrideEnabled = settings?.VpbHubCategoryOverrideEnabled ?? true;
+            UpdateVpbLookSearchTooltip();
+        }
+
+        private string VpbDataPackTooltip(string lead)
+        {
+            var look = _vpbLookData ?? VpbLookData.Empty;
+
+            var sb = new System.Text.StringBuilder(lead);
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(look.HasAnything
+                ? $"{look.CoveredPackageCount:N0} packages matched by VPB's data packs."
+                : "No data packs applied yet — apply them in VPB's gallery settings.");
+
+            var provenance = look.ProvenanceBlock();
+            if (provenance.Length > 0) sb.Append('\n').Append(provenance);
+
+            var attribution = look.AttributionLine();
+            if (attribution.Length > 0) sb.Append('\n').Append(attribution);
+
+            return sb.ToString();
+        }
+
+        private void UpdateVpbLookSearchTooltip()
+        {
+            if (VpbLookSearchMenuItem != null)
+            {
+                VpbLookSearchMenuItem.ToolTip = VpbDataPackTooltip(
+                    "Search the \"this looks like\" subject and category VPB's Look-A-Pedia data pack matched to "
+                    + "each package, so searching Jinx finds a look named Kinx.");
+            }
+
+            if (VpbLookFilterExpandedGrid != null)
+            {
+                VpbLookFilterExpandedGrid.ToolTip = VpbDataPackTooltip(
+                    "Filter by the \"this looks like\" subject Look-A-Pedia matched to each package.");
+            }
+
+            if (VpbHubCategoryFilterExpandedGrid != null)
+            {
+                VpbHubCategoryFilterExpandedGrid.ToolTip = VpbDataPackTooltip(
+                    "Filter by the category the creator uploaded the var under on the Hub — so Scenes means "
+                    + "real scenes, and a clothing var shipped inside a scene still reads as Clothing.");
+            }
+
+            if (VpbHubTagFilterExpandedGrid != null)
+            {
+                VpbHubTagFilterExpandedGrid.ToolTip = VpbDataPackTooltip(
+                    "Filter by the tags the creator put on the Hub resource this package came from.");
+            }
+        }
+
+        private void ToggleVpbLookSearch_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem) return;
+            if (_settingsManager?.Settings == null) return;
+
+            _settingsManager.Settings.VpbLookSearchEnabled = menuItem.IsChecked;
+            ApplyVpbLookSearchSettings();
+            ReapplyFiltersForCurrentMode();
+
+            if (menuItem.IsChecked && !(_vpbLookData?.HasAnything ?? false))
+            {
+                CustomMessageBox.Show(
+                    "VPB has no Look-A-Pedia data applied yet, so searching by \"this looks like\" will not change "
+                    + "results.\n\nIn VaM, open VPB's gallery settings and apply the Look-A-Pedia data pack, then "
+                    + "refresh VPM.",
+                    "Look-A-Pedia Data Not Available",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
+        private void ToggleVpbLookTagSearch_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem) return;
+            if (_settingsManager?.Settings == null) return;
+
+            _settingsManager.Settings.VpbLookTagSearchEnabled = menuItem.IsChecked;
+            ApplyVpbLookSearchSettings();
+            ReapplyFiltersForCurrentMode();
+        }
+
+        /// <summary>Hub tags are a whole tag category — off means VPM does not load them at all.</summary>
+        private void ToggleVpbHubTags_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem) return;
+            if (_settingsManager?.Settings == null) return;
+
+            _settingsManager.Settings.VpbHubTagsEnabled = menuItem.IsChecked;
+
+            if (!menuItem.IsChecked && _filterManager != null)
+            {
+                _filterManager.SelectedVpbHubTags.Clear();
+                _filterManager.VpbHubUntaggedOnly = false;
+            }
+
+            SetPackageFilterSectionsForMode();
+            RefreshVpbDataAndLists();
+
+            SetStatus(menuItem.IsChecked
+                ? "Hub tags on — the creator's tags show as a read-only category"
+                : "Hub tags off");
+        }
+
+        private void ToggleVpbHubCategoryOverride_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem) return;
+            if (_settingsManager?.Settings == null) return;
+
+            _settingsManager.Settings.VpbHubCategoryOverrideEnabled = menuItem.IsChecked;
+            ApplyVpbLookSearchSettings();
+            ReapplyFiltersForCurrentMode();
+
+            if (menuItem.IsChecked && !(_vpbLookData?.HasAnything ?? false))
+            {
+                CustomMessageBox.Show(
+                    "VPB has no hub category data applied yet, so categories will keep coming from what each var "
+                    + "contains.\n\nIn VaM, open VPB's gallery settings and apply the hub tags data pack, then refresh VPM.",
+                    "Hub Category Data Not Available",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+
+            SetStatus(menuItem.IsChecked
+                ? "Categories now follow the creator's Hub category"
+                : "Categories back to what VPM detects from file contents");
+        }
+
+        private void HideHubTagsGlobally_Click(object sender, RoutedEventArgs e)
+        {
+            var tags = SelectedHubTagFilterValues();
+            if (tags.Count == 0)
+            {
+                SetStatus("Select one or more hub tags first");
+                return;
+            }
+
+            var result = VpbHubTagPrefWriter.HideGlobally(_selectedFolder, tags);
+            if (!result.Success)
+            {
+                DarkMessageBox.Show(result.Message, "Hub tags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            RefreshVpbDataAndLists();
+            SetStatus($"Hid {tags.Count} hub tag(s) everywhere");
+        }
+
+        private void ShowAllHiddenHubTags_Click(object sender, RoutedEventArgs e)
+        {
+            var prefs = _vpbLookData?.TagPrefs ?? VpbHubTagPrefs.Empty;
+            if (!prefs.Any)
+            {
+                SetStatus("No hub tags are hidden");
+                return;
+            }
+
+            var answer = DarkMessageBox.Show(
+                $"Unhide every hidden hub tag?\n\n{prefs.GlobalCount} hidden everywhere, "
+                + $"{prefs.PackageRuleCount} hidden on single packages.",
+                "Hub tags",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (answer != MessageBoxResult.Yes) return;
+
+            var result = VpbHubTagPrefWriter.ShowAll(_selectedFolder, globalOnly: false);
+            if (!result.Success)
+            {
+                DarkMessageBox.Show(result.Message, "Hub tags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            RefreshVpbDataAndLists();
+            SetStatus("All hub tags are visible again");
+        }
+
+        private List<string> SelectedHubTagFilterValues()
+        {
+            var tags = new List<string>();
+            if (VpbHubTagFilterList?.SelectedItems == null) return tags;
+
+            foreach (var item in VpbHubTagFilterList.SelectedItems)
+            {
+                var value = ExtractFilterValue(GetListBoxItemText(item));
+                if (string.IsNullOrEmpty(value)) continue;
+                if (string.Equals(value, VpbHubUntaggedLabel, StringComparison.OrdinalIgnoreCase)) continue;
+                tags.Add(value);
+            }
+            return tags;
+        }
+
+        private bool ApplyHubTagPrefChanges(VpbTagEditorWindow dialog, IReadOnlyList<string> uids, out string failure)
+        {
+            failure = "";
+            if (dialog == null || !dialog.HasHubTagChanges) return false;
+
+            var writes = new List<VpbWriteResult>(4);
+            if (dialog.HubTagsToHideEverywhere.Count > 0)
+                writes.Add(VpbHubTagPrefWriter.HideGlobally(_selectedFolder, dialog.HubTagsToHideEverywhere));
+            if (dialog.HubTagsToShowEverywhere.Count > 0)
+                writes.Add(VpbHubTagPrefWriter.ShowGlobally(_selectedFolder, dialog.HubTagsToShowEverywhere));
+            if (dialog.HubTagsToHideHere.Count > 0 && uids != null && uids.Count > 0)
+                writes.Add(VpbHubTagPrefWriter.HideOnPackages(_selectedFolder, uids, dialog.HubTagsToHideHere));
+            if (dialog.HubTagsToShowHere.Count > 0 && uids != null && uids.Count > 0)
+                writes.Add(VpbHubTagPrefWriter.ShowOnPackages(_selectedFolder, uids, dialog.HubTagsToShowHere));
+
+            foreach (var write in writes)
+            {
+                if (!write.Success)
+                {
+                    failure = write.Message;
+                    return false;
+                }
+            }
+
+            return writes.Count > 0;
+        }
+
+        private void ReapplyFiltersForCurrentMode()
+        {
+            if (_currentContentMode == "Custom")
+                ApplyPresetFilters();
+            else
+                ApplyFilters();
         }
 
         private void ApplyVpbToCustomItem(CustomAtomItem item)
@@ -194,6 +479,33 @@ namespace VPM
             UpdateClearAllFiltersButtonVisibility();
         }
 
+        private void VpbLookFilterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressSelectionEvents) return;
+
+            ApplyFilters();
+            UpdateVpbLookClearButton();
+            UpdateClearAllFiltersButtonVisibility();
+        }
+
+        private void VpbHubCategoryFilterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressSelectionEvents) return;
+
+            ApplyFilters();
+            UpdateVpbHubCategoryClearButton();
+            UpdateClearAllFiltersButtonVisibility();
+        }
+
+        private void VpbHubTagFilterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_suppressSelectionEvents) return;
+
+            ApplyFilters();
+            UpdateVpbHubTagClearButton();
+            UpdateClearAllFiltersButtonVisibility();
+        }
+
         /// <summary>Star runs and "Unrated" map to the rating buckets the filter matches on.</summary>
         private void CollectVpbRatingFilterSelections()
         {
@@ -214,6 +526,72 @@ namespace VPM
 
                 int stars = CountStars(value);
                 if (stars > 0) _filterManager.SelectedVpbRatings.Add(stars.ToString());
+            }
+        }
+
+        private void CollectVpbLookFilterSelections()
+        {
+            if (_filterManager == null) return;
+            _filterManager.SelectedVpbLookSubjects.Clear();
+            _filterManager.VpbLookUnmatchedOnly = false;
+            if (VpbLookFilterList?.SelectedItems == null) return;
+
+            foreach (var item in VpbLookFilterList.SelectedItems)
+            {
+                var value = ExtractFilterValue(GetListBoxItemText(item));
+                if (string.IsNullOrEmpty(value)) continue;
+
+                if (string.Equals(value, VpbLookUnmatchedLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filterManager.VpbLookUnmatchedOnly = true;
+                    continue;
+                }
+
+                _filterManager.SelectedVpbLookSubjects.Add(value);
+            }
+        }
+
+        private void CollectVpbHubCategoryFilterSelections()
+        {
+            if (_filterManager == null) return;
+            _filterManager.SelectedVpbHubCategories.Clear();
+            _filterManager.VpbHubUncategorizedOnly = false;
+            if (VpbHubCategoryFilterList?.SelectedItems == null) return;
+
+            foreach (var item in VpbHubCategoryFilterList.SelectedItems)
+            {
+                var value = ExtractFilterValue(GetListBoxItemText(item));
+                if (string.IsNullOrEmpty(value)) continue;
+
+                if (string.Equals(value, VpbHubUncategorizedLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filterManager.VpbHubUncategorizedOnly = true;
+                    continue;
+                }
+
+                _filterManager.SelectedVpbHubCategories.Add(value);
+            }
+        }
+
+        private void CollectVpbHubTagFilterSelections()
+        {
+            if (_filterManager == null) return;
+            _filterManager.SelectedVpbHubTags.Clear();
+            _filterManager.VpbHubUntaggedOnly = false;
+            if (VpbHubTagFilterList?.SelectedItems == null) return;
+
+            foreach (var item in VpbHubTagFilterList.SelectedItems)
+            {
+                var value = ExtractFilterValue(GetListBoxItemText(item));
+                if (string.IsNullOrEmpty(value)) continue;
+
+                if (string.Equals(value, VpbHubUntaggedLabel, StringComparison.OrdinalIgnoreCase))
+                {
+                    _filterManager.VpbHubUntaggedOnly = true;
+                    continue;
+                }
+
+                _filterManager.SelectedVpbHubTags.Add(value);
             }
         }
 
@@ -547,7 +925,7 @@ namespace VPM
                     ? customItems?[0]?.DisplayName ?? keys[0]
                     : $"{keys.Count} selected items";
 
-                var dialog = new VpbTagEditorWindow(keys, scope, _vpbData) { Owner = this };
+                var dialog = new VpbTagEditorWindow(keys, scope, _vpbData, _vpbLookData) { Owner = this };
                 if (dialog.ShowDialog() != true) return;
 
                 var changed = 0;
@@ -583,7 +961,7 @@ namespace VPM
                 ? targets[0].DisplayName
                 : $"{uids.Count} selected packages";
 
-            var packageDialog = new VpbTagEditorWindow(uids, packageScope, _vpbData) { Owner = this };
+            var packageDialog = new VpbTagEditorWindow(uids, packageScope, _vpbData, _vpbLookData) { Owner = this };
             if (packageDialog.ShowDialog() != true) return;
 
             var packageChanged = 0;
@@ -600,6 +978,9 @@ namespace VPM
                 if (result.Success) packageChanged = Math.Max(packageChanged, result.PackagesChanged); else packageFailure = result.Message;
             }
 
+            var hubChanged = ApplyHubTagPrefChanges(packageDialog, uids, out var hubFailure);
+            if (hubFailure.Length > 0 && packageFailure.Length == 0) packageFailure = hubFailure;
+
             if (packageFailure.Length > 0)
             {
                 DarkMessageBox.Show(packageFailure, "VPB tags", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -607,7 +988,9 @@ namespace VPM
             }
 
             RefreshVpbDataAndLists();
-            SetStatus($"Updated VPB tags on {packageChanged} package(s)");
+            SetStatus(hubChanged && packageChanged == 0
+                ? "Updated hub tag visibility"
+                : $"Updated VPB tags on {packageChanged} package(s)");
         }
 
         private void ReportTagWrite(VpbWriteResult result, string verb, int selectionSize, string noun = "package")
@@ -747,6 +1130,8 @@ namespace VPM
                     : "Select a package to manage its VPB tags";
                 if (VpbCurrentTagsPanel != null) VpbCurrentTagsPanel.ItemsSource = null;
                 if (VpbTagSuggestionList != null) VpbTagSuggestionList.ItemsSource = null;
+                if (VpbHubTagsPanel != null) VpbHubTagsPanel.ItemsSource = null;
+                if (VpbHubTagsSection != null) VpbHubTagsSection.Visibility = Visibility.Collapsed;
                 return;
             }
 
@@ -779,7 +1164,98 @@ namespace VPM
                 .ToList();
 
             if (VpbCurrentTagsPanel != null) VpbCurrentTagsPanel.ItemsSource = chips;
+            RefreshVpbHubTagChips(keys, noun);
             PopulateVpbTagSuggestions(keys, carryingByTag);
+        }
+
+        /// <summary>The creator's tags for the selection. Not editable — the only action is to stop looking at one.</summary>
+        private void RefreshVpbHubTagChips(List<string> keys, string noun)
+        {
+            if (VpbHubTagsPanel == null || VpbHubTagsSection == null) return;
+
+            var look = _vpbLookData ?? VpbLookData.Empty;
+            if (!look.HubTagsEnabled || keys == null || keys.Count == 0)
+            {
+                VpbHubTagsPanel.ItemsSource = null;
+                VpbHubTagsSection.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var carryingByTag = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var key in keys)
+            {
+                foreach (var tag in look.HubTagsFor(key))
+                {
+                    carryingByTag.TryGetValue(tag, out var n);
+                    carryingByTag[tag] = n + 1;
+                }
+            }
+
+            if (carryingByTag.Count == 0)
+            {
+                VpbHubTagsPanel.ItemsSource = null;
+                VpbHubTagsSection.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var chips = carryingByTag
+                .OrderByDescending(t => t.Value)
+                .ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(t => new VpbTagChip
+                {
+                    Name = t.Key,
+                    Label = t.Value == keys.Count ? t.Key : $"{t.Key} ({t.Value}/{keys.Count})",
+                    LabelOpacity = t.Value == keys.Count ? 1.0 : 0.65,
+                    ScopeTooltip = "From the creator's Hub resource listing. Read-only — type the same word above "
+                        + "to add it as your own tag."
+                })
+                .ToList();
+
+            VpbHubTagsPanel.ItemsSource = chips;
+            VpbHubTagsSection.Visibility = Visibility.Visible;
+
+            if (VpbHubTagsHeader != null)
+            {
+                var hiddenHere = 0;
+                foreach (var key in keys) hiddenHere += look.HiddenHubTagsFor(key).Count;
+                VpbHubTagsHeader.Text = hiddenHere > 0
+                    ? $"Hub tags (read-only) — {hiddenHere} hidden"
+                    : "Hub tags (read-only)";
+            }
+        }
+
+        /// <summary>✕ on a hub chip hides that tag on the selected packages, not everywhere.</summary>
+        private void VpbHideHubTagChip_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not string tag || tag.Length == 0) return;
+
+            var keys = SelectedVpbIdentityKeys(out _, out var noun);
+            if (keys.Count == 0) return;
+
+            var result = VpbHubTagPrefWriter.HideOnPackages(_selectedFolder, keys, new[] { tag });
+            if (!result.Success)
+            {
+                DarkMessageBox.Show(result.Message, "Hub tags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            RefreshVpbDataAndLists();
+            SetStatus($"Hid hub tag \"{tag}\" on {keys.Count} {noun}");
+        }
+
+        private void VpbHideHubTagEverywhere_Click(object sender, RoutedEventArgs e)
+        {
+            if ((sender as FrameworkElement)?.Tag is not string tag || tag.Length == 0) return;
+
+            var result = VpbHubTagPrefWriter.HideGlobally(_selectedFolder, new[] { tag });
+            if (!result.Success)
+            {
+                DarkMessageBox.Show(result.Message, "Hub tags", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            RefreshVpbDataAndLists();
+            SetStatus($"Hid hub tag \"{tag}\" everywhere");
         }
 
         private void PopulateVpbTagSuggestions(List<string> uids, Dictionary<string, int> carryingByTag)
@@ -919,7 +1395,13 @@ namespace VPM
             {
                 var ratingCounts = new int[6];
                 var tagCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var subjectCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var hubCategoryCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                var hubTagCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 int untagged = 0;
+                int unmatched = 0;
+                int uncategorized = 0;
+                int hubUntagged = 0;
 
                 if (packagesToCount != null)
                 {
@@ -937,6 +1419,36 @@ namespace VPM
                             tagCounts.TryGetValue(tag, out var n);
                             tagCounts[tag] = n + 1;
                         }
+
+                        var subject = _vpbLookData.SubjectFor(uid);
+                        if (subject.Length == 0)
+                        {
+                            unmatched++;
+                        }
+                        else
+                        {
+                            subjectCounts.TryGetValue(subject, out var s);
+                            subjectCounts[subject] = s + 1;
+                        }
+
+                        var hubCategory = _vpbLookData.HubCategoryFor(uid);
+                        if (hubCategory.Length == 0)
+                        {
+                            uncategorized++;
+                        }
+                        else
+                        {
+                            hubCategoryCounts.TryGetValue(hubCategory, out var c);
+                            hubCategoryCounts[hubCategory] = c + 1;
+                        }
+
+                        var hubTags = _vpbLookData.HubTagsFor(uid);
+                        if (hubTags.Count == 0) hubUntagged++;
+                        foreach (var hubTag in hubTags)
+                        {
+                            hubTagCounts.TryGetValue(hubTag, out var t);
+                            hubTagCounts[hubTag] = t + 1;
+                        }
                     }
                 }
 
@@ -949,6 +1461,18 @@ namespace VPM
                 _vpbTagFilterCounts = tagCounts;
                 _vpbUntaggedCount = untagged;
                 FilterVpbTagsList(VpbTagFilterBox?.Text ?? "");
+
+                _vpbLookFilterCounts = subjectCounts;
+                _vpbLookUnmatchedCount = unmatched;
+                FilterVpbLookList(VpbLookFilterBox?.Text ?? "");
+
+                _vpbHubCategoryFilterCounts = hubCategoryCounts;
+                _vpbHubUncategorizedCount = uncategorized;
+                FilterVpbHubCategoryList(VpbHubCategoryFilterBox?.Text ?? "");
+
+                _vpbHubTagFilterCounts = hubTagCounts;
+                _vpbHubUntaggedCount = hubUntagged;
+                FilterVpbHubTagList(VpbHubTagFilterBox?.Text ?? "");
             }
             catch (Exception)
             {
@@ -997,6 +1521,93 @@ namespace VPM
             catch (Exception)
             {
             }
+        }
+
+        private void VpbLookFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            FilterVpbLookList(VpbLookFilterBox?.Text ?? "");
+            UpdateVpbLookClearButton();
+        }
+
+        private void FilterVpbLookList(string filterText)
+        {
+            if (VpbLookFilterList == null) return;
+
+            var searchTerms = SearchHelper.PrepareSearchTerms(filterText);
+            var entries = new List<string>(_vpbLookFilterCounts.Count + 1);
+            foreach (var subject in _vpbLookFilterCounts.OrderByDescending(s => s.Value)
+                                                        .ThenBy(s => s.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                if (SearchHelper.MatchesAllTerms(subject.Key, searchTerms))
+                    entries.Add($"{subject.Key} ({subject.Value:N0})");
+            }
+
+            if (_vpbLookFilterCounts.Count > 0 && SearchHelper.MatchesAllTerms(VpbLookUnmatchedLabel, searchTerms))
+                entries.Add($"{VpbLookUnmatchedLabel} ({_vpbLookUnmatchedCount:N0})");
+
+            RepopulatePreservingSelection(VpbLookFilterList, entries);
+            if (VpbLookSortButton != null)
+                RestoreFilterListSorting("VpbLook", VpbLookFilterList, VpbLookSortButton);
+            UpdateVpbLookClearButton();
+        }
+
+        private void VpbHubCategoryFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            FilterVpbHubCategoryList(VpbHubCategoryFilterBox?.Text ?? "");
+            UpdateVpbHubCategoryClearButton();
+        }
+
+        private void FilterVpbHubCategoryList(string filterText)
+        {
+            if (VpbHubCategoryFilterList == null) return;
+
+            var searchTerms = SearchHelper.PrepareSearchTerms(filterText);
+            var entries = new List<string>(_vpbHubCategoryFilterCounts.Count + 1);
+            foreach (var category in _vpbHubCategoryFilterCounts.OrderByDescending(c => c.Value)
+                                                                .ThenBy(c => c.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                if (SearchHelper.MatchesAllTerms(category.Key, searchTerms))
+                    entries.Add($"{category.Key} ({category.Value:N0})");
+            }
+
+            if (_vpbHubCategoryFilterCounts.Count > 0 && SearchHelper.MatchesAllTerms(VpbHubUncategorizedLabel, searchTerms))
+                entries.Add($"{VpbHubUncategorizedLabel} ({_vpbHubUncategorizedCount:N0})");
+
+            RepopulatePreservingSelection(VpbHubCategoryFilterList, entries);
+            if (VpbHubCategorySortButton != null)
+                RestoreFilterListSorting("VpbHubCategory", VpbHubCategoryFilterList, VpbHubCategorySortButton);
+            UpdateVpbHubCategoryClearButton();
+        }
+
+        private void VpbHubTagFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (!IsLoaded) return;
+            FilterVpbHubTagList(VpbHubTagFilterBox?.Text ?? "");
+            UpdateVpbHubTagClearButton();
+        }
+
+        private void FilterVpbHubTagList(string filterText)
+        {
+            if (VpbHubTagFilterList == null) return;
+
+            var searchTerms = SearchHelper.PrepareSearchTerms(filterText);
+            var entries = new List<string>(_vpbHubTagFilterCounts.Count + 1);
+            foreach (var tag in _vpbHubTagFilterCounts.OrderByDescending(t => t.Value)
+                                                      .ThenBy(t => t.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                if (SearchHelper.MatchesAllTerms(tag.Key, searchTerms))
+                    entries.Add($"{tag.Key} ({tag.Value:N0})");
+            }
+
+            if (_vpbHubTagFilterCounts.Count > 0 && SearchHelper.MatchesAllTerms(VpbHubUntaggedLabel, searchTerms))
+                entries.Add($"{VpbHubUntaggedLabel} ({_vpbHubUntaggedCount:N0})");
+
+            RepopulatePreservingSelection(VpbHubTagFilterList, entries);
+            if (VpbHubTagSortButton != null)
+                RestoreFilterListSorting("VpbHubTag", VpbHubTagFilterList, VpbHubTagSortButton);
+            UpdateVpbHubTagClearButton();
         }
 
         private void VpbTagFilterBox_TextChanged(object sender, TextChangedEventArgs e)

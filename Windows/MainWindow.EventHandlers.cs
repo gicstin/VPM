@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -18,6 +18,7 @@ using System.Windows.Shell;
 using System.Windows.Threading;
 using VPM.Models;
 using VPM.Services;
+using VPM.Services.Vpb;
 
 namespace VPM
 {
@@ -1797,6 +1798,21 @@ namespace VPM
                         FilterVpbTagsList("");
                         UpdateVpbTagsClearButton();
                     }
+                    else if (textBox.Name == "VpbLookFilterBox")
+                    {
+                        FilterVpbLookList("");
+                        UpdateVpbLookClearButton();
+                    }
+                    else if (textBox.Name == "VpbHubCategoryFilterBox")
+                    {
+                        FilterVpbHubCategoryList("");
+                        UpdateVpbHubCategoryClearButton();
+                    }
+                    else if (textBox.Name == "VpbHubTagFilterBox")
+                    {
+                        FilterVpbHubTagList("");
+                        UpdateVpbHubTagClearButton();
+                    }
                     else if (textBox.Name == "SceneSearchBox")
                     {
                         UpdateSceneSearchClearButton();
@@ -1923,6 +1939,24 @@ namespace VPM
                     VpbTagFilterList.SelectedItems.Clear();
                     UpdateVpbTagsClearButton();
                 }
+                else if (button.Name == "VpbLookClearButton")
+                {
+                    targetTextBox = VpbLookFilterBox;
+                    VpbLookFilterList.SelectedItems.Clear();
+                    UpdateVpbLookClearButton();
+                }
+                else if (button.Name == "VpbHubCategoryClearButton")
+                {
+                    targetTextBox = VpbHubCategoryFilterBox;
+                    VpbHubCategoryFilterList.SelectedItems.Clear();
+                    UpdateVpbHubCategoryClearButton();
+                }
+                else if (button.Name == "VpbHubTagClearButton")
+                {
+                    targetTextBox = VpbHubTagFilterBox;
+                    VpbHubTagFilterList.SelectedItems.Clear();
+                    UpdateVpbHubTagClearButton();
+                }
                 else if (button.Name == "PackageSearchClearButton")
                 {
                     targetTextBox = PackageSearchBox;
@@ -2044,6 +2078,9 @@ namespace VPM
                 DestinationsFilterList?.SelectedItems?.Clear();
                 VpbRatingFilterList?.SelectedItems?.Clear();
                 VpbTagFilterList?.SelectedItems?.Clear();
+                VpbLookFilterList?.SelectedItems?.Clear();
+                VpbHubCategoryFilterList?.SelectedItems?.Clear();
+                VpbHubTagFilterList?.SelectedItems?.Clear();
 
                 if (DamagedFilterList != null)
                 {
@@ -2074,6 +2111,9 @@ namespace VPM
                 FilterTextBox_LostFocus(LicenseTypeFilterBox, new RoutedEventArgs());
                 FilterTextBox_LostFocus(SubfoldersFilterBox, new RoutedEventArgs());
                 FilterTextBox_LostFocus(VpbTagFilterBox, new RoutedEventArgs());
+                FilterTextBox_LostFocus(VpbLookFilterBox, new RoutedEventArgs());
+                FilterTextBox_LostFocus(VpbHubCategoryFilterBox, new RoutedEventArgs());
+                FilterTextBox_LostFocus(VpbHubTagFilterBox, new RoutedEventArgs());
 
                 // Reload packages using the cleared filter manager
                 ApplyFilters();
@@ -4169,6 +4209,18 @@ namespace VPM
                             if (VpbTagFilterList != null)
                                 _settingsManager.Settings.VpbTagFilterHeight = VpbTagFilterList.ActualHeight;
                             break;
+                        case "VpbLookFilter":
+                            if (VpbLookFilterList != null)
+                                _settingsManager.Settings.VpbLookFilterHeight = VpbLookFilterList.ActualHeight;
+                            break;
+                        case "VpbHubCategoryFilter":
+                            if (VpbHubCategoryFilterList != null)
+                                _settingsManager.Settings.VpbHubCategoryFilterHeight = VpbHubCategoryFilterList.ActualHeight;
+                            break;
+                        case "VpbHubTagFilter":
+                            if (VpbHubTagFilterList != null)
+                                _settingsManager.Settings.VpbHubTagFilterHeight = VpbHubTagFilterList.ActualHeight;
+                            break;
                     }
                 }
                 catch (Exception)
@@ -4194,6 +4246,9 @@ namespace VPM
                 "PlaylistsFilter" => PlaylistsFilterList,
                 "VpbRatingFilter" => VpbRatingFilterList,
                 "VpbTagFilter" => VpbTagFilterList,
+                "VpbLookFilter" => VpbLookFilterList,
+                "VpbHubCategoryFilter" => VpbHubCategoryFilterList,
+                "VpbHubTagFilter" => VpbHubTagFilterList,
                 _ => null
             };
         }
@@ -4375,6 +4430,27 @@ namespace VPM
                             targetList = VpbTagFilterList;
                             expandedGrid = VpbTagFilterExpandedGrid;
                             collapsedGrid = VpbTagFilterCollapsedGrid;
+                            break;
+                        case "VpbLookFilter":
+                            newVisibility = !_settingsManager.Settings.VpbLookFilterVisible;
+                            _settingsManager.Settings.VpbLookFilterVisible = newVisibility;
+                            targetList = VpbLookFilterList;
+                            expandedGrid = VpbLookFilterExpandedGrid;
+                            collapsedGrid = VpbLookFilterCollapsedGrid;
+                            break;
+                        case "VpbHubCategoryFilter":
+                            newVisibility = !_settingsManager.Settings.VpbHubCategoryFilterVisible;
+                            _settingsManager.Settings.VpbHubCategoryFilterVisible = newVisibility;
+                            targetList = VpbHubCategoryFilterList;
+                            expandedGrid = VpbHubCategoryFilterExpandedGrid;
+                            collapsedGrid = VpbHubCategoryFilterCollapsedGrid;
+                            break;
+                        case "VpbHubTagFilter":
+                            newVisibility = !_settingsManager.Settings.VpbHubTagFilterVisible;
+                            _settingsManager.Settings.VpbHubTagFilterVisible = newVisibility;
+                            targetList = VpbHubTagFilterList;
+                            expandedGrid = VpbHubTagFilterExpandedGrid;
+                            collapsedGrid = VpbHubTagFilterCollapsedGrid;
                             break;
                     }
                     
@@ -5325,7 +5401,7 @@ namespace VPM
             HubBrowser_Click(sender, e);
         }
 
-        public async void OpenVpbPatcher()
+        public void OpenVpbPatcher()
         {
             if (string.IsNullOrEmpty(_selectedFolder))
             {
@@ -5336,28 +5412,21 @@ namespace VPM
 
             try
             {
-                SetStatus("Checking VPB patch status...");
-
-                var branch = _settingsManager?.Settings?.VpbPreferredBranch is { Length: > 0 } b ? b : "main";
-
-                using var patcher = new VpbPatcherService();
-                var check = await patcher.CheckAsync(_selectedFolder, branch);
-
-                var detailsWindow = new Windows.VpbPatchDetailsWindow(_selectedFolder, check.GitRef, check, _settingsManager)
+                var window = new Windows.VpbManagerWindow(_selectedFolder, _settingsManager)
                 {
                     Owner = this
                 };
 
-                detailsWindow.ShowDialog();
+                window.ShowDialog();
 
-                SetStatus("VPB patch window closed");
+                SetStatus(window.ChangedInstall ? "VPB updated" : "VPB window closed");
             }
             catch (Exception ex)
             {
-                SetStatus($"VPB patch failed: {ex.Message}");
+                SetStatus($"VPB failed: {ex.Message}");
                 CustomMessageBox.Show(
-                    $"VPB patch failed:\n\n{ex.Message}",
-                    "VPB Patch Error",
+                    $"Could not open the VPB window:\n\n{ex.Message}",
+                    "VPB Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -7125,35 +7194,37 @@ namespace VPM
 
                     // Safety: VaM's --vpb.vds.scene must target a scene JSON.
                     // If we accidentally pass a preview image (jpg/png/etc), VaM will launch but not load the scene.
-                    var marker = "--vpb.vds.scene";
-                    var idx = args?.IndexOf(marker, StringComparison.OrdinalIgnoreCase) ?? -1;
-                    if (idx >= 0)
+                    var sceneValue = ExtractVdsSceneValue(args);
+
+                    if (!string.IsNullOrEmpty(sceneValue) && !sceneValue.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
                     {
-                        var after = args.Substring(idx + marker.Length).TrimStart();
-                        string value = null;
+                        CustomMessageBox.Show(
+                            $"Refusing to launch: vpb.vds.scene is not a .json scene file:\n\n{sceneValue}\n\n" +
+                            "This usually means the tile points to a preview image instead of the scene JSON.",
+                            "Invalid Scene Path",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        return;
+                    }
 
-                        if (after.StartsWith("\"", StringComparison.Ordinal))
+                    if (VpbPresence.IsVaMRunning())
+                    {
+                        if (!string.IsNullOrEmpty(sceneValue) && VpbCompanionClient.TryLoadScene(sceneValue))
                         {
-                            var end = after.IndexOf('"', 1);
-                            if (end > 1)
-                                value = after.Substring(1, end - 1);
-                        }
-                        else
-                        {
-                            var end = after.IndexOf(' ');
-                            value = end >= 0 ? after.Substring(0, end) : after;
-                        }
-
-                        if (!string.IsNullOrEmpty(value) && !value.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-                        {
-                            CustomMessageBox.Show(
-                                $"Refusing to launch: vpb.vds.scene is not a .json scene file:\n\n{value}\n\n" +
-                                "This usually means the tile points to a preview image instead of the scene JSON.",
-                                "Invalid Scene Path",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Warning);
+                            SetStatus("Asked the running VaM to load the scene");
                             return;
                         }
+
+                        var launchAnyway = CustomMessageBox.Show(
+                            "VaM is already running and did not accept the scene over VPB's companion pipe.\n\n" +
+                            "Scan set changes only apply at launch, so starting a second instance is usually not what you want.\n\n" +
+                            "Launch another VaM instance anyway?",
+                            "VaM Already Running",
+                            MessageBoxButton.YesNo,
+                            MessageBoxImage.Warning);
+
+                        if (launchAnyway != MessageBoxResult.Yes)
+                            return;
                     }
 
                     LaunchVirtAMate(modeName, args);
@@ -7436,6 +7507,24 @@ namespace VPM
             }
         }
 
+        private static string ExtractVdsSceneValue(string args)
+        {
+            const string marker = "--vpb.vds.scene";
+            var idx = args?.IndexOf(marker, StringComparison.OrdinalIgnoreCase) ?? -1;
+            if (idx < 0) return null;
+
+            var after = args.Substring(idx + marker.Length).TrimStart();
+
+            if (after.StartsWith("\"", StringComparison.Ordinal))
+            {
+                var end = after.IndexOf('"', 1);
+                return end > 1 ? after.Substring(1, end - 1) : null;
+            }
+
+            var space = after.IndexOf(' ');
+            return space >= 0 ? after.Substring(0, space) : after;
+        }
+
         private static string ExtractInternalVarPath(string sceneItemFilePath)
         {
             if (string.IsNullOrEmpty(sceneItemFilePath))
@@ -7681,7 +7770,7 @@ namespace VPM
             playlistWindow.ShowDialog();
             
             EnsureScanControl();
-            if (_scanControl?.IsWhitelistMode == true)
+            if (IsWhitelistModeActive())
             {
                 ApplyWhitelistStatusesToUi();
             }

@@ -154,7 +154,7 @@ namespace VPM
                         return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     var toInclude = selectedPackages.Where(p => !p.IsExternal).ToList();
                     if (toInclude.Count > 0)
@@ -362,13 +362,7 @@ namespace VPM
             {
                 if (!EnsureVamFolderSelected()) return (false, 0);
 
-                if (_scanControl?.IsWhitelistMode == true)
-                {
-                    EnsureScanControl();
-                    _scanControl.Include(packageNames, exclusive: false, withDeps: true);
-                    ApplyWhitelistStatusesToUi();
-                    return (true, 0);
-                }
+                EnsureScanControl();
 
                 if (packageNames == null || packageNames.Count == 0)
                 {
@@ -376,6 +370,9 @@ namespace VPM
                         MessageBox.Show("No packages specified.", "No Packages", MessageBoxButton.OK, MessageBoxImage.Information);
                     return (false, 0);
                 }
+
+                if (IsWhitelistModeActive())
+                    return await WhitelistIncludeWithDependenciesAsync(packageNames, interactive);
 
                 // PERFORMANCE FIX: Pre-build lookup for ALL packages to optimize dependency resolution to O(D)
                 var allPackageLookup = _packageManager.PackageMetadata.Values
@@ -712,13 +709,6 @@ namespace VPM
                     return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
-                {
-                    TryWhitelistInclude(selectedPackages.Where(p => !p.IsExternal), withDeps: true);
-                    ApplyWhitelistStatusesToUi();
-                    return;
-                }
-
                 await LoadPackagesWithDependenciesAsync(
                     selectedPackages.Select(p =>
                     {
@@ -756,7 +746,7 @@ namespace VPM
                     return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     TryWhitelistExclude(selectedPackages.Where(p => !p.IsExternal));
                     ApplyWhitelistStatusesToUi();
@@ -926,7 +916,7 @@ namespace VPM
                     return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     var toInclude = selectedDependencies.Where(d => d.Status?.StartsWith("#") != true).ToList();
                     if (toInclude.Count > 0)
@@ -1158,7 +1148,7 @@ namespace VPM
                     return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     TryWhitelistDependencies(selectedDependencies, include: false);
                     return;
@@ -1362,7 +1352,7 @@ namespace VPM
                     return;
                 }
 
-                if (_scanControl?.IsWhitelistMode == true)
+                if (IsWhitelistModeActive())
                 {
                     var toInclude = allAvailableDependencies.Where(d => d.Status?.StartsWith("#") != true).ToList();
                     if (toInclude.Count > 0)
@@ -1941,7 +1931,7 @@ namespace VPM
 
                         await Dispatcher.InvokeAsync(() =>
                         {
-                            var resolved = _scanControl?.IsWhitelistMode == true
+                            var resolved = IsWhitelistModeActive()
                                 ? _scanControl.ResolveDisplayStatus(packageName)
                                 : actualStatus;
                             if (packageItem.Status != resolved)
@@ -2016,7 +2006,7 @@ namespace VPM
             {
                 string OverlayStatus(string name, string fallback)
                 {
-                    if (_scanControl?.IsWhitelistMode == true)
+                    if (IsWhitelistModeActive())
                         return _scanControl.ResolveDisplayStatus(name);
                     var fs = _packageFileManager?.GetPackageStatus(name);
                     return !string.IsNullOrEmpty(fs) && fs != "Missing" && fs != "Unknown" ? fs : fallback;
